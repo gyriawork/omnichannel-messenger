@@ -14,7 +14,7 @@ const messengerParamSchema = z.object({
 });
 
 const connectTelegramSchema = z.object({
-  apiId: z.number().int().positive(),
+  apiId: z.coerce.number().int().positive(),
   apiHash: z.string().min(1),
   session: z.string().optional(),
   phoneNumber: z.string().optional(),
