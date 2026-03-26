@@ -27,7 +27,7 @@ export function createAdapter(
       return new SlackAdapter(credentials as { token: string });
 
     case 'whatsapp':
-      return new WhatsAppAdapter(credentials as { session?: string; phoneNumber?: string });
+      return new WhatsAppAdapter(credentials as { authState?: string; phoneNumber?: string });
 
     case 'gmail':
       return new GmailAdapter(

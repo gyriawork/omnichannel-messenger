@@ -114,6 +114,9 @@ export function createWebSocketServer(httpServer: HttpServer): Server {
       socket.join(`org:${user.organizationId}`);
     }
 
+    // Join a personal room for user-specific events (e.g., WhatsApp QR pairing)
+    socket.join(`user:${user.id}`);
+
     // ── join_chat ──
 
     socket.on('join_chat', async (data: { chatId: string }) => {

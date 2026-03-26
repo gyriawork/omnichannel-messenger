@@ -65,11 +65,89 @@ export function useReconnectIntegration() {
   });
 }
 
+export function useSlackOAuthStatus() {
+  return useQuery({
+    queryKey: ['slack-oauth-status'],
+    queryFn: () => api.get<{ oauthConfigured: boolean }>('/api/oauth/slack/status'),
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+  });
+}
+
+export function useGmailOAuthAvailable() {
+  return useQuery({
+    queryKey: ['gmail-oauth-available'],
+    queryFn: () => api.get<{ available: boolean }>('/api/oauth/gmail/available'),
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+  });
+}
+
 export function useUpdateIntegrationSettings() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ messenger, settings }: { messenger: string; settings: Record<string, unknown> }) =>
       api.patch(`/api/integrations/${messenger}/settings`, { settings }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['integrations'] }),
+  });
+}
+
+// ─── Telegram multi-step auth hooks ───
+
+interface TelegramSendCodeResponse {
+  phoneCodeHash: string;
+  phoneNumber: string;
+}
+
+interface TelegramVerifyCodeResponse {
+  integration: Integration;
+}
+
+interface TelegramCheckSessionResponse {
+  valid: boolean;
+  reason?: string;
+}
+
+export function useTelegramSendCode() {
+  return useMutation({
+    mutationFn: async (payload: { apiId: string; apiHash: string; phoneNumber: string }) => {
+      return api.post<TelegramSendCodeResponse>(
+        '/api/integrations/telegram/send-code',
+        {
+          apiId: parseInt(payload.apiId, 10),
+          apiHash: payload.apiHash,
+          phoneNumber: payload.phoneNumber,
+        },
+      );
+    },
+  });
+}
+
+export function useTelegramVerifyCode() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (payload: {
+      phoneNumber: string;
+      phoneCodeHash: string;
+      code: string;
+      password?: string;
+    }) => {
+      return api.post<TelegramVerifyCodeResponse>(
+        '/api/integrations/telegram/verify-code',
+        payload,
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['integrations'] });
+    },
+  });
+}
+
+export function useTelegramCheckSession() {
+  return useMutation({
+    mutationFn: async () => {
+      return api.post<TelegramCheckSessionResponse>(
+        '/api/integrations/telegram/check-session',
+      );
+    },
   });
 }

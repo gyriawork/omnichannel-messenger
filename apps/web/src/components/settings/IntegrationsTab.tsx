@@ -12,6 +12,8 @@ import {
   Loader2,
   Info,
   Settings,
+  ChevronDown,
+  ExternalLink,
 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -24,7 +26,12 @@ import {
   useDisconnectIntegration,
   useReconnectIntegration,
   useUpdateIntegrationSettings,
+  useSlackOAuthStatus,
+  useGmailOAuthAvailable,
+  useTelegramSendCode,
+  useTelegramVerifyCode,
 } from '@/hooks/useIntegrations';
+import { useWhatsAppPairing, type WhatsAppPairingStatus } from '@/hooks/useWhatsAppPairing';
 import type { Integration, IntegrationStatus, MessengerType } from '@/types/integration';
 
 // ---------- Messenger metadata ----------
@@ -126,9 +133,15 @@ function formatDate(iso?: string) {
 
 // ---------- Zod schemas for connect forms ----------
 
-const telegramSchema = z.object({
+const telegramStep1Schema = z.object({
   apiId: z.string().min(1, 'API ID is required'),
   apiHash: z.string().min(1, 'API Hash is required'),
+  phoneNumber: z.string().min(1, 'Phone number is required'),
+});
+
+const telegramStep2Schema = z.object({
+  code: z.string().min(1, 'Verification code is required'),
+  password: z.string().optional(),
 });
 
 const slackSchema = z.object({
@@ -144,77 +157,255 @@ const gmailSchema = z.object({
 // ---------- Connect modals ----------
 
 function TelegramConnectForm({
-  onSubmit,
-  isPending,
+  onSuccess,
 }: {
-  onSubmit: (data: z.infer<typeof telegramSchema>) => void;
-  isPending: boolean;
+  onSuccess: () => void;
 }) {
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-  } = useForm<z.infer<typeof telegramSchema>>({
-    resolver: zodResolver(telegramSchema),
+  const [step, setStep] = useState<'credentials' | 'code' | 'done'>('credentials');
+  const [phoneCodeHash, setPhoneCodeHash] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [apiCredentials, setApiCredentials] = useState<{ apiId: string; apiHash: string }>({ apiId: '', apiHash: '' });
+  const [needs2FA, setNeeds2FA] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const sendCodeMutation = useTelegramSendCode();
+  const verifyCodeMutation = useTelegramVerifyCode();
+
+  const step1Form = useForm<z.infer<typeof telegramStep1Schema>>({
+    resolver: zodResolver(telegramStep1Schema),
   });
 
+  const step2Form = useForm<z.infer<typeof telegramStep2Schema>>({
+    resolver: zodResolver(telegramStep2Schema),
+  });
+
+  const handleStep1 = (data: z.infer<typeof telegramStep1Schema>) => {
+    setErrorMessage(null);
+    setApiCredentials({ apiId: data.apiId, apiHash: data.apiHash });
+    setPhoneNumber(data.phoneNumber);
+
+    sendCodeMutation.mutate(
+      { apiId: data.apiId, apiHash: data.apiHash, phoneNumber: data.phoneNumber },
+      {
+        onSuccess: (res) => {
+          setPhoneCodeHash(res.phoneCodeHash);
+          setStep('code');
+        },
+        onError: (err) => {
+          setErrorMessage(err instanceof Error ? err.message : 'Failed to send code');
+        },
+      },
+    );
+  };
+
+  const handleStep2 = (data: z.infer<typeof telegramStep2Schema>) => {
+    setErrorMessage(null);
+
+    verifyCodeMutation.mutate(
+      {
+        phoneNumber,
+        phoneCodeHash,
+        code: data.code,
+        password: data.password || undefined,
+      },
+      {
+        onSuccess: () => {
+          setStep('done');
+          toast.success('Telegram connected successfully!');
+          onSuccess();
+        },
+        onError: (err) => {
+          const message = err instanceof Error ? err.message : 'Verification failed';
+          if (message.includes('2FA') || message.includes('Two-factor') || message.includes('TELEGRAM_2FA_REQUIRED')) {
+            setNeeds2FA(true);
+            setErrorMessage('Two-factor authentication is enabled. Please enter your 2FA password.');
+          } else {
+            setErrorMessage(message);
+          }
+        },
+      },
+    );
+  };
+
+  // ── Step 1: API credentials + phone number ──
+  if (step === 'credentials') {
+    return (
+      <form onSubmit={step1Form.handleSubmit(handleStep1)} className="space-y-4">
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-slate-700">API ID</label>
+          <input
+            {...step1Form.register('apiId')}
+            placeholder="Enter your Telegram API ID"
+            className={cn(
+              'w-full rounded border-[1.5px] border-slate-200 px-3 py-2 text-sm transition-colors',
+              'placeholder:text-slate-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15',
+              step1Form.formState.errors.apiId && 'border-red-300 focus:border-red-400 focus:ring-red-100',
+            )}
+          />
+          {step1Form.formState.errors.apiId && (
+            <p className="mt-1 text-xs text-red-500">{step1Form.formState.errors.apiId.message}</p>
+          )}
+        </div>
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-slate-700">API Hash</label>
+          <input
+            {...step1Form.register('apiHash')}
+            type="password"
+            placeholder="Enter your Telegram API Hash"
+            className={cn(
+              'w-full rounded border-[1.5px] border-slate-200 px-3 py-2 text-sm transition-colors',
+              'placeholder:text-slate-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15',
+              step1Form.formState.errors.apiHash && 'border-red-300 focus:border-red-400 focus:ring-red-100',
+            )}
+          />
+          {step1Form.formState.errors.apiHash && (
+            <p className="mt-1 text-xs text-red-500">{step1Form.formState.errors.apiHash.message}</p>
+          )}
+        </div>
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-slate-700">Phone Number</label>
+          <input
+            {...step1Form.register('phoneNumber')}
+            placeholder="+1234567890"
+            className={cn(
+              'w-full rounded border-[1.5px] border-slate-200 px-3 py-2 text-sm transition-colors',
+              'placeholder:text-slate-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15',
+              step1Form.formState.errors.phoneNumber && 'border-red-300 focus:border-red-400 focus:ring-red-100',
+            )}
+          />
+          {step1Form.formState.errors.phoneNumber && (
+            <p className="mt-1 text-xs text-red-500">{step1Form.formState.errors.phoneNumber.message}</p>
+          )}
+        </div>
+
+        {errorMessage && (
+          <div className="flex items-start gap-2 rounded-lg bg-red-50 p-3">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
+            <p className="text-xs text-red-700">{errorMessage}</p>
+          </div>
+        )}
+
+        <div className="flex items-start gap-2 rounded-lg bg-blue-50 p-3">
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-500" />
+          <p className="text-xs text-blue-700">
+            A verification code will be sent to your Telegram app. Make sure
+            Telegram is installed and active on your phone.
+          </p>
+        </div>
+
+        <button
+          type="submit"
+          disabled={sendCodeMutation.isPending}
+          className="flex w-full items-center justify-center gap-2 rounded bg-accent px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px disabled:opacity-50"
+        >
+          {sendCodeMutation.isPending ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Sending code...
+            </>
+          ) : (
+            <>
+              <Plug className="h-4 w-4" />
+              Send Verification Code
+            </>
+          )}
+        </button>
+      </form>
+    );
+  }
+
+  // ── Step 2: Verification code (+ optional 2FA) ──
+  if (step === 'code') {
+    return (
+      <form onSubmit={step2Form.handleSubmit(handleStep2)} className="space-y-4">
+        <div className="flex items-start gap-2 rounded-lg bg-emerald-50 p-3">
+          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+          <p className="text-xs text-emerald-700">
+            Code sent! Check your Telegram app for a verification code.
+          </p>
+        </div>
+
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-slate-700">Verification Code</label>
+          <input
+            {...step2Form.register('code')}
+            placeholder="Enter the code from Telegram"
+            autoFocus
+            className={cn(
+              'w-full rounded border-[1.5px] border-slate-200 px-3 py-2 text-sm font-mono tracking-widest transition-colors',
+              'placeholder:text-slate-400 placeholder:font-sans placeholder:tracking-normal focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15',
+              step2Form.formState.errors.code && 'border-red-300 focus:border-red-400 focus:ring-red-100',
+            )}
+          />
+          {step2Form.formState.errors.code && (
+            <p className="mt-1 text-xs text-red-500">{step2Form.formState.errors.code.message}</p>
+          )}
+        </div>
+
+        {needs2FA && (
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700">
+              2FA Password
+            </label>
+            <input
+              {...step2Form.register('password')}
+              type="password"
+              placeholder="Enter your two-factor authentication password"
+              className={cn(
+                'w-full rounded border-[1.5px] border-slate-200 px-3 py-2 text-sm transition-colors',
+                'placeholder:text-slate-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15',
+              )}
+            />
+          </div>
+        )}
+
+        {errorMessage && (
+          <div className="flex items-start gap-2 rounded-lg bg-red-50 p-3">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
+            <p className="text-xs text-red-700">{errorMessage}</p>
+          </div>
+        )}
+
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setStep('credentials');
+              setErrorMessage(null);
+              setNeeds2FA(false);
+            }}
+            className="flex flex-1 items-center justify-center gap-2 rounded border-[1.5px] border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50"
+          >
+            Back
+          </button>
+          <button
+            type="submit"
+            disabled={verifyCodeMutation.isPending}
+            className="flex flex-1 items-center justify-center gap-2 rounded bg-accent px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px disabled:opacity-50"
+          >
+            {verifyCodeMutation.isPending ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Verifying...
+              </>
+            ) : (
+              <>
+                <CheckCircle2 className="h-4 w-4" />
+                Verify & Connect
+              </>
+            )}
+          </button>
+        </div>
+      </form>
+    );
+  }
+
+  // ── Done ──
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-      <div>
-        <label className="mb-1.5 block text-sm font-medium text-slate-700">
-          API ID
-        </label>
-        <input
-          {...register('apiId')}
-          placeholder="Enter your Telegram API ID"
-          className={cn(
-            'w-full rounded border-[1.5px] border-slate-200 px-3 py-2 text-sm transition-colors',
-            'placeholder:text-slate-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15',
-            errors.apiId && 'border-red-300 focus:border-red-400 focus:ring-red-100',
-          )}
-        />
-        {errors.apiId && (
-          <p className="mt-1 text-xs text-red-500">{errors.apiId.message}</p>
-        )}
-      </div>
-      <div>
-        <label className="mb-1.5 block text-sm font-medium text-slate-700">
-          API Hash
-        </label>
-        <input
-          {...register('apiHash')}
-          type="password"
-          placeholder="Enter your Telegram API Hash"
-          className={cn(
-            'w-full rounded border-[1.5px] border-slate-200 px-3 py-2 text-sm transition-colors',
-            'placeholder:text-slate-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15',
-            errors.apiHash && 'border-red-300 focus:border-red-400 focus:ring-red-100',
-          )}
-        />
-        {errors.apiHash && (
-          <p className="mt-1 text-xs text-red-500">{errors.apiHash.message}</p>
-        )}
-      </div>
-      <div className="flex items-start gap-2 rounded-lg bg-blue-50 p-3">
-        <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-500" />
-        <p className="text-xs text-blue-700">
-          After connecting, you will need to complete phone number verification
-          in a separate step.
-        </p>
-      </div>
-      <button
-        type="submit"
-        disabled={isPending}
-        className="flex w-full items-center justify-center gap-2 rounded bg-accent px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px disabled:opacity-50"
-      >
-        {isPending ? (
-          <Loader2 className="h-4 w-4 animate-spin" />
-        ) : (
-          <Plug className="h-4 w-4" />
-        )}
-        Connect Telegram
-      </button>
-    </form>
+    <div className="flex flex-col items-center gap-3 py-4">
+      <CheckCircle2 className="h-12 w-12 text-emerald-500" />
+      <p className="text-sm font-medium text-slate-700">Telegram connected successfully!</p>
+    </div>
   );
 }
 
@@ -225,6 +416,8 @@ function SlackConnectForm({
   onSubmit: (data: z.infer<typeof slackSchema>) => void;
   isPending: boolean;
 }) {
+  const { data: oauthStatus, isLoading: oauthLoading } = useSlackOAuthStatus();
+  const [showManualToken, setShowManualToken] = useState(false);
   const {
     register,
     handleSubmit,
@@ -233,70 +426,208 @@ function SlackConnectForm({
     resolver: zodResolver(slackSchema),
   });
 
-  return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-      <div>
-        <label className="mb-1.5 block text-sm font-medium text-slate-700">
-          Bot Token
-        </label>
-        <input
-          {...register('botToken')}
-          type="password"
-          placeholder="xoxb-your-bot-token"
-          className={cn(
-            'w-full rounded border-[1.5px] border-slate-200 px-3 py-2 text-sm font-mono transition-colors',
-            'placeholder:text-slate-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15',
-            errors.botToken && 'border-red-300 focus:border-red-400 focus:ring-red-100',
-          )}
-        />
-        {errors.botToken && (
-          <p className="mt-1 text-xs text-red-500">{errors.botToken.message}</p>
-        )}
+  const oauthConfigured = oauthStatus?.oauthConfigured ?? false;
+
+  const handleOAuthConnect = () => {
+    // Redirect to the API OAuth endpoint. The backend requires auth,
+    // so we pass the access token as a query parameter for this redirect.
+    const token = localStorage.getItem('accessToken');
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || (process.env.NODE_ENV === 'production' ? 'https://api-production-3c91.up.railway.app' : 'http://localhost:3001');
+    // The authorize endpoint needs the JWT in the Authorization header.
+    // Since this is a redirect, we set the token as a cookie-based workaround
+    // or use a pre-auth endpoint. For simplicity, we open a URL that includes
+    // the token as a query parameter, and the backend will accept it.
+    window.location.href = `${apiUrl}/api/oauth/slack/authorize?token=${encodeURIComponent(token ?? '')}`;
+  };
+
+  if (oauthLoading) {
+    return (
+      <div className="flex items-center justify-center py-6">
+        <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
       </div>
-      <button
-        type="submit"
-        disabled={isPending}
-        className="flex w-full items-center justify-center gap-2 rounded bg-accent px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px disabled:opacity-50"
-      >
-        {isPending ? (
-          <Loader2 className="h-4 w-4 animate-spin" />
-        ) : (
-          <Plug className="h-4 w-4" />
-        )}
-        Connect Slack
-      </button>
-    </form>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* OAuth connect button — shown when OAuth is configured */}
+      {oauthConfigured && (
+        <>
+          <div className="flex items-start gap-2 rounded-lg bg-blue-50 p-3">
+            <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-500" />
+            <p className="text-xs text-blue-700">
+              Click the button below to authorize with Slack. You will be redirected to
+              Slack to grant access, then returned here automatically.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handleOAuthConnect}
+            className="flex w-full items-center justify-center gap-2 rounded bg-[#4A154B] px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-[#3a1139] hover:-translate-y-px"
+          >
+            <ExternalLink className="h-4 w-4" />
+            Connect with Slack
+          </button>
+
+          {/* Expandable manual token section */}
+          <div className="border-t border-slate-100 pt-3">
+            <button
+              type="button"
+              onClick={() => setShowManualToken(!showManualToken)}
+              className="flex w-full items-center gap-2 text-xs font-medium text-slate-500 transition-colors hover:text-slate-700"
+            >
+              <ChevronDown
+                className={cn(
+                  'h-3.5 w-3.5 transition-transform duration-200',
+                  showManualToken && 'rotate-180',
+                )}
+              />
+              Advanced: Use Bot Token
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* Manual token form — shown when OAuth is not configured, or user expands advanced section */}
+      {(!oauthConfigured || showManualToken) && (
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          {oauthConfigured && (
+            <p className="text-xs text-slate-500">
+              If you prefer, you can manually enter a Slack Bot Token instead of using OAuth.
+            </p>
+          )}
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700">
+              Bot Token
+            </label>
+            <input
+              {...register('botToken')}
+              type="password"
+              placeholder="xoxb-your-bot-token"
+              className={cn(
+                'w-full rounded border-[1.5px] border-slate-200 px-3 py-2 text-sm font-mono transition-colors',
+                'placeholder:text-slate-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15',
+                errors.botToken && 'border-red-300 focus:border-red-400 focus:ring-red-100',
+              )}
+            />
+            {errors.botToken && (
+              <p className="mt-1 text-xs text-red-500">{errors.botToken.message}</p>
+            )}
+          </div>
+          <button
+            type="submit"
+            disabled={isPending}
+            className="flex w-full items-center justify-center gap-2 rounded bg-accent px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px disabled:opacity-50"
+          >
+            {isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Plug className="h-4 w-4" />
+            )}
+            Connect with Token
+          </button>
+        </form>
+      )}
+    </div>
   );
 }
 
-function WhatsAppConnectForm({
-  onSubmit,
-  isPending,
-}: {
-  onSubmit: () => void;
-  isPending: boolean;
-}) {
+function WhatsAppConnectForm({ onClose }: { onClose: () => void }) {
+  const {
+    status,
+    qrDataUrl,
+    statusMessage,
+    error,
+    startPairing,
+    cancelPairing,
+    reset,
+  } = useWhatsAppPairing();
+
   return (
     <div className="space-y-4">
-      <div className="flex items-start gap-2 rounded-lg bg-emerald-50 p-3">
-        <Info className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
-        <p className="text-xs text-emerald-700">
-          WhatsApp uses QR code pairing. After clicking Connect, a QR code will
-          appear. Scan it with WhatsApp on your phone to link this device.
-        </p>
-      </div>
-      <button
-        onClick={onSubmit}
-        disabled={isPending}
-        className="flex w-full items-center justify-center gap-2 rounded bg-accent px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px disabled:opacity-50"
-      >
-        {isPending ? (
-          <Loader2 className="h-4 w-4 animate-spin" />
-        ) : (
-          <Plug className="h-4 w-4" />
-        )}
-        Start QR Pairing
-      </button>
+      {status === 'idle' && (
+        <>
+          <div className="flex items-start gap-2 rounded-lg bg-emerald-50 p-3">
+            <Info className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+            <p className="text-xs text-emerald-700">
+              WhatsApp uses QR code pairing. After clicking Connect, a QR code
+              will appear. Scan it with WhatsApp on your phone to link this
+              device.
+            </p>
+          </div>
+          <button
+            onClick={startPairing}
+            className="flex w-full items-center justify-center gap-2 rounded bg-accent px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px"
+          >
+            <Plug className="h-4 w-4" />
+            Start QR Pairing
+          </button>
+        </>
+      )}
+      {(status === 'starting' || status === 'waiting_for_qr') && (
+        <div className="flex flex-col items-center gap-3 py-6">
+          <Loader2 className="h-8 w-8 animate-spin text-emerald-500" />
+          <p className="text-sm text-slate-600">{statusMessage || 'Generating QR code...'}</p>
+          <button
+            onClick={cancelPairing}
+            className="mt-2 text-xs text-slate-400 underline hover:text-slate-600"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+      {status === 'qr_ready' && qrDataUrl && (
+        <div className="flex flex-col items-center gap-3">
+          <div className="rounded-lg border-2 border-emerald-200 bg-white p-2">
+            <img src={qrDataUrl} alt="WhatsApp QR Code" width={280} height={280} className="block" />
+          </div>
+          <p className="text-center text-sm text-slate-600">
+            {statusMessage || 'Scan with WhatsApp on your phone'}
+          </p>
+          <p className="text-center text-xs text-slate-400">
+            Open WhatsApp &rarr; Settings &rarr; Linked Devices &rarr; Link a Device
+          </p>
+          <button
+            onClick={cancelPairing}
+            className="mt-1 text-xs text-slate-400 underline hover:text-slate-600"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+      {status === 'connecting' && (
+        <div className="flex flex-col items-center gap-3 py-6">
+          <Loader2 className="h-8 w-8 animate-spin text-emerald-500" />
+          <p className="text-sm text-slate-600">Connecting to WhatsApp...</p>
+        </div>
+      )}
+      {status === 'connected' && (
+        <div className="flex flex-col items-center gap-3 py-6">
+          <CheckCircle2 className="h-10 w-10 text-emerald-500" />
+          <p className="text-sm font-medium text-emerald-700">WhatsApp connected successfully!</p>
+          <button
+            onClick={onClose}
+            className="mt-2 rounded bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover"
+          >
+            Done
+          </button>
+        </div>
+      )}
+      {status === 'error' && (
+        <div className="flex flex-col items-center gap-3 py-4">
+          <div className="flex items-start gap-2 rounded-lg bg-red-50 p-3">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
+            <p className="text-xs text-red-700">{error || 'An error occurred during pairing'}</p>
+          </div>
+          <button
+            onClick={() => { reset(); startPairing(); }}
+            className="flex items-center gap-2 rounded bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover"
+          >
+            <RefreshCw className="h-4 w-4" />
+            Try Again
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -308,6 +639,8 @@ function GmailConnectForm({
   onSubmit: (data: z.infer<typeof gmailSchema>) => void;
   isPending: boolean;
 }) {
+  const { data: oauthData, isLoading: oauthLoading } = useGmailOAuthAvailable();
+  const [showManualForm, setShowManualForm] = useState(false);
   const {
     register,
     handleSubmit,
@@ -316,76 +649,140 @@ function GmailConnectForm({
     resolver: zodResolver(gmailSchema),
   });
 
+  const oauthAvailable = oauthData?.available ?? false;
+
+  const handleOAuthConnect = () => {
+    const token = localStorage.getItem('accessToken');
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || (process.env.NODE_ENV === 'production' ? 'https://api-production-3c91.up.railway.app' : 'http://localhost:3001');
+    window.location.href = `${apiUrl}/api/oauth/gmail/authorize?token=${encodeURIComponent(token ?? '')}`;
+  };
+
+  if (oauthLoading) {
+    return (
+      <div className="flex items-center justify-center py-6">
+        <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
+      </div>
+    );
+  }
+
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-      <div>
-        <label className="mb-1.5 block text-sm font-medium text-slate-700">
-          Client ID
-        </label>
-        <input
-          {...register('clientId')}
-          placeholder="your-client-id.apps.googleusercontent.com"
-          className={cn(
-            'w-full rounded border-[1.5px] border-slate-200 px-3 py-2 text-sm transition-colors',
-            'placeholder:text-slate-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15',
-            errors.clientId && 'border-red-300 focus:border-red-400 focus:ring-red-100',
+    <div className="space-y-4">
+      {/* OAuth connect button — shown when Gmail OAuth is configured on the server */}
+      {oauthAvailable && (
+        <>
+          <div className="flex items-start gap-2 rounded-lg bg-blue-50 p-3">
+            <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-500" />
+            <p className="text-xs text-blue-700">
+              Click the button below to authorize with Google. You will be redirected to
+              Google to grant Gmail access, then returned here automatically.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handleOAuthConnect}
+            className="flex w-full items-center justify-center gap-2 rounded bg-[#4285F4] px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-[#3367D6] hover:-translate-y-px"
+          >
+            <ExternalLink className="h-4 w-4" />
+            Connect with Google
+          </button>
+
+          {/* Expandable manual credentials section */}
+          <div className="border-t border-slate-100 pt-3">
+            <button
+              type="button"
+              onClick={() => setShowManualForm(!showManualForm)}
+              className="flex w-full items-center gap-2 text-xs font-medium text-slate-500 transition-colors hover:text-slate-700"
+            >
+              <ChevronDown
+                className={cn(
+                  'h-3.5 w-3.5 transition-transform duration-200',
+                  showManualForm && 'rotate-180',
+                )}
+              />
+              Advanced: Enter Credentials Manually
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* Manual credentials form — shown when OAuth is not configured, or user expands advanced section */}
+      {(!oauthAvailable || showManualForm) && (
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          {oauthAvailable && (
+            <p className="text-xs text-slate-500">
+              If you prefer, you can manually enter your own Google OAuth credentials instead of using the built-in OAuth flow.
+            </p>
           )}
-        />
-        {errors.clientId && (
-          <p className="mt-1 text-xs text-red-500">{errors.clientId.message}</p>
-        )}
-      </div>
-      <div>
-        <label className="mb-1.5 block text-sm font-medium text-slate-700">
-          Client Secret
-        </label>
-        <input
-          {...register('clientSecret')}
-          type="password"
-          placeholder="Enter your Client Secret"
-          className={cn(
-            'w-full rounded border-[1.5px] border-slate-200 px-3 py-2 text-sm transition-colors',
-            'placeholder:text-slate-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15',
-            errors.clientSecret && 'border-red-300 focus:border-red-400 focus:ring-red-100',
-          )}
-        />
-        {errors.clientSecret && (
-          <p className="mt-1 text-xs text-red-500">{errors.clientSecret.message}</p>
-        )}
-      </div>
-      <div>
-        <label className="mb-1.5 block text-sm font-medium text-slate-700">
-          Refresh Token
-        </label>
-        <input
-          {...register('refreshToken')}
-          type="password"
-          placeholder="Enter your Refresh Token"
-          className={cn(
-            'w-full rounded border-[1.5px] border-slate-200 px-3 py-2 text-sm transition-colors',
-            'placeholder:text-slate-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15',
-            errors.refreshToken && 'border-red-300 focus:border-red-400 focus:ring-red-100',
-          )}
-        />
-        {errors.refreshToken && (
-          <p className="mt-1 text-xs text-red-500">
-            {errors.refreshToken.message}
-          </p>
-        )}
-      </div>
-      <button
-        type="submit"
-        disabled={isPending}
-        className="flex w-full items-center justify-center gap-2 rounded bg-accent px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px disabled:opacity-50"
-      >
-        {isPending ? (
-          <Loader2 className="h-4 w-4 animate-spin" />
-        ) : (
-          <Plug className="h-4 w-4" />
-        )}
-        Connect Gmail
-      </button>
-    </form>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700">
+              Client ID
+            </label>
+            <input
+              {...register('clientId')}
+              placeholder="your-client-id.apps.googleusercontent.com"
+              className={cn(
+                'w-full rounded border-[1.5px] border-slate-200 px-3 py-2 text-sm transition-colors',
+                'placeholder:text-slate-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15',
+                errors.clientId && 'border-red-300 focus:border-red-400 focus:ring-red-100',
+              )}
+            />
+            {errors.clientId && (
+              <p className="mt-1 text-xs text-red-500">{errors.clientId.message}</p>
+            )}
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700">
+              Client Secret
+            </label>
+            <input
+              {...register('clientSecret')}
+              type="password"
+              placeholder="Enter your Client Secret"
+              className={cn(
+                'w-full rounded border-[1.5px] border-slate-200 px-3 py-2 text-sm transition-colors',
+                'placeholder:text-slate-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15',
+                errors.clientSecret && 'border-red-300 focus:border-red-400 focus:ring-red-100',
+              )}
+            />
+            {errors.clientSecret && (
+              <p className="mt-1 text-xs text-red-500">{errors.clientSecret.message}</p>
+            )}
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700">
+              Refresh Token
+            </label>
+            <input
+              {...register('refreshToken')}
+              type="password"
+              placeholder="Enter your Refresh Token"
+              className={cn(
+                'w-full rounded border-[1.5px] border-slate-200 px-3 py-2 text-sm transition-colors',
+                'placeholder:text-slate-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15',
+                errors.refreshToken && 'border-red-300 focus:border-red-400 focus:ring-red-100',
+              )}
+            />
+            {errors.refreshToken && (
+              <p className="mt-1 text-xs text-red-500">
+                {errors.refreshToken.message}
+              </p>
+            )}
+          </div>
+          <button
+            type="submit"
+            disabled={isPending}
+            className="flex w-full items-center justify-center gap-2 rounded bg-accent px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px disabled:opacity-50"
+          >
+            {isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Plug className="h-4 w-4" />
+            )}
+            Connect with Credentials
+          </button>
+        </form>
+      )}
+    </div>
   );
 }
 
@@ -449,10 +846,7 @@ function ConnectModal({
 
         {/* Messenger-specific form */}
         {messenger.key === 'telegram' && (
-          <TelegramConnectForm
-            onSubmit={handleConnect}
-            isPending={connectMutation.isPending}
-          />
+          <TelegramConnectForm onSuccess={onClose} />
         )}
         {messenger.key === 'slack' && (
           <SlackConnectForm
@@ -461,10 +855,7 @@ function ConnectModal({
           />
         )}
         {messenger.key === 'whatsapp' && (
-          <WhatsAppConnectForm
-            onSubmit={() => handleConnect({})}
-            isPending={connectMutation.isPending}
-          />
+          <WhatsAppConnectForm onClose={onClose} />
         )}
         {messenger.key === 'gmail' && (
           <GmailConnectForm
@@ -794,20 +1185,13 @@ const faqItems: FaqItem[] = [
     bgClass: 'bg-messenger-sl-bg',
     textClass: 'text-messenger-sl-text',
     steps: [
+      { text: 'Click "Connect" on the Slack card above, then click "Connect with Slack".' },
+      { text: 'You will be redirected to Slack. Sign in if needed, then review and authorize the requested permissions.' },
+      { text: 'After authorizing, you will be redirected back here automatically. Your Slack workspace will be connected.' },
       {
-        text: 'Go to api.slack.com/apps and click "Create New App".',
+        text: 'Alternatively, if OAuth is not available, expand "Advanced: Use Bot Token" and paste a bot token manually (starts with xoxb-). See the Slack API docs to create one.',
         link: { url: 'https://api.slack.com/apps', label: 'api.slack.com/apps' },
       },
-      { text: 'Choose "From scratch", enter an App name and select your workspace.' },
-      {
-        text: 'In the left sidebar, go to "OAuth & Permissions".',
-      },
-      {
-        text: 'Scroll down to "Bot Token Scopes" and add the following permissions: channels:history, channels:read, chat:write, groups:history, groups:read, im:history, im:read, im:write, mpim:history, mpim:read, users:read.',
-      },
-      { text: 'Scroll up and click "Install to Workspace", then click "Allow".' },
-      { text: 'Copy the "Bot User OAuth Token" (starts with xoxb-).' },
-      { text: 'Go back to this page, click "Connect" on the Slack card, and paste the Bot Token.' },
     ],
   },
   {
@@ -833,6 +1217,8 @@ const faqItems: FaqItem[] = [
     bgClass: 'bg-messenger-gm-bg',
     textClass: 'text-messenger-gm-text',
     steps: [
+      { text: 'The easiest way: click "Connect with Google" on the Gmail card above. You will be redirected to Google to authorize Gmail access. This works if your administrator has configured Google OAuth on the server.' },
+      { text: 'If the "Connect with Google" button is not shown, use the manual method below.' },
       {
         text: 'Go to the Google Cloud Console and create a new project (or select an existing one).',
         link: { url: 'https://console.cloud.google.com/', label: 'console.cloud.google.com' },
@@ -848,7 +1234,7 @@ const faqItems: FaqItem[] = [
       },
       { text: 'In the left panel, select "Gmail API v1" > select all scopes (or at least gmail.modify and gmail.send). Click "Authorize APIs" and sign in.' },
       { text: 'Click "Exchange authorization code for tokens". Copy the Refresh Token value.' },
-      { text: 'Go back to this page, click "Connect" on the Gmail card, and paste all three values: Client ID, Client Secret, and Refresh Token.' },
+      { text: 'Go back to this page, expand "Advanced: Enter Credentials Manually" on the Gmail card, and paste all three values: Client ID, Client Secret, and Refresh Token.' },
     ],
   },
 ];

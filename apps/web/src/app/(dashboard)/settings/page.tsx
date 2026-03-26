@@ -1,11 +1,14 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { Settings, Building2, User } from 'lucide-react';
+import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { IntegrationsTab } from '@/components/settings/IntegrationsTab';
 import { WorkspaceTab } from '@/components/settings/WorkspaceTab';
 import { ProfileTab } from '@/components/settings/ProfileTab';
+import { useQueryClient } from '@tanstack/react-query';
 
 type Tab = 'integrations' | 'workspace' | 'profile';
 
@@ -15,8 +18,44 @@ const tabs: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: 'profile', label: 'Profile', icon: User },
 ];
 
+const oauthErrorMessages: Record<string, string> = {
+  oauth_not_configured: 'OAuth is not configured on the server. Please use manual credential input.',
+  no_organization: 'No organization found. Please ensure you belong to an organization.',
+  missing_params: 'OAuth callback received incomplete data. Please try again.',
+  invalid_or_expired_state: 'OAuth session expired. Please try connecting again.',
+  corrupted_state: 'OAuth session was corrupted. Please try connecting again.',
+  token_exchange_failed: 'Failed to exchange authorization code. Please try again.',
+  token_verification_failed: 'Token could not be verified. Please try again.',
+  access_denied: 'You denied the authorization request.',
+  no_refresh_token: 'Google did not return a refresh token. Please revoke app access at myaccount.google.com/permissions and try again.',
+};
+
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<Tab>('integrations');
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const queryClient = useQueryClient();
+
+  // Handle OAuth callback query parameters
+  useEffect(() => {
+    const integration = searchParams.get('integration');
+    const status = searchParams.get('status');
+    const error = searchParams.get('error');
+
+    if (!integration || !status) return;
+
+    if (status === 'connected') {
+      toast.success(`${integration.charAt(0).toUpperCase() + integration.slice(1)} connected successfully via OAuth`);
+      // Refresh integrations data
+      queryClient.invalidateQueries({ queryKey: ['integrations'] });
+    } else if (status === 'error' && error) {
+      const friendlyMessage = oauthErrorMessages[error] ?? `OAuth error: ${error}`;
+      toast.error(friendlyMessage);
+    }
+
+    // Clean up URL query params after handling
+    router.replace('/settings', { scroll: false });
+  }, [searchParams, router, queryClient]);
 
   return (
     <div className="h-full overflow-auto">

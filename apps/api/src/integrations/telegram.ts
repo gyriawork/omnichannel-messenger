@@ -1,57 +1,142 @@
-// ─── Telegram Adapter (Stub) ───
-// TODO: Full MTProto implementation requires interactive phone auth.
-// This is a stub that implements the interface but does not make real connections.
-// Real implementation will use the `telegram` (gramjs) package with TelegramClient.
+// ─── Telegram Adapter (gramjs / MTProto) ───
+// Real implementation using the `telegram` (gramjs) package with TelegramClient.
+// Supports multi-step interactive auth: sendCode → signIn → optional 2FA.
 
+import { TelegramClient, Api } from 'telegram';
+import { StringSession } from 'telegram/sessions/index.js';
 import type { MessengerAdapter } from './base.js';
 import { MessengerError } from './base.js';
 
-interface TelegramCredentials {
+// ─── Types ───
+
+export interface TelegramCredentials {
   apiId: number;
   apiHash: string;
   session?: string;
   phoneNumber?: string;
 }
 
+// ─── Temporary client store for multi-step auth ───
+// Key = `${userId}:${phoneNumber}`, value = { client, phoneNumber, createdAt }
+
+interface PendingAuth {
+  client: TelegramClient;
+  phoneNumber: string;
+  apiId: number;
+  apiHash: string;
+  createdAt: number;
+}
+
+const pendingAuths = new Map<string, PendingAuth>();
+
+const PENDING_AUTH_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+/** Periodic cleanup of expired pending auth entries. */
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of pendingAuths) {
+    if (now - entry.createdAt > PENDING_AUTH_TTL_MS) {
+      entry.client.disconnect().catch(() => {});
+      pendingAuths.delete(key);
+    }
+  }
+}, 60_000); // sweep every 60s
+
+/**
+ * Store a temporary TelegramClient during multi-step auth.
+ */
+export function storePendingAuth(
+  userId: string,
+  phoneNumber: string,
+  client: TelegramClient,
+  apiId: number,
+  apiHash: string,
+): void {
+  const key = `${userId}:${phoneNumber}`;
+  // Clean up any previous entry
+  const prev = pendingAuths.get(key);
+  if (prev) {
+    prev.client.disconnect().catch(() => {});
+  }
+  pendingAuths.set(key, {
+    client,
+    phoneNumber,
+    apiId,
+    apiHash,
+    createdAt: Date.now(),
+  });
+}
+
+/**
+ * Retrieve and remove a pending auth client.
+ */
+export function getPendingAuth(userId: string, phoneNumber: string): PendingAuth | undefined {
+  const key = `${userId}:${phoneNumber}`;
+  return pendingAuths.get(key);
+}
+
+/**
+ * Remove a pending auth entry (on success or explicit cancel).
+ */
+export function removePendingAuth(userId: string, phoneNumber: string): void {
+  const key = `${userId}:${phoneNumber}`;
+  const entry = pendingAuths.get(key);
+  if (entry) {
+    // Don't disconnect — caller owns the client now
+    pendingAuths.delete(key);
+  }
+}
+
+// ─── Adapter ───
+
 export class TelegramAdapter implements MessengerAdapter {
+  private client: TelegramClient | null = null;
   private status: 'connected' | 'disconnected' | 'token_expired' | 'session_expired' = 'disconnected';
-  private credentials: TelegramCredentials | null = null;
+  private credentials: TelegramCredentials;
 
   constructor(credentials: TelegramCredentials) {
     this.credentials = credentials;
   }
 
-  async connect(_credentials?: Record<string, unknown>): Promise<void> {
+  async connect(): Promise<void> {
     try {
-      // TODO: Full MTProto implementation requires interactive phone auth.
-      // Real implementation would:
-      // 1. Create TelegramClient with apiId, apiHash, StringSession
-      // 2. Call client.start() with phone/code callbacks
-      // 3. Store the resulting session string in credentials
-      //
-      // Example (not functional without interactive auth):
-      // import { TelegramClient } from 'telegram';
-      // import { StringSession } from 'telegram/sessions';
-      //
-      // const session = new StringSession(this.credentials?.session ?? '');
-      // this.client = new TelegramClient(session, apiId, apiHash, { connectionRetries: 5 });
-      // await this.client.start({ ... });
-
-      if (!this.credentials?.apiId || !this.credentials?.apiHash) {
+      if (!this.credentials.apiId || !this.credentials.apiHash) {
         throw new Error('apiId and apiHash are required');
       }
 
-      // Simulate successful connection for development
+      const session = new StringSession(this.credentials.session ?? '');
+      this.client = new TelegramClient(session, this.credentials.apiId, this.credentials.apiHash, {
+        connectionRetries: 5,
+      });
+
+      await this.client.connect();
+
+      // Verify we are authorized (have a valid session)
+      const authorized = await this.client.isUserAuthorized();
+      if (!authorized) {
+        this.status = 'session_expired';
+        throw new Error('Telegram session is not authorized. Please re-authenticate.');
+      }
+
       this.status = 'connected';
     } catch (err) {
-      this.status = 'disconnected';
-      throw new MessengerError('telegram', err, 'Failed to connect to Telegram');
+      if (this.status !== 'session_expired') {
+        this.status = 'disconnected';
+      }
+      throw new MessengerError(
+        'telegram',
+        err,
+        err instanceof Error ? err.message : 'Failed to connect to Telegram',
+      );
     }
   }
 
   async disconnect(): Promise<void> {
     try {
-      // TODO: Call client.disconnect() when real client is implemented
+      if (this.client) {
+        await this.client.disconnect();
+        this.client = null;
+      }
       this.status = 'disconnected';
     } catch (err) {
       throw new MessengerError('telegram', err, 'Failed to disconnect from Telegram');
@@ -62,16 +147,19 @@ export class TelegramAdapter implements MessengerAdapter {
     this.ensureConnected();
 
     try {
-      // TODO: Real implementation would use:
-      // const dialogs = await this.client.getDialogs({});
-      // return dialogs.map(d => ({
-      //   externalChatId: d.id?.toString() ?? '',
-      //   name: d.title ?? d.name ?? 'Unknown',
-      //   chatType: d.isGroup ? 'group' : d.isChannel ? 'channel' : 'direct',
-      // }));
+      const dialogs = await this.client!.getDialogs({ limit: 500 });
 
-      // Return empty list — real data requires MTProto session
-      return [];
+      return dialogs.map((d) => {
+        let chatType = 'direct';
+        if (d.isGroup) chatType = 'group';
+        else if (d.isChannel) chatType = 'channel';
+
+        return {
+          externalChatId: d.id?.toString() ?? '',
+          name: d.title ?? d.name ?? 'Unknown',
+          chatType,
+        };
+      });
     } catch (err) {
       throw new MessengerError('telegram', err, 'Failed to list Telegram chats');
     }
@@ -85,15 +173,13 @@ export class TelegramAdapter implements MessengerAdapter {
     this.ensureConnected();
 
     try {
-      // TODO: Real implementation:
-      // const result = await this.client.sendMessage(externalChatId, {
-      //   message: text,
-      //   replyTo: options?.replyToExternalId ? parseInt(options.replyToExternalId) : undefined,
-      // });
-      // return { externalMessageId: result.id.toString() };
+      const peer = await this.resolvePeer(externalChatId);
+      const result = await this.client!.sendMessage(peer, {
+        message: text,
+        replyTo: options?.replyToExternalId ? parseInt(options.replyToExternalId, 10) : undefined,
+      });
 
-      // Stub — return placeholder
-      return { externalMessageId: `tg_stub_${Date.now()}` };
+      return { externalMessageId: result.id.toString() };
     } catch (err) {
       throw new MessengerError('telegram', err, 'Failed to send Telegram message');
     }
@@ -107,11 +193,11 @@ export class TelegramAdapter implements MessengerAdapter {
     this.ensureConnected();
 
     try {
-      // TODO: Real implementation:
-      // await this.client.editMessage(externalChatId, {
-      //   message: parseInt(externalMessageId),
-      //   text: newText,
-      // });
+      const peer = await this.resolvePeer(externalChatId);
+      await this.client!.editMessage(peer, {
+        message: parseInt(externalMessageId, 10),
+        text: newText,
+      });
     } catch (err) {
       throw new MessengerError('telegram', err, 'Failed to edit Telegram message');
     }
@@ -124,8 +210,10 @@ export class TelegramAdapter implements MessengerAdapter {
     this.ensureConnected();
 
     try {
-      // TODO: Real implementation:
-      // await this.client.deleteMessages(externalChatId, [parseInt(externalMessageId)], { revoke: true });
+      const peer = await this.resolvePeer(externalChatId);
+      await this.client!.deleteMessages(peer, [parseInt(externalMessageId, 10)], {
+        revoke: true,
+      });
     } catch (err) {
       throw new MessengerError('telegram', err, 'Failed to delete Telegram message');
     }
@@ -135,9 +223,36 @@ export class TelegramAdapter implements MessengerAdapter {
     return this.status;
   }
 
+  /** Get the underlying TelegramClient (for advanced operations). */
+  getClient(): TelegramClient | null {
+    return this.client;
+  }
+
   private ensureConnected(): void {
-    if (this.status !== 'connected') {
+    if (this.status !== 'connected' || !this.client) {
       throw new MessengerError('telegram', null, 'Telegram adapter is not connected');
     }
   }
+
+  /**
+   * Resolve a chat ID to a Telegram peer entity.
+   * Handles numeric IDs (users, groups, channels).
+   */
+  private async resolvePeer(externalChatId: string): Promise<Api.TypeEntityLike> {
+    const numId = parseInt(externalChatId, 10);
+    if (!isNaN(numId)) {
+      return numId;
+    }
+    // If it's a username or other string format, try to resolve it
+    return externalChatId;
+  }
+}
+
+// ─── Helper: create a fresh TelegramClient for auth flow ───
+
+export function createAuthClient(apiId: number, apiHash: string): TelegramClient {
+  const session = new StringSession('');
+  return new TelegramClient(session, apiId, apiHash, {
+    connectionRetries: 5,
+  });
 }
