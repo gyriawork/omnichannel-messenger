@@ -621,6 +621,211 @@ function IntegrationCard({
   );
 }
 
+// ---------- FAQ Data ----------
+
+interface FaqStep {
+  text: string;
+  link?: { url: string; label: string };
+}
+
+interface FaqItem {
+  messenger: MessengerType;
+  title: string;
+  abbr: string;
+  bgClass: string;
+  textClass: string;
+  steps: FaqStep[];
+}
+
+const faqItems: FaqItem[] = [
+  {
+    messenger: 'telegram',
+    title: 'How to connect Telegram',
+    abbr: 'TG',
+    bgClass: 'bg-messenger-tg-bg',
+    textClass: 'text-messenger-tg-text',
+    steps: [
+      {
+        text: 'Go to my.telegram.org and log in with your phone number.',
+        link: { url: 'https://my.telegram.org', label: 'my.telegram.org' },
+      },
+      { text: 'Select "API development tools".' },
+      { text: 'Fill in the form: App title (any name) and Short name (any, e.g. "omnichannel").' },
+      { text: 'Click "Create application". You will see your API ID (number) and API Hash (long string).' },
+      { text: 'Copy the API ID and API Hash.' },
+      { text: 'Go back to this page, click "Connect" on the Telegram card, and paste both values.' },
+      { text: 'After connecting, you will be asked to enter your phone number and a verification code from Telegram to authorize the session.' },
+    ],
+  },
+  {
+    messenger: 'slack',
+    title: 'How to connect Slack',
+    abbr: 'SL',
+    bgClass: 'bg-messenger-sl-bg',
+    textClass: 'text-messenger-sl-text',
+    steps: [
+      {
+        text: 'Go to api.slack.com/apps and click "Create New App".',
+        link: { url: 'https://api.slack.com/apps', label: 'api.slack.com/apps' },
+      },
+      { text: 'Choose "From scratch", enter an App name and select your workspace.' },
+      {
+        text: 'In the left sidebar, go to "OAuth & Permissions".',
+      },
+      {
+        text: 'Scroll down to "Bot Token Scopes" and add the following permissions: channels:history, channels:read, chat:write, groups:history, groups:read, im:history, im:read, im:write, mpim:history, mpim:read, users:read.',
+      },
+      { text: 'Scroll up and click "Install to Workspace", then click "Allow".' },
+      { text: 'Copy the "Bot User OAuth Token" (starts with xoxb-).' },
+      { text: 'Go back to this page, click "Connect" on the Slack card, and paste the Bot Token.' },
+    ],
+  },
+  {
+    messenger: 'whatsapp',
+    title: 'How to connect WhatsApp',
+    abbr: 'WA',
+    bgClass: 'bg-messenger-wa-bg',
+    textClass: 'text-messenger-wa-text',
+    steps: [
+      { text: 'Make sure WhatsApp is installed and active on your phone.' },
+      { text: 'Click "Connect" on the WhatsApp card on this page.' },
+      { text: 'A QR code will be displayed on screen.' },
+      { text: 'Open WhatsApp on your phone, go to Settings (or Menu) > Linked Devices > Link a Device.' },
+      { text: 'Point your phone camera at the QR code on this screen.' },
+      { text: 'Wait for the connection to be established. It may take a few seconds.' },
+      { text: 'Once linked, your WhatsApp chats will be available for import. The session stays active as long as your phone has internet access.' },
+    ],
+  },
+  {
+    messenger: 'gmail',
+    title: 'How to connect Gmail',
+    abbr: 'GM',
+    bgClass: 'bg-messenger-gm-bg',
+    textClass: 'text-messenger-gm-text',
+    steps: [
+      {
+        text: 'Go to the Google Cloud Console and create a new project (or select an existing one).',
+        link: { url: 'https://console.cloud.google.com/', label: 'console.cloud.google.com' },
+      },
+      { text: 'In the left menu, go to "APIs & Services" > "Library". Search for "Gmail API" and enable it.' },
+      { text: 'Go to "APIs & Services" > "Credentials". Click "Create Credentials" > "OAuth client ID".' },
+      { text: 'If prompted, configure the consent screen first: select "External", fill in the app name and your email.' },
+      { text: 'For application type, select "Web application". Add http://localhost as an authorized redirect URI. Click "Create".' },
+      { text: 'Copy the Client ID and Client Secret from the popup.' },
+      {
+        text: 'To get a Refresh Token, use the OAuth 2.0 Playground: go to developers.google.com/oauthplayground, click the gear icon, check "Use your own OAuth credentials", and paste your Client ID and Client Secret.',
+        link: { url: 'https://developers.google.com/oauthplayground', label: 'OAuth Playground' },
+      },
+      { text: 'In the left panel, select "Gmail API v1" > select all scopes (or at least gmail.modify and gmail.send). Click "Authorize APIs" and sign in.' },
+      { text: 'Click "Exchange authorization code for tokens". Copy the Refresh Token value.' },
+      { text: 'Go back to this page, click "Connect" on the Gmail card, and paste all three values: Client ID, Client Secret, and Refresh Token.' },
+    ],
+  },
+];
+
+// ---------- FAQ Section Component ----------
+
+function FaqSection() {
+  const [openItem, setOpenItem] = useState<MessengerType | null>(null);
+
+  return (
+    <div className="mt-10 space-y-4">
+      <div className="mb-2">
+        <h2 className="text-base font-semibold text-slate-900">
+          Frequently Asked Questions
+        </h2>
+        <p className="text-sm text-slate-500">
+          Step-by-step guides for connecting each messenger.
+        </p>
+      </div>
+
+      <div className="space-y-3">
+        {faqItems.map((item) => {
+          const isOpen = openItem === item.messenger;
+
+          return (
+            <div
+              key={item.messenger}
+              className="overflow-hidden rounded-lg bg-white shadow-xs transition-shadow hover:shadow-sm"
+            >
+              {/* Accordion header */}
+              <button
+                onClick={() => setOpenItem(isOpen ? null : item.messenger)}
+                className="flex w-full items-center gap-3 px-5 py-4 text-left transition-colors hover:bg-slate-50"
+              >
+                <div
+                  className={cn(
+                    'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold',
+                    item.bgClass,
+                    item.textClass,
+                  )}
+                >
+                  {item.abbr}
+                </div>
+                <span className="flex-1 text-sm font-medium text-slate-800">
+                  {item.title}
+                </span>
+                <svg
+                  className={cn(
+                    'h-4 w-4 shrink-0 text-slate-400 transition-transform duration-200',
+                    isOpen && 'rotate-180',
+                  )}
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+
+              {/* Accordion content */}
+              {isOpen && (
+                <div className="border-t border-slate-100 px-5 pb-5 pt-4">
+                  <ol className="space-y-3">
+                    {item.steps.map((step, idx) => (
+                      <li key={idx} className="flex gap-3">
+                        <span
+                          className={cn(
+                            'flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold',
+                            item.bgClass,
+                            item.textClass,
+                          )}
+                        >
+                          {idx + 1}
+                        </span>
+                        <div className="pt-0.5 text-sm leading-relaxed text-slate-600">
+                          {step.text}
+                          {step.link && (
+                            <>
+                              {' '}
+                              <a
+                                href={step.link.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 font-medium text-accent underline decoration-accent/30 underline-offset-2 transition-colors hover:text-accent-hover hover:decoration-accent"
+                              >
+                                {step.link.label}
+                                <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                </svg>
+                              </a>
+                            </>
+                          )}
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ---------- Main Component ----------
 
 export function IntegrationsTab() {
@@ -667,6 +872,9 @@ export function IntegrationsTab() {
           ))}
         </div>
       </div>
+
+      {/* FAQ Section */}
+      <FaqSection />
 
       {/* Connect modal */}
       {connectingMessenger && (
