@@ -11,6 +11,7 @@ import messageRoutes from './routes/messages.js';
 import chatRoutes from './routes/chats.js';
 import chatPreferenceRoutes from './routes/chat-preferences.js';
 import tagRoutes from './routes/tags.js';
+import integrationRoutes from './routes/integrations.js';
 import { createWebSocketServer } from './websocket/index.js';
 
 // ─── Create server ───
@@ -66,6 +67,7 @@ await fastify.register(messageRoutes, { prefix: '/api' });
 await fastify.register(chatRoutes, { prefix: '/api' });
 await fastify.register(chatPreferenceRoutes, { prefix: '/api' });
 await fastify.register(tagRoutes, { prefix: '/api' });
+await fastify.register(integrationRoutes, { prefix: '/api' });
 
 // Health check
 fastify.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));

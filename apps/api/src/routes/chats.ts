@@ -3,6 +3,9 @@ import { z } from 'zod';
 import prisma from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
 import { requireMinRole } from '../middleware/rbac.js';
+import { decryptCredentials } from '../lib/crypto.js';
+import { createAdapter } from '../integrations/factory.js';
+import { MessengerError } from '../integrations/base.js';
 
 // ─── Zod Schemas ───
 
@@ -187,8 +190,38 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
       }
 
       const { messenger } = paramsParsed.data;
+      const organizationId = getOrgId(request);
+      if (!organizationId) {
+        return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
+      }
 
-      // Phase 2: return mock data. Will be replaced with real messenger API calls in Phase 3.
+      // Look up active integration for this messenger + org
+      const integration = await prisma.integration.findFirst({
+        where: {
+          messenger,
+          organizationId,
+          status: 'connected',
+        },
+      });
+
+      if (integration) {
+        // Try to list chats via the adapter
+        try {
+          const credentials = decryptCredentials(integration.credentials as string);
+          const adapter = createAdapter(messenger, credentials);
+          await adapter.connect();
+          const chats = await adapter.listChats();
+          return reply.send({ chats });
+        } catch (err) {
+          // If adapter fails, log and fall through to mock data
+          fastify.log.warn(
+            { messenger, error: err instanceof MessengerError ? err.message : String(err) },
+            'Adapter listChats failed, falling back to mock data',
+          );
+        }
+      }
+
+      // Fallback: mock data when no integration is connected or adapter fails
       const mockChats: Record<string, Array<{ externalChatId: string; name: string; chatType: string }>> = {
         telegram: [
           { externalChatId: 'tg_001', name: 'Telegram Support Group', chatType: 'group' },
