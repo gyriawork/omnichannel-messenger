@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Save, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { useWorkspaceSettings, useUpdateWorkspace } from '@/hooks/useActivity';
 
 const timezones = [
   'UTC',
@@ -32,24 +33,51 @@ const languages = [
 ];
 
 export function WorkspaceTab() {
-  const [orgName, setOrgName] = useState('My Organization');
+  const { data: settings, isLoading } = useWorkspaceSettings();
+  const updateMutation = useUpdateWorkspace();
+
+  const [orgName, setOrgName] = useState('');
   const [timezone, setTimezone] = useState('UTC');
   const [language, setLanguage] = useState('en');
   const [chatVisibility, setChatVisibility] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
 
-  const handleSave = async () => {
-    setIsSaving(true);
-    // Placeholder: would call PATCH /api/organizations/:id
-    await new Promise((resolve) => setTimeout(resolve, 600));
-    setIsSaving(false);
-    toast.success('Workspace settings saved');
+  // Populate form when data loads
+  useEffect(() => {
+    if (settings) {
+      setOrgName(settings.organizationName || '');
+      setTimezone(settings.timezone || 'UTC');
+      setLanguage(settings.language || 'en');
+      setChatVisibility(settings.chatVisibility ?? true);
+    }
+  }, [settings]);
+
+  const handleSave = () => {
+    updateMutation.mutate(
+      {
+        organizationName: orgName,
+        timezone,
+        language,
+        chatVisibility,
+      },
+      {
+        onSuccess: () => toast.success('Workspace settings saved'),
+        onError: () => toast.error('Failed to save workspace settings'),
+      },
+    );
   };
 
   const inputClass = cn(
     'w-full rounded border-[1.5px] border-slate-200 px-3 py-2 text-sm transition-colors',
     'placeholder:text-slate-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15',
   );
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -148,10 +176,10 @@ export function WorkspaceTab() {
         <div className="mt-6 flex justify-end">
           <button
             onClick={handleSave}
-            disabled={isSaving}
+            disabled={updateMutation.isPending}
             className="flex items-center gap-2 rounded bg-accent px-5 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px disabled:opacity-50"
           >
-            {isSaving ? (
+            {updateMutation.isPending ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
               <Save className="h-4 w-4" />

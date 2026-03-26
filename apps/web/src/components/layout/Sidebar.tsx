@@ -6,6 +6,7 @@ import {
   MessageSquare,
   LayoutDashboard,
   Send,
+  FileText,
   Activity,
   Settings,
   LogOut,
@@ -17,6 +18,7 @@ const navItems = [
   { icon: MessageSquare, href: '/messenger', label: 'Messenger' },
   { icon: LayoutDashboard, href: '/', label: 'Dashboard' },
   { icon: Send, href: '/broadcast', label: 'Broadcast' },
+  { icon: FileText, href: '/templates', label: 'Templates' },
   { icon: Activity, href: '/activity', label: 'Activity Log' },
   { icon: Settings, href: '/settings', label: 'Settings' },
 ];

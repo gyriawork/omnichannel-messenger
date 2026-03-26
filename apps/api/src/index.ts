@@ -14,6 +14,9 @@ import tagRoutes from './routes/tags.js';
 import integrationRoutes from './routes/integrations.js';
 import broadcastRoutes from './routes/broadcasts.js';
 import settingsRoutes from './routes/settings.js';
+import templateRoutes from './routes/templates.js';
+import activityRoutes from './routes/activity.js';
+import workspaceRoutes from './routes/workspace-settings.js';
 import { createWebSocketServer } from './websocket/index.js';
 
 // ─── Create server ───
@@ -72,6 +75,9 @@ await fastify.register(tagRoutes, { prefix: '/api' });
 await fastify.register(integrationRoutes, { prefix: '/api' });
 await fastify.register(broadcastRoutes, { prefix: '/api' });
 await fastify.register(settingsRoutes, { prefix: '/api' });
+await fastify.register(templateRoutes, { prefix: '/api' });
+await fastify.register(activityRoutes, { prefix: '/api' });
+await fastify.register(workspaceRoutes, { prefix: '/api' });
 
 // Health check
 fastify.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));

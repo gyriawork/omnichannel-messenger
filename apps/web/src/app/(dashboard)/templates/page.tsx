@@ -1,0 +1,311 @@
+'use client';
+
+import { useState } from 'react';
+import {
+  Plus,
+  Search,
+  FileText,
+  Copy,
+  Trash2,
+  Pencil,
+  X,
+  Loader2,
+  Clock,
+  BarChart3,
+} from 'lucide-react';
+import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
+import {
+  useTemplates,
+  useCreateTemplate,
+  useUpdateTemplate,
+  useDeleteTemplate,
+  useDuplicateTemplate,
+} from '@/hooks/useTemplates';
+import type { Template } from '@/types/template';
+
+export default function TemplatesPage() {
+  const [search, setSearch] = useState('');
+  const [editingTemplate, setEditingTemplate] = useState<Template | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
+
+  const { data, isLoading } = useTemplates(search || undefined);
+  const createMutation = useCreateTemplate();
+  const updateMutation = useUpdateTemplate();
+  const deleteMutation = useDeleteTemplate();
+  const duplicateMutation = useDuplicateTemplate();
+
+  const templates = data?.templates || [];
+
+  function handleDuplicate(id: string) {
+    duplicateMutation.mutate(id, {
+      onSuccess: () => toast.success('Template duplicated'),
+      onError: () => toast.error('Failed to duplicate template'),
+    });
+  }
+
+  function handleDelete(id: string) {
+    deleteMutation.mutate(id, {
+      onSuccess: () => toast.success('Template deleted'),
+      onError: () => toast.error('Failed to delete template'),
+    });
+  }
+
+  return (
+    <div className="mx-auto max-w-4xl px-6 py-8">
+      {/* Header */}
+      <div className="mb-6 flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold text-slate-900">Templates</h1>
+          <p className="mt-1 text-sm text-slate-500">
+            Reusable message templates for broadcasts
+          </p>
+        </div>
+        <button
+          onClick={() => setIsCreating(true)}
+          className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white shadow-accent-sm transition-all hover:bg-accent-hover hover:-translate-y-px"
+        >
+          <Plus className="h-4 w-4" />
+          New Template
+        </button>
+      </div>
+
+      {/* Search */}
+      <div className="relative mb-6">
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+        <input
+          type="text"
+          placeholder="Search templates..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="w-full rounded-lg border-[1.5px] border-slate-200 bg-white py-2 pl-9 pr-4 text-sm text-slate-900 placeholder:text-slate-400 transition-shadow focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15"
+        />
+      </div>
+
+      {/* Create / Edit Modal */}
+      {(isCreating || editingTemplate) && (
+        <TemplateEditor
+          template={editingTemplate}
+          onSave={async (name, messageText) => {
+            if (editingTemplate) {
+              updateMutation.mutate(
+                { id: editingTemplate.id, name, messageText },
+                {
+                  onSuccess: () => {
+                    toast.success('Template updated');
+                    setEditingTemplate(null);
+                  },
+                  onError: () => toast.error('Failed to update template'),
+                },
+              );
+            } else {
+              createMutation.mutate(
+                { name, messageText },
+                {
+                  onSuccess: () => {
+                    toast.success('Template created');
+                    setIsCreating(false);
+                  },
+                  onError: () => toast.error('Failed to create template'),
+                },
+              );
+            }
+          }}
+          onCancel={() => {
+            setIsCreating(false);
+            setEditingTemplate(null);
+          }}
+          isSaving={createMutation.isPending || updateMutation.isPending}
+        />
+      )}
+
+      {/* Template grid */}
+      {isLoading ? (
+        <div className="flex items-center justify-center py-20">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+        </div>
+      ) : templates.length === 0 ? (
+        <EmptyState onCreateClick={() => setIsCreating(true)} />
+      ) : (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {templates.map((template) => (
+            <div
+              key={template.id}
+              className="group rounded-xl bg-white p-5 shadow-xs transition-shadow hover:shadow-sm"
+            >
+              {/* Name */}
+              <div className="mb-2 flex items-start justify-between">
+                <h3 className="truncate text-sm font-semibold text-slate-900">
+                  {template.name}
+                </h3>
+                {/* Actions */}
+                <div className="ml-2 flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                  <button
+                    onClick={() => setEditingTemplate(template)}
+                    title="Edit"
+                    className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    onClick={() => handleDuplicate(template.id)}
+                    title="Duplicate"
+                    className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    onClick={() => handleDelete(template.id)}
+                    title="Delete"
+                    className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-500"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Message preview */}
+              <p className="mb-3 line-clamp-3 text-sm leading-relaxed text-slate-500">
+                {template.messageText}
+              </p>
+
+              {/* Meta */}
+              <div className="flex flex-wrap items-center gap-3 border-t border-slate-50 pt-3">
+                <span className="inline-flex items-center gap-1 text-xs text-slate-400">
+                  <BarChart3 className="h-3 w-3" />
+                  Used {template.usageCount} times
+                </span>
+                {template.createdByName && (
+                  <span className="text-xs text-slate-400">
+                    by {template.createdByName}
+                  </span>
+                )}
+              </div>
+              <p className="mt-1 text-[10px] text-slate-300">
+                Updated{' '}
+                {new Date(template.updatedAt).toLocaleDateString('en-US', {
+                  month: 'short',
+                  day: 'numeric',
+                  year: 'numeric',
+                })}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TemplateEditor({
+  template,
+  onSave,
+  onCancel,
+  isSaving,
+}: {
+  template: Template | null;
+  onSave: (name: string, messageText: string) => void;
+  onCancel: () => void;
+  isSaving: boolean;
+}) {
+  const [name, setName] = useState(template?.name || '');
+  const [messageText, setMessageText] = useState(template?.messageText || '');
+
+  const isValid = name.trim().length > 0 && messageText.trim().length > 0;
+  const charCount = messageText.length;
+
+  return (
+    <div className="mb-6 rounded-xl border border-slate-200 bg-white p-5 shadow-xs">
+      <div className="mb-4 flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-slate-900">
+          {template ? 'Edit Template' : 'New Template'}
+        </h3>
+        <button
+          onClick={onCancel}
+          className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+
+      <div className="space-y-4">
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-slate-700">
+            Template Name
+          </label>
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g., Welcome Message"
+            className="w-full rounded-lg border-[1.5px] border-slate-200 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 transition-colors focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15"
+          />
+        </div>
+
+        <div>
+          <div className="mb-1.5 flex items-center justify-between">
+            <label className="text-sm font-medium text-slate-700">
+              Message Text
+            </label>
+            <span
+              className={cn(
+                'text-xs',
+                charCount > 4000 ? 'text-red-500' : 'text-slate-400',
+              )}
+            >
+              {charCount} characters
+            </span>
+          </div>
+          <textarea
+            value={messageText}
+            onChange={(e) => setMessageText(e.target.value)}
+            placeholder="Type your template message..."
+            rows={5}
+            className="w-full resize-none rounded-lg border-[1.5px] border-slate-200 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 transition-colors focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15"
+          />
+        </div>
+
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={onCancel}
+            className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => onSave(name.trim(), messageText.trim())}
+            disabled={!isValid || isSaving}
+            className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover disabled:opacity-50"
+          >
+            {isSaving && <Loader2 className="h-4 w-4 animate-spin" />}
+            {template ? 'Save Changes' : 'Create Template'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EmptyState({ onCreateClick }: { onCreateClick: () => void }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-20 text-center">
+      <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-slate-100">
+        <FileText className="h-7 w-7 text-slate-300" />
+      </div>
+      <h3 className="text-sm font-semibold text-slate-700">
+        No templates yet
+      </h3>
+      <p className="mt-1 max-w-xs text-sm text-slate-400">
+        Create reusable message templates to speed up your broadcasts and
+        maintain consistency.
+      </p>
+      <button
+        onClick={onCreateClick}
+        className="mt-4 flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white shadow-accent-sm transition-all hover:bg-accent-hover hover:-translate-y-px"
+      >
+        <Plus className="h-4 w-4" />
+        Create First Template
+      </button>
+    </div>
+  );
+}
