@@ -6,17 +6,40 @@ import { encryptCredentials, decryptCredentials } from '../lib/crypto.js';
 import { authenticate } from '../middleware/auth.js';
 import { createAdapter } from '../integrations/factory.js';
 import { MessengerError } from '../integrations/base.js';
-import {
-  createAuthClient,
-  storePendingAuth,
-  getPendingAuth,
-  removePendingAuth,
-  TelegramAdapter,
-} from '../integrations/telegram.js';
-import { StringSession } from 'telegram/sessions/index.js';
-import { Api } from 'telegram';
-import { computeCheck } from 'telegram/Password.js';
-import { startWhatsAppPairing, cancelPairing } from '../integrations/whatsapp.js';
+// These imports may fail on some environments if native deps are missing
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let createAuthClient: any, storePendingAuth: any, getPendingAuth: any, removePendingAuth: any, TelegramAdapter: any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let StringSession: any, Api: any, computeCheck: any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let startWhatsAppPairing: any, cancelPairing: any;
+
+try {
+  const tgMod = await import('../integrations/telegram.js');
+  createAuthClient = tgMod.createAuthClient;
+  storePendingAuth = tgMod.storePendingAuth;
+  getPendingAuth = tgMod.getPendingAuth;
+  removePendingAuth = tgMod.removePendingAuth;
+  TelegramAdapter = tgMod.TelegramAdapter;
+
+  const sessions = await import('telegram/sessions/index.js');
+  StringSession = sessions.StringSession;
+  const apiMod = await import('telegram');
+  Api = apiMod.Api;
+  const pwMod = await import('telegram/Password.js');
+  computeCheck = pwMod.computeCheck;
+} catch (e) {
+  console.warn('Telegram integration unavailable:', (e as Error).message);
+}
+
+try {
+  const waMod = await import('../integrations/whatsapp.js');
+  startWhatsAppPairing = waMod.startWhatsAppPairing;
+  cancelPairing = waMod.cancelPairing;
+} catch (e) {
+  console.warn('WhatsApp integration unavailable:', (e as Error).message);
+}
+
 import { getIO } from '../websocket/index.js';
 
 // ─── Zod Schemas ───
@@ -494,7 +517,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
         }
 
         // Auth succeeded — extract session string
-        const sessionString = (client.session as StringSession).save();
+        const sessionString = (client.session as typeof StringSession.prototype).save();
 
         // Clean up pending auth
         removePendingAuth(request.user.id, phoneNumber);
