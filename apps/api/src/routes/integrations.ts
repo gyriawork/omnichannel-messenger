@@ -269,12 +269,11 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
         );
       }
 
-      // Attempt graceful disconnect via adapter
+      // Graceful disconnect is best-effort — don't block on adapter failures
       try {
         const credentials = decryptCredentials(integration.credentials as string);
         const adapter = createAdapter(messenger, credentials);
-        await adapter.connect();
-        await adapter.disconnect();
+        await adapter.disconnect().catch(() => {});
       } catch {
         // Disconnect failures are not critical — we still mark as disconnected
       }
