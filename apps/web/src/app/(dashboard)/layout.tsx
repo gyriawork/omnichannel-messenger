@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { useAuthStore } from '@/stores/auth';
+import { useSocket } from '@/hooks/useSocket';
 
 export default function DashboardLayout({
   children,
@@ -31,6 +32,8 @@ export default function DashboardLayout({
       router.replace('/login');
     }
   }, [isLoading, isAuthenticated, router]);
+
+  useSocket(); // Initialize WebSocket connection
 
   if (isLoading) {
     return (

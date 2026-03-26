@@ -93,11 +93,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   refreshToken: async () => {
     try {
+      // Send localStorage token as body fallback; cookie takes priority on server
+      const storedRefreshToken = localStorage.getItem('refreshToken');
+      const body = storedRefreshToken ? { refreshToken: storedRefreshToken } : undefined;
       const data = await api.post<{
         accessToken: string;
         refreshToken: string;
         user: User;
-      }>('/api/auth/refresh');
+      }>('/api/auth/refresh', body);
 
       setAccessToken(data.accessToken);
       localStorage.setItem('user', JSON.stringify(data.user));

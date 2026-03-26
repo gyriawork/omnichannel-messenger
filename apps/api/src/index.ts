@@ -18,6 +18,9 @@ import templateRoutes from './routes/templates.js';
 import activityRoutes from './routes/activity.js';
 import workspaceRoutes from './routes/workspace-settings.js';
 import { createWebSocketServer } from './websocket/index.js';
+import { validateEnv } from './lib/env.js';
+
+const env = validateEnv();
 
 // ─── Create server ───
 

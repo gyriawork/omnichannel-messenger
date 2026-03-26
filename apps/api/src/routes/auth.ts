@@ -72,12 +72,28 @@ const loginSchema = z.object({
 });
 
 const refreshSchema = z.object({
-  refreshToken: z.string().min(1, 'Refresh token is required'),
+  refreshToken: z.string().min(1).optional(),
 });
 
 const logoutSchema = z.object({
-  refreshToken: z.string().min(1, 'Refresh token is required'),
+  refreshToken: z.string().min(1).optional(),
 });
+
+// ─── Cookie helper ───
+
+function setRefreshTokenCookie(reply: FastifyReply, token: string): void {
+  reply.setCookie('refreshToken', token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/api/auth',
+    maxAge: REFRESH_TOKEN_EXPIRY_SECONDS,
+  });
+}
+
+function clearRefreshTokenCookie(reply: FastifyReply): void {
+  reply.clearCookie('refreshToken', { path: '/api/auth' });
+}
 
 // ─── Helpers ───
 
@@ -158,6 +174,8 @@ export default async function authRoutes(fastify: FastifyInstance): Promise<void
       const refreshToken = generateRefreshToken();
       await storeRefreshToken(user.id, refreshToken);
 
+      setRefreshTokenCookie(reply, refreshToken);
+
       return reply.status(201).send({
         accessToken,
         refreshToken,
@@ -225,6 +243,8 @@ export default async function authRoutes(fastify: FastifyInstance): Promise<void
       const refreshToken = generateRefreshToken();
       await storeRefreshToken(user.id, refreshToken);
 
+      setRefreshTokenCookie(reply, refreshToken);
+
       return reply.status(200).send({
         accessToken,
         refreshToken,
@@ -238,13 +258,22 @@ export default async function authRoutes(fastify: FastifyInstance): Promise<void
   fastify.post(
     '/refresh',
     async (request: FastifyRequest, reply: FastifyReply) => {
-      const parsed = refreshSchema.safeParse(request.body);
-      if (!parsed.success) {
-        const firstError = parsed.error.errors[0]?.message ?? 'Invalid input';
-        return validationError(reply, firstError);
-      }
+      const parsed = refreshSchema.safeParse(request.body ?? {});
 
-      const { refreshToken } = parsed.data;
+      // Cookie takes priority, then body fallback
+      const refreshToken =
+        (request.cookies as Record<string, string | undefined>)?.refreshToken ??
+        parsed.data?.refreshToken;
+
+      if (!refreshToken) {
+        return reply.status(401).send({
+          error: {
+            code: 'AUTH_TOKEN_EXPIRED',
+            message: 'Refresh token is required',
+            statusCode: 401,
+          },
+        });
+      }
 
       // Find stored token
       const storedToken = await prisma.refreshToken.findUnique({
@@ -287,16 +316,19 @@ export default async function authRoutes(fastify: FastifyInstance): Promise<void
   fastify.post(
     '/logout',
     async (request: FastifyRequest, reply: FastifyReply) => {
-      const parsed = logoutSchema.safeParse(request.body);
-      if (!parsed.success) {
-        const firstError = parsed.error.errors[0]?.message ?? 'Invalid input';
-        return validationError(reply, firstError);
+      const parsed = logoutSchema.safeParse(request.body ?? {});
+
+      // Cookie takes priority, then body fallback
+      const refreshToken =
+        (request.cookies as Record<string, string | undefined>)?.refreshToken ??
+        parsed.data?.refreshToken;
+
+      if (refreshToken) {
+        // Delete refresh token (ignore if not found -- idempotent)
+        await prisma.refreshToken.deleteMany({ where: { token: refreshToken } });
       }
 
-      const { refreshToken } = parsed.data;
-
-      // Delete refresh token (ignore if not found -- idempotent)
-      await prisma.refreshToken.deleteMany({ where: { token: refreshToken } });
+      clearRefreshTokenCookie(reply);
 
       return reply.status(200).send({ success: true });
     },
