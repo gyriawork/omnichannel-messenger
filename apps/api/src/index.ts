@@ -40,7 +40,14 @@ const fastify = Fastify({
 // ─── Plugins ───
 
 await fastify.register(cors, {
-  origin: process.env.APP_URL ?? 'http://localhost:3000',
+  origin: (origin, cb) => {
+    const appUrl = process.env.APP_URL ?? 'http://localhost:3000';
+    if (!origin || origin === appUrl || origin.endsWith('--omnichannel-messenger.netlify.app') || origin === 'http://localhost:3000') {
+      cb(null, true);
+    } else {
+      cb(null, false);
+    }
+  },
   credentials: true,
 });
 
