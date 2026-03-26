@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
+    "postinstall": "prisma generate",
     "build": "tsc",
     "start": "node dist/index.js",
     "test": "vitest run"
@@ -19,7 +20,11 @@
     "@whiskeysockets/baileys": "^6.7.0",
     "googleapis": "^140.0.0",
     "@aws-sdk/client-s3": "^3.600.0",
-    "pino": "^9.0.0"
+    "pino": "^9.0.0",
+    "prisma": "^5.15.0"
+  },
+  "prisma": {
+    "schema": "../api/prisma/schema.prisma"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
