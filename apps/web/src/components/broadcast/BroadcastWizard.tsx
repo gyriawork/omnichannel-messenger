@@ -27,6 +27,7 @@ import {
   useBroadcast,
   useSendBroadcast,
 } from '@/hooks/useBroadcasts';
+import { useTemplates, useTemplateUse } from '@/hooks/useTemplates';
 import type { MessengerType } from '@/types/chat';
 
 const messengerMeta: Record<
@@ -85,9 +86,13 @@ export function BroadcastWizard() {
 
   const { data: existingBroadcast } = useBroadcast(editId || undefined);
   const { data: chatsData } = useChats();
+  const { data: templatesData } = useTemplates();
+  const templateUseMutation = useTemplateUse();
   const createMutation = useCreateBroadcast();
   const updateMutation = useUpdateBroadcast();
   const sendMutation = useSendBroadcast();
+
+  const templates = templatesData?.templates || [];
 
   const allChats = chatsData?.chats || [];
 
@@ -372,7 +377,7 @@ export function BroadcastWizard() {
               </div>
             </div>
 
-            {/* Template selector placeholder */}
+            {/* Template selector */}
             <div>
               <label className="mb-1.5 block text-sm font-medium text-slate-700">
                 Template (optional)
@@ -380,11 +385,23 @@ export function BroadcastWizard() {
               <select
                 className="w-full rounded-lg border-[1.5px] border-slate-200 bg-white px-3 py-2 text-sm text-slate-500 transition-shadow focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15"
                 defaultValue=""
+                onChange={(e) => {
+                  const templateId = e.target.value;
+                  if (!templateId) return;
+                  const template = templates.find((t) => t.id === templateId);
+                  if (template) {
+                    setValue('messageText', template.messageText, { shouldValidate: true });
+                    templateUseMutation.mutate(templateId);
+                    toast.success(`Template "${template.name}" applied`);
+                  }
+                }}
               >
                 <option value="">No template</option>
-                <option value="__placeholder" disabled>
-                  Templates coming soon...
-                </option>
+                {templates.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
               </select>
             </div>
           </div>

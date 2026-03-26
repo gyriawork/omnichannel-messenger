@@ -127,6 +127,90 @@ export function useImportChats() {
   });
 }
 
+export function useEditMessage() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ messageId, text }: { messageId: string; text: string }) =>
+      api.patch(`/api/messages/${messageId}`, { text }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['messages'] });
+    },
+  });
+}
+
+export function useDeleteMessage() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (messageId: string) => api.delete(`/api/messages/${messageId}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['messages'] });
+    },
+  });
+}
+
+export function usePinMessage() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      messageId,
+      isPinned,
+    }: {
+      messageId: string;
+      isPinned: boolean;
+    }) => api.patch(`/api/messages/${messageId}/pin`, { isPinned }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['messages'] });
+    },
+  });
+}
+
+export function useSearchMessages(chatId: string | undefined, query: string) {
+  return useQuery({
+    queryKey: ['messages-search', chatId, query],
+    queryFn: () =>
+      api.get<{ messages: Message[] }>(
+        `/api/chats/${chatId}/messages/search?q=${encodeURIComponent(query)}&limit=20`,
+      ),
+    enabled: !!chatId && query.length >= 2,
+  });
+}
+
+export function useDeleteChat() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (chatId: string) => api.delete(`/api/chats/${chatId}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['chats'] });
+    },
+  });
+}
+
+export function useUpdateChat() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      chatId,
+      ...data
+    }: {
+      chatId: string;
+      ownerId?: string;
+      status?: string;
+      tags?: string[];
+    }) => api.patch(`/api/chats/${chatId}`, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['chats'] });
+      queryClient.invalidateQueries({ queryKey: ['chat'] });
+    },
+  });
+}
+
+export function useTags() {
+  return useQuery({
+    queryKey: ['tags'],
+    queryFn: () => api.get<{ tags: Array<{ id: string; name: string; color: string }> }>('/api/tags'),
+  });
+}
+
 export function useChatPreferences() {
   const queryClient = useQueryClient();
 
@@ -150,5 +234,29 @@ export function useChatPreferences() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['chats'] });
     },
+  });
+}
+
+export function useBulkAssignChats() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { chatIds: string[]; ownerId: string }) => api.post('/api/chats/bulk/assign', data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['chats'] }),
+  });
+}
+
+export function useBulkTagChats() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { chatIds: string[]; tagId: string; action: 'add' | 'remove' }) => api.post('/api/chats/bulk/tag', data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['chats'] }),
+  });
+}
+
+export function useBulkDeleteChats() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (chatIds: string[]) => api.post('/api/chats/bulk', { chatIds }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['chats'] }),
   });
 }

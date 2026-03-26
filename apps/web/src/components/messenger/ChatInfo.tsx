@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useCallback } from 'react';
 import {
   X,
   Pin,
@@ -12,10 +13,18 @@ import {
   Tag,
   User,
   Megaphone,
+  Plus,
+  Check,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { useChatStore } from '@/stores/chat';
-import { useChatPreferences } from '@/hooks/useChats';
+import {
+  useChatPreferences,
+  useDeleteChat,
+  useUpdateChat,
+  useTags,
+} from '@/hooks/useChats';
 import type { Chat, MessengerType } from '@/types/chat';
 
 function getMessengerDotColor(messenger: MessengerType): string {
@@ -103,21 +112,99 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 
 export function ChatInfo() {
   const activeChat = useChatStore((s) => s.activeChat);
+  const setActiveChat = useChatStore((s) => s.setActiveChat);
   const infoPanelOpen = useChatStore((s) => s.infoPanelOpen);
   const setInfoPanelOpen = useChatStore((s) => s.setInfoPanelOpen);
   const { mutate: updatePreferences } = useChatPreferences();
+  const { mutate: deleteChat, isPending: isDeleting } = useDeleteChat();
+  const { mutate: updateChat } = useUpdateChat();
+  const { data: tagsData } = useTags();
+
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isEditingOwner, setIsEditingOwner] = useState(false);
+  const [ownerInput, setOwnerInput] = useState('');
+  const [showAddTag, setShowAddTag] = useState(false);
 
   if (!activeChat || !infoPanelOpen) return null;
 
   const chat = activeChat;
   const prefs = chat.preferences;
   const ChatTypeIcon = getChatTypeIcon(chat.chatType);
+  const availableTags = tagsData?.tags ?? [];
+  const chatTagIds = new Set(chat.tags?.map((t) => t.id) ?? []);
+  const unassignedTags = availableTags.filter((t) => !chatTagIds.has(t.id));
 
   const togglePref = (key: 'pinned' | 'favorite' | 'muted') => {
     updatePreferences({
       chatId: chat.id,
       preferences: { [key]: !prefs?.[key] },
     });
+  };
+
+  const handleDeleteChat = () => {
+    deleteChat(chat.id, {
+      onSuccess: () => {
+        setActiveChat(null);
+        setInfoPanelOpen(false);
+        setShowDeleteConfirm(false);
+        toast.success('Chat deleted');
+      },
+      onError: () => toast.error('Failed to delete chat'),
+    });
+  };
+
+  const handleSaveOwner = () => {
+    const trimmed = ownerInput.trim();
+    if (!trimmed) {
+      setIsEditingOwner(false);
+      return;
+    }
+    updateChat(
+      { chatId: chat.id, ownerId: trimmed },
+      {
+        onSuccess: () => {
+          setIsEditingOwner(false);
+          toast.success('Owner updated');
+        },
+        onError: () => toast.error('Failed to update owner'),
+      },
+    );
+  };
+
+  const handleToggleStatus = () => {
+    const newStatus = chat.status === 'active' ? 'read-only' : 'active';
+    updateChat(
+      { chatId: chat.id, status: newStatus },
+      {
+        onSuccess: () => toast.success(`Status changed to ${newStatus}`),
+        onError: () => toast.error('Failed to update status'),
+      },
+    );
+  };
+
+  const handleRemoveTag = (tagId: string) => {
+    const currentTagIds = chat.tags?.map((t) => t.id).filter((id) => id !== tagId) ?? [];
+    updateChat(
+      { chatId: chat.id, tags: currentTagIds },
+      {
+        onSuccess: () => toast.success('Tag removed'),
+        onError: () => toast.error('Failed to remove tag'),
+      },
+    );
+  };
+
+  const handleAddTag = (tagId: string) => {
+    const currentTagIds = chat.tags?.map((t) => t.id) ?? [];
+    updateChat(
+      { chatId: chat.id, tags: [...currentTagIds, tagId] },
+      {
+        onSuccess: () => {
+          setShowAddTag(false);
+          toast.success('Tag added');
+        },
+        onError: () => toast.error('Failed to add tag'),
+      },
+    );
   };
 
   return (
@@ -171,14 +258,73 @@ export function ChatInfo() {
             <span>{getChatTypeLabel(chat.chatType)}</span>
           </div>
 
-          {chat.ownerName && (
-            <p className="mt-1 text-xs text-slate-400">
-              Assigned to{' '}
-              <span className="font-medium text-slate-600">
-                {chat.ownerName}
-              </span>
-            </p>
-          )}
+          {/* Owner (editable) */}
+          <div className="mt-2 w-full">
+            {isEditingOwner ? (
+              <div className="flex items-center gap-1.5">
+                <input
+                  value={ownerInput}
+                  onChange={(e) => setOwnerInput(e.target.value)}
+                  placeholder="Enter user ID..."
+                  className="flex-1 rounded border border-slate-200 px-2 py-1 text-xs text-slate-700 outline-none focus:border-accent"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleSaveOwner();
+                    if (e.key === 'Escape') setIsEditingOwner(false);
+                  }}
+                  autoFocus
+                />
+                <button
+                  onClick={handleSaveOwner}
+                  className="flex h-6 w-6 items-center justify-center rounded bg-accent text-white hover:bg-accent-hover"
+                >
+                  <Check className="h-3 w-3" />
+                </button>
+                <button
+                  onClick={() => setIsEditingOwner(false)}
+                  className="flex h-6 w-6 items-center justify-center rounded bg-slate-100 text-slate-500 hover:bg-slate-200"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => {
+                  setOwnerInput(chat.ownerId ?? '');
+                  setIsEditingOwner(true);
+                }}
+                className="w-full text-center text-xs text-slate-400 hover:text-accent"
+              >
+                {chat.ownerName ? (
+                  <>
+                    Assigned to{' '}
+                    <span className="font-medium text-slate-600">
+                      {chat.ownerName}
+                    </span>{' '}
+                    (click to change)
+                  </>
+                ) : (
+                  'Click to assign owner'
+                )}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Status toggle */}
+        <div className="border-b border-slate-100 p-4">
+          <SectionTitle>Status</SectionTitle>
+          <button
+            onClick={handleToggleStatus}
+            className={cn(
+              'flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-xs font-medium transition-colors',
+              chat.status === 'active'
+                ? 'bg-green-50 text-green-700'
+                : 'bg-slate-100 text-slate-500',
+            )}
+          >
+            <span>{chat.status === 'active' ? 'Active' : 'Read-only'}</span>
+            <span className="text-[10px] opacity-70">Click to toggle</span>
+          </button>
         </div>
 
         {/* Quick actions */}
@@ -233,7 +379,7 @@ export function ChatInfo() {
           </div>
         </div>
 
-        {/* Tags */}
+        {/* Tags (editable) */}
         <div className="border-b border-slate-100 p-4">
           <SectionTitle>Tags</SectionTitle>
           {chat.tags && chat.tags.length > 0 ? (
@@ -241,7 +387,7 @@ export function ChatInfo() {
               {chat.tags.map((tag) => (
                 <span
                   key={tag.id}
-                  className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium"
+                  className="group/tag inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium"
                   style={{
                     backgroundColor: `${tag.color}15`,
                     color: tag.color,
@@ -249,11 +395,55 @@ export function ChatInfo() {
                 >
                   <Tag className="h-3 w-3" />
                   {tag.name}
+                  <button
+                    onClick={() => handleRemoveTag(tag.id)}
+                    className="ml-0.5 hidden rounded-full p-0.5 opacity-70 transition-opacity hover:opacity-100 group-hover/tag:inline-flex"
+                    title="Remove tag"
+                  >
+                    <X className="h-2.5 w-2.5" />
+                  </button>
                 </span>
               ))}
             </div>
           ) : (
             <p className="text-xs text-slate-400">No tags assigned</p>
+          )}
+
+          {/* Add tag */}
+          {showAddTag ? (
+            <div className="mt-2 space-y-1">
+              {unassignedTags.length === 0 ? (
+                <p className="text-xs text-slate-400">No more tags available</p>
+              ) : (
+                unassignedTags.map((tag) => (
+                  <button
+                    key={tag.id}
+                    onClick={() => handleAddTag(tag.id)}
+                    className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-slate-600 transition-colors hover:bg-slate-50"
+                  >
+                    <span
+                      className="h-2.5 w-2.5 rounded-full"
+                      style={{ backgroundColor: tag.color }}
+                    />
+                    {tag.name}
+                  </button>
+                ))
+              )}
+              <button
+                onClick={() => setShowAddTag(false)}
+                className="mt-1 text-xs text-slate-400 hover:text-slate-600"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowAddTag(true)}
+              className="mt-2 flex items-center gap-1 text-xs text-accent hover:text-accent-hover"
+            >
+              <Plus className="h-3 w-3" />
+              Add tag
+            </button>
           )}
         </div>
 
@@ -279,10 +469,37 @@ export function ChatInfo() {
 
         {/* Danger zone */}
         <div className="p-4">
-          <button className="flex w-full items-center justify-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-xs font-medium text-red-600 transition-colors hover:bg-red-100">
-            <Trash2 className="h-4 w-4" />
-            Delete Chat
-          </button>
+          {showDeleteConfirm ? (
+            <div className="space-y-2 rounded-lg border border-red-200 bg-red-50 p-3">
+              <p className="text-xs font-medium text-red-700">
+                Are you sure you want to delete this chat? This action cannot be
+                undone.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleDeleteChat}
+                  disabled={isDeleting}
+                  className="flex-1 rounded-lg bg-red-600 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50"
+                >
+                  {isDeleting ? 'Deleting...' : 'Yes, Delete'}
+                </button>
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="flex-1 rounded-lg bg-white px-3 py-2 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-100"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowDeleteConfirm(true)}
+              className="flex w-full items-center justify-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-xs font-medium text-red-600 transition-colors hover:bg-red-100"
+            >
+              <Trash2 className="h-4 w-4" />
+              Delete Chat
+            </button>
+          )}
         </div>
       </div>
     </div>

@@ -64,3 +64,12 @@ export function useReconnectIntegration() {
     },
   });
 }
+
+export function useUpdateIntegrationSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ messenger, settings }: { messenger: string; settings: Record<string, unknown> }) =>
+      api.patch(`/api/integrations/${messenger}/settings`, { settings }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['integrations'] }),
+  });
+}

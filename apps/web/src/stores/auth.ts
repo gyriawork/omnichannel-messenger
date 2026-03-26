@@ -18,9 +18,10 @@ interface AuthState {
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, name: string) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
   refreshToken: () => Promise<boolean>;
   hydrate: () => void;
+  fetchMe: () => Promise<void>;
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
@@ -32,11 +33,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   login: async (email: string, password: string) => {
     const data = await api.post<{
       accessToken: string;
+      refreshToken: string;
       user: User;
     }>('/api/auth/login', { email, password });
 
     setAccessToken(data.accessToken);
     localStorage.setItem('user', JSON.stringify(data.user));
+    if (data.refreshToken) {
+      localStorage.setItem('refreshToken', data.refreshToken);
+    }
 
     set({
       user: data.user,
@@ -48,11 +53,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   register: async (email: string, password: string, name: string) => {
     const data = await api.post<{
       accessToken: string;
+      refreshToken: string;
       user: User;
     }>('/api/auth/register', { email, password, name });
 
     setAccessToken(data.accessToken);
     localStorage.setItem('user', JSON.stringify(data.user));
+    if (data.refreshToken) {
+      localStorage.setItem('refreshToken', data.refreshToken);
+    }
 
     set({
       user: data.user,
@@ -61,9 +70,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     });
   },
 
-  logout: () => {
+  logout: async () => {
+    try {
+      const storedRefreshToken = localStorage.getItem('refreshToken');
+      if (storedRefreshToken) {
+        await api.post('/api/auth/logout', { refreshToken: storedRefreshToken });
+      }
+    } catch {
+      // Silently ignore errors — logout should always succeed client-side
+    }
+
     clearTokens();
     localStorage.removeItem('user');
+    localStorage.removeItem('refreshToken');
     set({
       user: null,
       accessToken: null,
@@ -76,11 +95,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       const data = await api.post<{
         accessToken: string;
+        refreshToken: string;
         user: User;
       }>('/api/auth/refresh');
 
       setAccessToken(data.accessToken);
       localStorage.setItem('user', JSON.stringify(data.user));
+      if (data.refreshToken) {
+        localStorage.setItem('refreshToken', data.refreshToken);
+      }
 
       set({
         user: data.user,
@@ -91,6 +114,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     } catch {
       get().logout();
       return false;
+    }
+  },
+
+  fetchMe: async () => {
+    try {
+      const user = await api.get<User>('/api/users/me');
+      localStorage.setItem('user', JSON.stringify(user));
+      set({ user });
+    } catch {
+      // Silently ignore — stale user data is acceptable as fallback
     }
   },
 

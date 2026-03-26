@@ -20,7 +20,8 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import { useChats } from '@/hooks/useChats';
+import { useChats, useBulkDeleteChats, useBulkAssignChats, useBulkTagChats } from '@/hooks/useChats';
+import { useTags } from '@/hooks/useTags';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { ImportChatsModal } from '@/components/messenger/ImportChatsModal';
@@ -44,6 +45,119 @@ const chatTypeIcons: Record<string, typeof MessageSquare> = {
   channel: Hash,
 };
 
+// ─── Assign Owner Dropdown ───
+
+function AssignOwnerDropdown({
+  selectedIds,
+  onDone,
+}: {
+  selectedIds: string[];
+  onDone: () => void;
+}) {
+  const [ownerInput, setOwnerInput] = useState('');
+  const assignMutation = useBulkAssignChats();
+
+  const handleAssign = () => {
+    const trimmed = ownerInput.trim();
+    if (!trimmed) {
+      toast.error('Please enter an owner ID');
+      return;
+    }
+    assignMutation.mutate(
+      { chatIds: selectedIds, ownerId: trimmed },
+      {
+        onSuccess: () => {
+          toast.success(`Owner assigned to ${selectedIds.length} chat(s)`);
+          onDone();
+        },
+        onError: () => toast.error('Failed to assign owner'),
+      },
+    );
+  };
+
+  return (
+    <>
+      <div className="fixed inset-0 z-10" onClick={onDone} />
+      <div className="absolute left-0 top-full z-20 mt-1 w-64 rounded-lg border border-slate-200 bg-white p-3 shadow-lg">
+        <p className="mb-2 text-xs font-medium text-slate-600">Assign owner by ID</p>
+        <input
+          value={ownerInput}
+          onChange={(e) => setOwnerInput(e.target.value)}
+          placeholder="Enter user ID..."
+          autoFocus
+          className="mb-2 w-full rounded border-[1.5px] border-slate-200 px-2.5 py-1.5 text-xs transition-colors placeholder:text-slate-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15"
+        />
+        <button
+          onClick={handleAssign}
+          disabled={assignMutation.isPending || !ownerInput.trim()}
+          className="flex w-full items-center justify-center gap-1.5 rounded bg-accent px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-accent-hover disabled:opacity-50"
+        >
+          {assignMutation.isPending ? (
+            <Loader2 className="h-3 w-3 animate-spin" />
+          ) : (
+            <UserCheck className="h-3 w-3" />
+          )}
+          Assign
+        </button>
+      </div>
+    </>
+  );
+}
+
+// ─── Add Tag Dropdown ───
+
+function AddTagDropdown({
+  selectedIds,
+  onDone,
+}: {
+  selectedIds: string[];
+  onDone: () => void;
+}) {
+  const { data } = useTags();
+  const tagMutation = useBulkTagChats();
+  const tags = data?.tags ?? [];
+
+  const handleAddTag = (tagId: string, tagName: string) => {
+    tagMutation.mutate(
+      { chatIds: selectedIds, tagId, action: 'add' },
+      {
+        onSuccess: () => {
+          toast.success(`Tag "${tagName}" added to ${selectedIds.length} chat(s)`);
+          onDone();
+        },
+        onError: () => toast.error('Failed to add tag'),
+      },
+    );
+  };
+
+  return (
+    <>
+      <div className="fixed inset-0 z-10" onClick={onDone} />
+      <div className="absolute left-0 top-full z-20 mt-1 w-52 rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
+        <p className="px-3 py-1.5 text-xs font-medium text-slate-400">Add tag</p>
+        {tags.length === 0 ? (
+          <p className="px-3 py-2 text-xs text-slate-400">No tags available</p>
+        ) : (
+          tags.map((tag) => (
+            <button
+              key={tag.id}
+              onClick={() => handleAddTag(tag.id, tag.name)}
+              disabled={tagMutation.isPending}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
+            >
+              <span
+                className="h-3 w-3 rounded-full shrink-0"
+                style={{ backgroundColor: tag.color }}
+              />
+              {tag.name}
+            </button>
+          ))
+        )}
+      </div>
+    </>
+  );
+}
+
 // ─── Bulk Actions ───
 
 function BulkActions({
@@ -53,21 +167,21 @@ function BulkActions({
   selectedIds: string[];
   onClear: () => void;
 }) {
-  const queryClient = useQueryClient();
+  const [showAssign, setShowAssign] = useState(false);
+  const [showTagMenu, setShowTagMenu] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const deleteMutation = useBulkDeleteChats();
 
-  const deleteMutation = useMutation({
-    mutationFn: () =>
-      api.delete('/api/chats/bulk', {
-        body: JSON.stringify({ chatIds: selectedIds }),
-        headers: { 'Content-Type': 'application/json' },
-      } as never),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['chats'] });
-      toast.success(`${selectedIds.length} chat(s) deleted`);
-      onClear();
-    },
-    onError: () => toast.error('Failed to delete chats'),
-  });
+  const handleDelete = () => {
+    deleteMutation.mutate(selectedIds, {
+      onSuccess: () => {
+        toast.success(`${selectedIds.length} chat(s) deleted`);
+        onClear();
+        setShowDeleteConfirm(false);
+      },
+      onError: () => toast.error('Failed to delete chats'),
+    });
+  };
 
   return (
     <div className="flex items-center gap-3 rounded-lg bg-accent-bg px-4 py-2.5">
@@ -75,18 +189,84 @@ function BulkActions({
         {selectedIds.length} selected
       </span>
       <div className="h-4 w-px bg-accent/20" />
-      <button
-        onClick={() => deleteMutation.mutate()}
-        disabled={deleteMutation.isPending}
-        className="flex items-center gap-1.5 rounded px-2.5 py-1.5 text-xs font-medium text-red-600 transition-colors hover:bg-red-50"
-      >
-        {deleteMutation.isPending ? (
-          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-        ) : (
-          <Trash2 className="h-3.5 w-3.5" />
+
+      {/* Assign Owner */}
+      <div className="relative">
+        <button
+          onClick={() => { setShowAssign(!showAssign); setShowTagMenu(false); }}
+          className="flex items-center gap-1.5 rounded px-2.5 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-100"
+        >
+          <UserCheck className="h-3.5 w-3.5" />
+          Assign Owner
+        </button>
+        {showAssign && (
+          <AssignOwnerDropdown
+            selectedIds={selectedIds}
+            onDone={() => { setShowAssign(false); onClear(); }}
+          />
         )}
-        Delete
-      </button>
+      </div>
+
+      {/* Add Tag */}
+      <div className="relative">
+        <button
+          onClick={() => { setShowTagMenu(!showTagMenu); setShowAssign(false); }}
+          className="flex items-center gap-1.5 rounded px-2.5 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-100"
+        >
+          <Tag className="h-3.5 w-3.5" />
+          Add Tag
+        </button>
+        {showTagMenu && (
+          <AddTagDropdown
+            selectedIds={selectedIds}
+            onDone={() => { setShowTagMenu(false); onClear(); }}
+          />
+        )}
+      </div>
+
+      {/* Delete */}
+      <div className="relative">
+        <button
+          onClick={() => setShowDeleteConfirm(true)}
+          disabled={deleteMutation.isPending}
+          className="flex items-center gap-1.5 rounded px-2.5 py-1.5 text-xs font-medium text-red-600 transition-colors hover:bg-red-50"
+        >
+          {deleteMutation.isPending ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Trash2 className="h-3.5 w-3.5" />
+          )}
+          Delete
+        </button>
+        {showDeleteConfirm && (
+          <>
+            <div className="fixed inset-0 z-10" onClick={() => setShowDeleteConfirm(false)} />
+            <div className="absolute left-0 top-full z-20 mt-1 w-64 rounded-lg border border-slate-200 bg-white p-3 shadow-lg">
+              <p className="mb-2 text-sm font-medium text-slate-700">
+                Delete {selectedIds.length} chat(s)?
+              </p>
+              <p className="mb-3 text-xs text-slate-500">This action cannot be undone.</p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="flex-1 rounded border-[1.5px] border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDelete}
+                  disabled={deleteMutation.isPending}
+                  className="flex flex-1 items-center justify-center gap-1 rounded bg-red-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50"
+                >
+                  {deleteMutation.isPending && <Loader2 className="h-3 w-3 animate-spin" />}
+                  Delete
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+
       <button
         onClick={onClear}
         className="flex items-center gap-1 rounded px-2.5 py-1.5 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-100"

@@ -12,6 +12,7 @@ import {
   Send,
   Paperclip,
   Pin,
+  PinOff,
   Search,
   PanelRightOpen,
   MessageSquare,
@@ -23,10 +24,19 @@ import {
   Check,
   CheckCheck,
   Pencil,
+  Trash2,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { useChatStore } from '@/stores/chat';
-import { useMessages, useSendMessage } from '@/hooks/useChats';
+import {
+  useMessages,
+  useSendMessage,
+  useEditMessage,
+  useDeleteMessage,
+  usePinMessage,
+  useSearchMessages,
+} from '@/hooks/useChats';
 import type { Chat, Message, MessengerType } from '@/types/chat';
 
 function getMessengerDotColor(messenger: MessengerType): string {
@@ -139,14 +149,152 @@ function MessageBubble({
   onReply: (message: Message) => void;
 }) {
   const isSelf = message.isSelf;
+  const [isEditing, setIsEditing] = useState(false);
+  const [editText, setEditText] = useState(message.text);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const editRef = useRef<HTMLTextAreaElement>(null);
+
+  const { mutate: editMessage, isPending: isEditPending } = useEditMessage();
+  const { mutate: deleteMessage, isPending: isDeletePending } = useDeleteMessage();
+  const { mutate: pinMessage } = usePinMessage();
+
+  const handleEdit = useCallback(() => {
+    setEditText(message.text);
+    setIsEditing(true);
+    setTimeout(() => editRef.current?.focus(), 0);
+  }, [message.text]);
+
+  const handleEditSave = useCallback(() => {
+    const trimmed = editText.trim();
+    if (!trimmed || trimmed === message.text) {
+      setIsEditing(false);
+      return;
+    }
+    editMessage(
+      { messageId: message.id, text: trimmed },
+      {
+        onSuccess: () => {
+          setIsEditing(false);
+          toast.success('Message edited');
+        },
+        onError: () => toast.error('Failed to edit message'),
+      },
+    );
+  }, [editText, message.id, message.text, editMessage]);
+
+  const handleEditCancel = useCallback(() => {
+    setIsEditing(false);
+    setEditText(message.text);
+  }, [message.text]);
+
+  const handleEditKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleEditSave();
+    }
+    if (e.key === 'Escape') {
+      handleEditCancel();
+    }
+  };
+
+  const handlePin = useCallback(() => {
+    pinMessage(
+      { messageId: message.id, isPinned: !message.isPinned },
+      {
+        onSuccess: () =>
+          toast.success(message.isPinned ? 'Message unpinned' : 'Message pinned'),
+        onError: () => toast.error('Failed to update pin'),
+      },
+    );
+  }, [message.id, message.isPinned, pinMessage]);
+
+  const handleDelete = useCallback(() => {
+    deleteMessage(message.id, {
+      onSuccess: () => {
+        setShowDeleteConfirm(false);
+        toast.success('Message deleted');
+      },
+      onError: () => toast.error('Failed to delete message'),
+    });
+  }, [message.id, deleteMessage]);
 
   return (
     <div
       className={cn(
-        'group flex max-w-[70%] flex-col',
+        'group relative flex max-w-[70%] flex-col',
         isSelf ? 'ml-auto items-end' : 'mr-auto items-start',
       )}
     >
+      {/* Hover action bar */}
+      <div
+        className={cn(
+          'absolute -top-3 z-10 flex items-center gap-0.5 rounded-lg border border-slate-200 bg-white px-1 py-0.5 shadow-sm opacity-0 transition-opacity group-hover:opacity-100',
+          isSelf ? 'right-0' : 'left-0',
+        )}
+      >
+        <button
+          onClick={() => onReply(message)}
+          className="flex h-6 w-6 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+          title="Reply"
+        >
+          <Reply className="h-3.5 w-3.5" />
+        </button>
+        {isSelf && (
+          <button
+            onClick={handleEdit}
+            className="flex h-6 w-6 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+            title="Edit"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+          </button>
+        )}
+        <button
+          onClick={handlePin}
+          className="flex h-6 w-6 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+          title={message.isPinned ? 'Unpin' : 'Pin'}
+        >
+          {message.isPinned ? (
+            <PinOff className="h-3.5 w-3.5" />
+          ) : (
+            <Pin className="h-3.5 w-3.5" />
+          )}
+        </button>
+        {isSelf && (
+          <button
+            onClick={() => setShowDeleteConfirm(true)}
+            className="flex h-6 w-6 items-center justify-center rounded text-slate-400 hover:bg-red-50 hover:text-red-500"
+            title="Delete"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
+
+      {/* Delete confirmation */}
+      {showDeleteConfirm && (
+        <div
+          className={cn(
+            'mb-1 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs',
+            isSelf ? 'flex-row-reverse' : '',
+          )}
+        >
+          <span className="text-red-700">Delete this message?</span>
+          <button
+            onClick={handleDelete}
+            disabled={isDeletePending}
+            className="rounded bg-red-600 px-2 py-1 text-white hover:bg-red-700 disabled:opacity-50"
+          >
+            {isDeletePending ? 'Deleting...' : 'Delete'}
+          </button>
+          <button
+            onClick={() => setShowDeleteConfirm(false)}
+            className="rounded bg-white px-2 py-1 text-slate-600 hover:bg-slate-100"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+
       {/* Reply quote */}
       {message.replyToMessage && (
         <div
@@ -195,8 +343,36 @@ function MessageBubble({
           </div>
         )}
 
-        {/* Text */}
-        <p className="whitespace-pre-wrap break-words">{message.text}</p>
+        {/* Text or inline edit */}
+        {isEditing ? (
+          <div className="space-y-2">
+            <textarea
+              ref={editRef}
+              value={editText}
+              onChange={(e) => setEditText(e.target.value)}
+              onKeyDown={handleEditKeyDown}
+              rows={2}
+              className="w-full resize-none rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-800 outline-none focus:border-accent"
+            />
+            <div className="flex gap-1.5">
+              <button
+                onClick={handleEditSave}
+                disabled={isEditPending}
+                className="rounded bg-accent px-2.5 py-1 text-xs text-white hover:bg-accent-hover disabled:opacity-50"
+              >
+                {isEditPending ? 'Saving...' : 'Save'}
+              </button>
+              <button
+                onClick={handleEditCancel}
+                className="rounded bg-slate-100 px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-200"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <p className="whitespace-pre-wrap break-words">{message.text}</p>
+        )}
 
         {/* Attachments */}
         {message.attachments && message.attachments.length > 0 && (
@@ -240,18 +416,6 @@ function MessageBubble({
           <span>{formatMessageTime(message.createdAt)}</span>
           {isSelf && <DeliveryIcon status={message.deliveryStatus} />}
         </div>
-
-        {/* Reply button on hover */}
-        <button
-          onClick={() => onReply(message)}
-          className={cn(
-            'absolute top-1 opacity-0 transition-opacity group-hover:opacity-100',
-            isSelf ? '-left-8' : '-right-8',
-          )}
-          title="Reply"
-        >
-          <Reply className="h-4 w-4 text-slate-400 hover:text-accent" />
-        </button>
       </div>
     </div>
   );
@@ -273,7 +437,28 @@ function EmptyState() {
   );
 }
 
-function ChatHeader({ chat }: { chat: Chat }) {
+function highlightMatch(text: string, query: string): React.ReactNode {
+  if (!query) return text;
+  const idx = text.toLowerCase().indexOf(query.toLowerCase());
+  if (idx === -1) return text;
+  return (
+    <>
+      {text.slice(0, idx)}
+      <mark className="rounded bg-yellow-200 px-0.5">{text.slice(idx, idx + query.length)}</mark>
+      {text.slice(idx + query.length)}
+    </>
+  );
+}
+
+function ChatHeader({
+  chat,
+  searchOpen,
+  onToggleSearch,
+}: {
+  chat: Chat;
+  searchOpen: boolean;
+  onToggleSearch: () => void;
+}) {
   const toggleInfoPanel = useChatStore((s) => s.toggleInfoPanel);
   const ChatTypeIcon = getChatTypeIcon(chat.chatType);
 
@@ -325,7 +510,13 @@ function ChatHeader({ chat }: { chat: Chat }) {
           <Pin className="h-4 w-4" />
         </button>
         <button
-          className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+          onClick={onToggleSearch}
+          className={cn(
+            'flex h-8 w-8 items-center justify-center rounded-lg transition-colors',
+            searchOpen
+              ? 'bg-accent-bg text-accent'
+              : 'text-slate-400 hover:bg-slate-100 hover:text-slate-600',
+          )}
           title="Search messages"
         >
           <Search className="h-4 w-4" />
@@ -338,6 +529,76 @@ function ChatHeader({ chat }: { chat: Chat }) {
           <PanelRightOpen className="h-4 w-4" />
         </button>
       </div>
+    </div>
+  );
+}
+
+function SearchBar({
+  chatId,
+  onClose,
+}: {
+  chatId: string;
+  onClose: () => void;
+}) {
+  const [query, setQuery] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+  const { data: searchResults, isLoading } = useSearchMessages(chatId, query);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  return (
+    <div className="relative flex-shrink-0 border-b border-slate-200 bg-white px-5 py-2">
+      <div className="flex items-center gap-2">
+        <Search className="h-4 w-4 flex-shrink-0 text-slate-400" />
+        <input
+          ref={inputRef}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search messages..."
+          className="flex-1 bg-transparent text-sm text-slate-700 placeholder-slate-400 outline-none"
+        />
+        {isLoading && (
+          <div className="h-4 w-4 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+        )}
+        <button
+          onClick={onClose}
+          className="flex h-6 w-6 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      {/* Search results dropdown */}
+      {query.length >= 2 && searchResults?.messages && (
+        <div className="absolute left-0 right-0 top-full z-20 max-h-64 overflow-y-auto border-b border-slate-200 bg-white shadow-lg">
+          {searchResults.messages.length === 0 ? (
+            <div className="px-5 py-4 text-center text-sm text-slate-400">
+              No messages found
+            </div>
+          ) : (
+            searchResults.messages.map((msg) => (
+              <div
+                key={msg.id}
+                className="cursor-pointer border-b border-slate-100 px-5 py-3 transition-colors last:border-0 hover:bg-slate-50"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-accent">
+                    {msg.senderName}
+                  </span>
+                  <span className="text-[10px] text-slate-400">
+                    {formatMessageTime(msg.createdAt)}
+                  </span>
+                </div>
+                <p className="mt-0.5 line-clamp-2 text-sm text-slate-700">
+                  {highlightMatch(msg.text, query)}
+                </p>
+              </div>
+            ))
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -552,6 +813,12 @@ function MessageFeed({ chatId }: { chatId: string }) {
 
 export function ChatArea() {
   const activeChat = useChatStore((s) => s.activeChat);
+  const [searchOpen, setSearchOpen] = useState(false);
+
+  // Close search when switching chats
+  useEffect(() => {
+    setSearchOpen(false);
+  }, [activeChat?.id]);
 
   if (!activeChat) {
     return <EmptyState />;
@@ -559,7 +826,17 @@ export function ChatArea() {
 
   return (
     <div className="flex flex-1 flex-col">
-      <ChatHeader chat={activeChat} />
+      <ChatHeader
+        chat={activeChat}
+        searchOpen={searchOpen}
+        onToggleSearch={() => setSearchOpen((v) => !v)}
+      />
+      {searchOpen && (
+        <SearchBar
+          chatId={activeChat.id}
+          onClose={() => setSearchOpen(false)}
+        />
+      )}
       <MessageFeed chatId={activeChat.id} />
       <ComposeBar chatId={activeChat.id} />
     </div>

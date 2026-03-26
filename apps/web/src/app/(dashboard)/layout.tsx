@@ -14,10 +14,17 @@ export default function DashboardLayout({
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const isLoading = useAuthStore((s) => s.isLoading);
   const hydrate = useAuthStore((s) => s.hydrate);
+  const fetchMe = useAuthStore((s) => s.fetchMe);
 
   useEffect(() => {
     hydrate();
   }, [hydrate]);
+
+  useEffect(() => {
+    if (!isLoading && isAuthenticated) {
+      fetchMe();
+    }
+  }, [isLoading, isAuthenticated, fetchMe]);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {

@@ -11,6 +11,7 @@ import {
   X,
   Loader2,
   Info,
+  Settings,
 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -22,6 +23,7 @@ import {
   useConnectIntegration,
   useDisconnectIntegration,
   useReconnectIntegration,
+  useUpdateIntegrationSettings,
 } from '@/hooks/useIntegrations';
 import type { Integration, IntegrationStatus, MessengerType } from '@/types/integration';
 
@@ -475,16 +477,137 @@ function ConnectModal({
   );
 }
 
+// ---------- Integration Settings Modal ----------
+
+function IntegrationSettingsModal({
+  messenger,
+  integration,
+  onClose,
+}: {
+  messenger: MessengerInfo;
+  integration: Integration;
+  onClose: () => void;
+}) {
+  const updateSettingsMutation = useUpdateIntegrationSettings();
+  const [settingsJson, setSettingsJson] = useState(() => {
+    try {
+      return JSON.stringify(integration.settings ?? {}, null, 2);
+    } catch {
+      return '{}';
+    }
+  });
+  const [jsonError, setJsonError] = useState<string | null>(null);
+
+  const handleSave = () => {
+    try {
+      const parsed = JSON.parse(settingsJson);
+      setJsonError(null);
+      updateSettingsMutation.mutate(
+        { messenger: messenger.key, settings: parsed },
+        {
+          onSuccess: () => {
+            toast.success(`${messenger.name} settings saved`);
+            onClose();
+          },
+          onError: (err) =>
+            toast.error(
+              err instanceof Error ? err.message : 'Failed to save settings',
+            ),
+        },
+      );
+    } catch {
+      setJsonError('Invalid JSON format');
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+      <div className="w-full max-w-lg rounded-lg bg-white p-6 shadow-lg">
+        <div className="mb-5 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div
+              className={cn(
+                'flex h-10 w-10 items-center justify-center rounded-lg text-sm font-bold',
+                messenger.bgClass,
+                messenger.textClass,
+              )}
+            >
+              {messenger.abbr}
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-slate-900">
+                {messenger.name} Settings
+              </h3>
+              <p className="text-xs text-slate-500">
+                Configure integration settings
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="space-y-3">
+          <label className="block text-sm font-medium text-slate-700">
+            Settings (JSON)
+          </label>
+          <textarea
+            value={settingsJson}
+            onChange={(e) => {
+              setSettingsJson(e.target.value);
+              setJsonError(null);
+            }}
+            rows={10}
+            className={cn(
+              'w-full rounded border-[1.5px] border-slate-200 px-3 py-2 font-mono text-sm transition-colors',
+              'placeholder:text-slate-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15',
+              jsonError && 'border-red-300 focus:border-red-400 focus:ring-red-100',
+            )}
+          />
+          {jsonError && (
+            <p className="text-xs text-red-500">{jsonError}</p>
+          )}
+        </div>
+
+        <div className="mt-5 flex gap-2">
+          <button
+            onClick={onClose}
+            className="flex-1 rounded border-[1.5px] border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={updateSettingsMutation.isPending}
+            className="flex flex-1 items-center justify-center gap-2 rounded bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px disabled:opacity-50"
+          >
+            {updateSettingsMutation.isPending && (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            )}
+            Save Settings
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ---------- Integration Card ----------
 
 function IntegrationCard({
   info,
   integration,
   onConnect,
+  onSettings,
 }: {
   info: MessengerInfo;
   integration?: Integration;
   onConnect: () => void;
+  onSettings: () => void;
 }) {
   const disconnectMutation = useDisconnectIntegration();
   const reconnectMutation = useReconnectIntegration();
@@ -600,6 +723,13 @@ function IntegrationCard({
                   <RefreshCw className="h-4 w-4" />
                 )}
                 Reconnect
+              </button>
+              <button
+                onClick={onSettings}
+                className="flex items-center justify-center gap-2 rounded border-[1.5px] border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition-all hover:-translate-y-px hover:bg-slate-50"
+              >
+                <Settings className="h-4 w-4" />
+                Settings
               </button>
               <button
                 onClick={handleDisconnect}
@@ -832,6 +962,8 @@ export function IntegrationsTab() {
   const { data, isLoading } = useIntegrations();
   const [connectingMessenger, setConnectingMessenger] =
     useState<MessengerInfo | null>(null);
+  const [settingsMessenger, setSettingsMessenger] =
+    useState<MessengerInfo | null>(null);
 
   const integrationsByMessenger = (data?.integrations ?? []).reduce<
     Record<string, Integration>
@@ -868,6 +1000,7 @@ export function IntegrationsTab() {
               info={m}
               integration={integrationsByMessenger[m.key]}
               onConnect={() => setConnectingMessenger(m)}
+              onSettings={() => setSettingsMessenger(m)}
             />
           ))}
         </div>
@@ -881,6 +1014,15 @@ export function IntegrationsTab() {
         <ConnectModal
           messenger={connectingMessenger}
           onClose={() => setConnectingMessenger(null)}
+        />
+      )}
+
+      {/* Settings modal */}
+      {settingsMessenger && integrationsByMessenger[settingsMessenger.key] && (
+        <IntegrationSettingsModal
+          messenger={settingsMessenger}
+          integration={integrationsByMessenger[settingsMessenger.key]!}
+          onClose={() => setSettingsMessenger(null)}
         />
       )}
     </>

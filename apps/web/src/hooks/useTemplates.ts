@@ -84,3 +84,13 @@ export function useDuplicateTemplate() {
     },
   });
 }
+
+export function useTemplateUse() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.post(`/api/templates/${id}/use`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['templates'] });
+    },
+  });
+}

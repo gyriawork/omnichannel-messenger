@@ -11,18 +11,20 @@ import {
   Settings,
   LogOut,
   Inbox,
+  Tag,
+  ShieldCheck,
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth';
 import { cn } from '@/lib/utils';
 
-const navItems = [
+const baseNavItems = [
   { icon: MessageSquare, href: '/messenger', label: 'Messenger' },
   { icon: Inbox, href: '/chats', label: 'Chats' },
   { icon: LayoutDashboard, href: '/', label: 'Dashboard' },
   { icon: Send, href: '/broadcast', label: 'Broadcast' },
   { icon: FileText, href: '/templates', label: 'Templates' },
+  { icon: Tag, href: '/tags', label: 'Tags' },
   { icon: Activity, href: '/activity', label: 'Activity Log' },
-  { icon: Settings, href: '/settings', label: 'Settings' },
 ];
 
 export function Sidebar() {
@@ -53,7 +55,13 @@ export function Sidebar() {
 
       {/* Navigation */}
       <nav className="flex flex-1 flex-col items-center gap-1">
-        {navItems.map(({ icon: Icon, href, label }) => {
+        {[
+          ...baseNavItems,
+          ...(user?.role === 'superadmin'
+            ? [{ icon: ShieldCheck, href: '/admin', label: 'Admin' }]
+            : []),
+          { icon: Settings, href: '/settings', label: 'Settings' },
+        ].map(({ icon: Icon, href, label }) => {
           const active = isActive(href);
           return (
             <Link
