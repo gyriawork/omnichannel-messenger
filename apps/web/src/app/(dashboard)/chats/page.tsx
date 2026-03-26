@@ -1,0 +1,498 @@
+'use client';
+
+import { useState, useMemo } from 'react';
+import {
+  Search,
+  Plus,
+  Filter,
+  MoreHorizontal,
+  Trash2,
+  UserCheck,
+  Tag,
+  MessageSquare,
+  Users,
+  Hash,
+  Mail,
+  ChevronDown,
+  X,
+  Loader2,
+  ArrowUpDown,
+} from 'lucide-react';
+import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
+import { useChats } from '@/hooks/useChats';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { api } from '@/lib/api';
+import { ImportChatsModal } from '@/components/messenger/ImportChatsModal';
+import type { Chat, MessengerType } from '@/types/chat';
+
+// ─── Constants ───
+
+const messengerConfig: Record<
+  MessengerType,
+  { label: string; abbr: string; bgClass: string; textClass: string; dotColor: string }
+> = {
+  telegram: { label: 'Telegram', abbr: 'TG', bgClass: 'bg-messenger-tg-bg', textClass: 'text-messenger-tg-text', dotColor: 'bg-[#0088cc]' },
+  slack: { label: 'Slack', abbr: 'SL', bgClass: 'bg-messenger-sl-bg', textClass: 'text-messenger-sl-text', dotColor: 'bg-[#611f69]' },
+  whatsapp: { label: 'WhatsApp', abbr: 'WA', bgClass: 'bg-messenger-wa-bg', textClass: 'text-messenger-wa-text', dotColor: 'bg-[#25D366]' },
+  gmail: { label: 'Gmail', abbr: 'GM', bgClass: 'bg-messenger-gm-bg', textClass: 'text-messenger-gm-text', dotColor: 'bg-[#EA4335]' },
+};
+
+const chatTypeIcons: Record<string, typeof MessageSquare> = {
+  direct: MessageSquare,
+  group: Users,
+  channel: Hash,
+};
+
+// ─── Bulk Actions ───
+
+function BulkActions({
+  selectedIds,
+  onClear,
+}: {
+  selectedIds: string[];
+  onClear: () => void;
+}) {
+  const queryClient = useQueryClient();
+
+  const deleteMutation = useMutation({
+    mutationFn: () =>
+      api.delete('/api/chats/bulk', {
+        body: JSON.stringify({ chatIds: selectedIds }),
+        headers: { 'Content-Type': 'application/json' },
+      } as never),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['chats'] });
+      toast.success(`${selectedIds.length} chat(s) deleted`);
+      onClear();
+    },
+    onError: () => toast.error('Failed to delete chats'),
+  });
+
+  return (
+    <div className="flex items-center gap-3 rounded-lg bg-accent-bg px-4 py-2.5">
+      <span className="text-sm font-medium text-accent">
+        {selectedIds.length} selected
+      </span>
+      <div className="h-4 w-px bg-accent/20" />
+      <button
+        onClick={() => deleteMutation.mutate()}
+        disabled={deleteMutation.isPending}
+        className="flex items-center gap-1.5 rounded px-2.5 py-1.5 text-xs font-medium text-red-600 transition-colors hover:bg-red-50"
+      >
+        {deleteMutation.isPending ? (
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        ) : (
+          <Trash2 className="h-3.5 w-3.5" />
+        )}
+        Delete
+      </button>
+      <button
+        onClick={onClear}
+        className="flex items-center gap-1 rounded px-2.5 py-1.5 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-100"
+      >
+        <X className="h-3.5 w-3.5" />
+        Cancel
+      </button>
+    </div>
+  );
+}
+
+// ─── Chat Row Actions ───
+
+function ChatRowActions({ chat }: { chat: Chat }) {
+  const [open, setOpen] = useState(false);
+  const queryClient = useQueryClient();
+
+  const deleteMutation = useMutation({
+    mutationFn: () => api.delete(`/api/chats/${chat.id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['chats'] });
+      toast.success(`Chat "${chat.name}" deleted`);
+    },
+    onError: () => toast.error('Failed to delete chat'),
+  });
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+      >
+        <MoreHorizontal className="h-4 w-4" />
+      </button>
+
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 top-full z-20 mt-1 w-44 rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
+            <a
+              href={`/messenger?chatId=${chat.id}`}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+            >
+              <MessageSquare className="h-3.5 w-3.5" />
+              Open in Messenger
+            </a>
+            <button
+              onClick={() => {
+                deleteMutation.mutate();
+                setOpen(false);
+              }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Delete Chat
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ─── Main Page ───
+
+export default function ChatsPage() {
+  const [search, setSearch] = useState('');
+  const [messengerFilter, setMessengerFilter] = useState<MessengerType | null>(null);
+  const [statusFilter, setStatusFilter] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [showImport, setShowImport] = useState(false);
+  const [sortBy, setSortBy] = useState<'lastActivityAt' | 'name' | 'messageCount'>('lastActivityAt');
+
+  const { data, isLoading } = useChats({
+    search: search || undefined,
+    messenger: messengerFilter,
+    status: statusFilter || undefined,
+  });
+
+  const chats = data?.chats ?? [];
+  const total = data?.total ?? 0;
+
+  const sorted = useMemo(() => {
+    return [...chats].sort((a, b) => {
+      if (sortBy === 'name') return a.name.localeCompare(b.name);
+      if (sortBy === 'messageCount') return (b.messageCount ?? 0) - (a.messageCount ?? 0);
+      return new Date(b.lastActivityAt ?? 0).getTime() - new Date(a.lastActivityAt ?? 0).getTime();
+    });
+  }, [chats, sortBy]);
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.length === sorted.length) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(sorted.map((c) => c.id));
+    }
+  };
+
+  const formatTime = (iso?: string) => {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    const now = new Date();
+    const diffH = (now.getTime() - d.getTime()) / (1000 * 60 * 60);
+    if (diffH < 1) return `${Math.round(diffH * 60)}m ago`;
+    if (diffH < 24) return `${Math.round(diffH)}h ago`;
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  };
+
+  return (
+    <div className="p-6">
+      {/* Header */}
+      <div className="mb-6 flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-semibold text-slate-900">Chats</h1>
+          <p className="text-sm text-slate-500">
+            {total} chat{total !== 1 ? 's' : ''} imported across all messengers
+          </p>
+        </div>
+        <button
+          onClick={() => setShowImport(true)}
+          className="flex items-center gap-2 rounded bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px"
+        >
+          <Plus className="h-4 w-4" />
+          Import Chats
+        </button>
+      </div>
+
+      {/* Filters bar */}
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        {/* Search */}
+        <div className="relative flex-1 min-w-[200px]">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search chats..."
+            className="w-full rounded border-[1.5px] border-slate-200 py-2 pl-9 pr-3 text-sm transition-colors placeholder:text-slate-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15"
+          />
+        </div>
+
+        {/* Messenger filter */}
+        <div className="flex items-center gap-1 rounded-lg border border-slate-200 p-1">
+          <button
+            onClick={() => setMessengerFilter(null)}
+            className={cn(
+              'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+              !messengerFilter ? 'bg-accent text-white' : 'text-slate-500 hover:bg-slate-100',
+            )}
+          >
+            All
+          </button>
+          {(Object.keys(messengerConfig) as MessengerType[]).map((m) => {
+            const cfg = messengerConfig[m];
+            return (
+              <button
+                key={m}
+                onClick={() => setMessengerFilter(messengerFilter === m ? null : m)}
+                className={cn(
+                  'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+                  messengerFilter === m
+                    ? cn(cfg.bgClass, cfg.textClass)
+                    : 'text-slate-500 hover:bg-slate-100',
+                )}
+              >
+                {cfg.abbr}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Status filter */}
+        <select
+          value={statusFilter ?? ''}
+          onChange={(e) => setStatusFilter(e.target.value || null)}
+          className="rounded border-[1.5px] border-slate-200 px-3 py-2 text-xs text-slate-600 focus:border-accent focus:outline-none"
+        >
+          <option value="">All statuses</option>
+          <option value="active">Active</option>
+          <option value="read-only">Read-only</option>
+        </select>
+
+        {/* Sort */}
+        <button
+          onClick={() => {
+            const order: typeof sortBy[] = ['lastActivityAt', 'name', 'messageCount'];
+            const idx = order.indexOf(sortBy);
+            setSortBy(order[(idx + 1) % order.length]!);
+          }}
+          className="flex items-center gap-1.5 rounded border-[1.5px] border-slate-200 px-3 py-2 text-xs text-slate-600 transition-colors hover:bg-slate-50"
+          title={`Sort by: ${sortBy}`}
+        >
+          <ArrowUpDown className="h-3.5 w-3.5" />
+          {sortBy === 'lastActivityAt' && 'Recent'}
+          {sortBy === 'name' && 'Name'}
+          {sortBy === 'messageCount' && 'Messages'}
+        </button>
+      </div>
+
+      {/* Bulk actions */}
+      {selectedIds.length > 0 && (
+        <div className="mb-4">
+          <BulkActions
+            selectedIds={selectedIds}
+            onClear={() => setSelectedIds([])}
+          />
+        </div>
+      )}
+
+      {/* Table */}
+      <div className="overflow-hidden rounded-lg bg-white shadow-xs">
+        {isLoading ? (
+          <div className="flex items-center justify-center py-20">
+            <Loader2 className="h-6 w-6 animate-spin text-accent" />
+          </div>
+        ) : sorted.length === 0 ? (
+          <div className="py-20 text-center">
+            <MessageSquare className="mx-auto mb-3 h-10 w-10 text-slate-300" />
+            <p className="text-sm font-medium text-slate-600">No chats found</p>
+            <p className="mt-1 text-xs text-slate-400">
+              Import chats from your connected messengers
+            </p>
+            <button
+              onClick={() => setShowImport(true)}
+              className="mt-4 inline-flex items-center gap-2 rounded bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px"
+            >
+              <Plus className="h-4 w-4" />
+              Import Chats
+            </button>
+          </div>
+        ) : (
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-slate-100 bg-slate-50/50">
+                <th className="w-10 px-4 py-3">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.length === sorted.length && sorted.length > 0}
+                    onChange={toggleSelectAll}
+                    className="h-4 w-4 rounded border-slate-300 text-accent focus:ring-accent/30"
+                  />
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">
+                  Chat
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">
+                  Messenger
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">
+                  Type
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">
+                  Owner
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">
+                  Messages
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">
+                  Tags
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">
+                  Last Active
+                </th>
+                <th className="w-10 px-3 py-3" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {sorted.map((chat) => {
+                const mcfg = messengerConfig[chat.messenger];
+                const TypeIcon = chatTypeIcons[chat.chatType] ?? MessageSquare;
+                const isSelected = selectedIds.includes(chat.id);
+                const initials = chat.name
+                  .split(' ')
+                  .map((w) => w[0])
+                  .join('')
+                  .toUpperCase()
+                  .slice(0, 2);
+
+                return (
+                  <tr
+                    key={chat.id}
+                    className={cn(
+                      'transition-colors hover:bg-slate-50/50',
+                      isSelected && 'bg-accent-bg/30',
+                    )}
+                  >
+                    {/* Checkbox */}
+                    <td className="px-4 py-3">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleSelect(chat.id)}
+                        className="h-4 w-4 rounded border-slate-300 text-accent focus:ring-accent/30"
+                      />
+                    </td>
+
+                    {/* Chat name + avatar */}
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <div className="relative">
+                          <div
+                            className={cn(
+                              'flex h-9 w-9 items-center justify-center rounded-avatar text-xs font-semibold',
+                              mcfg.bgClass,
+                              mcfg.textClass,
+                            )}
+                          >
+                            {initials}
+                          </div>
+                          <span
+                            className={cn(
+                              'absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-white',
+                              mcfg.dotColor,
+                            )}
+                          />
+                        </div>
+                        <div>
+                          <a
+                            href={`/messenger?chatId=${chat.id}`}
+                            className="text-sm font-medium text-slate-800 hover:text-accent"
+                          >
+                            {chat.name}
+                          </a>
+                          {chat.status === 'read-only' && (
+                            <span className="ml-1.5 text-[10px] text-slate-400">read-only</span>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+
+                    {/* Messenger */}
+                    <td className="px-4 py-3">
+                      <span
+                        className={cn(
+                          'inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium',
+                          mcfg.bgClass,
+                          mcfg.textClass,
+                        )}
+                      >
+                        {mcfg.label}
+                      </span>
+                    </td>
+
+                    {/* Type */}
+                    <td className="px-4 py-3">
+                      <span className="inline-flex items-center gap-1 text-xs text-slate-500">
+                        <TypeIcon className="h-3.5 w-3.5" />
+                        {chat.chatType}
+                      </span>
+                    </td>
+
+                    {/* Owner */}
+                    <td className="px-4 py-3 text-xs text-slate-500">
+                      {chat.ownerName ?? '—'}
+                    </td>
+
+                    {/* Messages */}
+                    <td className="px-4 py-3 text-xs text-slate-600 font-medium">
+                      {chat.messageCount.toLocaleString()}
+                    </td>
+
+                    {/* Tags */}
+                    <td className="px-4 py-3">
+                      <div className="flex gap-1 flex-wrap">
+                        {(chat.tags ?? []).map((tag) => (
+                          <span
+                            key={tag.id}
+                            className="rounded-full px-2 py-0.5 text-[10px] font-medium"
+                            style={{
+                              backgroundColor: tag.color + '18',
+                              color: tag.color,
+                            }}
+                          >
+                            {tag.name}
+                          </span>
+                        ))}
+                        {(!chat.tags || chat.tags.length === 0) && (
+                          <span className="text-[10px] text-slate-300">—</span>
+                        )}
+                      </div>
+                    </td>
+
+                    {/* Last active */}
+                    <td className="px-4 py-3 text-xs text-slate-500">
+                      {formatTime(chat.lastActivityAt)}
+                    </td>
+
+                    {/* Actions */}
+                    <td className="px-3 py-3">
+                      <ChatRowActions chat={chat} />
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* Import Modal */}
+      <ImportChatsModal open={showImport} onClose={() => setShowImport(false)} />
+    </div>
+  );
+}

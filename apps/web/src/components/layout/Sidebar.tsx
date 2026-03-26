@@ -10,12 +10,14 @@ import {
   Activity,
   Settings,
   LogOut,
+  Inbox,
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth';
 import { cn } from '@/lib/utils';
 
 const navItems = [
   { icon: MessageSquare, href: '/messenger', label: 'Messenger' },
+  { icon: Inbox, href: '/chats', label: 'Chats' },
   { icon: LayoutDashboard, href: '/', label: 'Dashboard' },
   { icon: Send, href: '/broadcast', label: 'Broadcast' },
   { icon: FileText, href: '/templates', label: 'Templates' },
