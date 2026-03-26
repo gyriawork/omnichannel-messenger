@@ -1,0 +1,328 @@
+import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import { z } from 'zod';
+import bcrypt from 'bcryptjs';
+import { randomBytes } from 'node:crypto';
+import prisma from '../lib/prisma.js';
+import { authenticate } from '../middleware/auth.js';
+import { requireMinRole } from '../middleware/rbac.js';
+
+// ─── Zod Schemas ───
+
+const listUsersQuerySchema = z.object({
+  role: z.enum(['superadmin', 'admin', 'user']).optional(),
+  status: z.enum(['active', 'deactivated']).optional(),
+  search: z.string().min(1).max(200).optional(),
+  organizationId: z.string().uuid().optional(),
+});
+
+const inviteUserBodySchema = z.object({
+  email: z.string().email().max(320).trim().toLowerCase(),
+  name: z.string().min(1).max(200).trim(),
+  role: z.enum(['admin', 'user']),
+});
+
+const updateUserBodySchema = z.object({
+  name: z.string().min(1).max(200).trim().optional(),
+  role: z.enum(['superadmin', 'admin', 'user']).optional(),
+  status: z.enum(['active', 'deactivated']).optional(),
+});
+
+const updateProfileBodySchema = z.object({
+  name: z.string().min(1).max(200).trim().optional(),
+  avatar: z.string().url().max(2048).nullable().optional(),
+});
+
+const changePasswordBodySchema = z.object({
+  oldPassword: z.string().min(1).max(128),
+  newPassword: z.string().min(8).max(128),
+});
+
+const userIdParamSchema = z.object({
+  id: z.string().uuid(),
+});
+
+// ─── Helpers ───
+
+const BCRYPT_ROUNDS = 12;
+
+function sendError(reply: FastifyReply, code: string, message: string, statusCode: number) {
+  return reply.status(statusCode).send({
+    error: { code, message, statusCode },
+  });
+}
+
+/** Strip passwordHash from user objects. */
+function sanitizeUser(user: {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  status: string;
+  avatar: string | null;
+  organizationId: string | null;
+  lastActiveAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}) {
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    role: user.role,
+    status: user.status,
+    avatar: user.avatar,
+    organizationId: user.organizationId,
+    lastActiveAt: user.lastActiveAt,
+    createdAt: user.createdAt,
+    updatedAt: user.updatedAt,
+  };
+}
+
+// ─── Plugin ───
+
+export default async function userRoutes(fastify: FastifyInstance): Promise<void> {
+
+  // ─── GET /api/users/me ───
+
+  fastify.get(
+    '/users/me',
+    { preHandler: [authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const user = await prisma.user.findUnique({
+        where: { id: request.user.id },
+      });
+
+      if (!user) {
+        return sendError(reply, 'RESOURCE_NOT_FOUND', 'User not found', 404);
+      }
+
+      return reply.send(sanitizeUser(user));
+    },
+  );
+
+  // ─── PATCH /api/users/me ───
+
+  fastify.patch(
+    '/users/me',
+    { preHandler: [authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const parsed = updateProfileBodySchema.safeParse(request.body);
+      if (!parsed.success) {
+        return sendError(reply, 'VALIDATION_ERROR', parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '), 422);
+      }
+
+      const data = parsed.data;
+
+      if (Object.keys(data).length === 0) {
+        return sendError(reply, 'VALIDATION_ERROR', 'At least one field must be provided for update', 422);
+      }
+
+      const updated = await prisma.user.update({
+        where: { id: request.user.id },
+        data,
+      });
+
+      return reply.send(sanitizeUser(updated));
+    },
+  );
+
+  // ─── PATCH /api/users/me/password ───
+
+  fastify.patch(
+    '/users/me/password',
+    { preHandler: [authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const parsed = changePasswordBodySchema.safeParse(request.body);
+      if (!parsed.success) {
+        return sendError(reply, 'VALIDATION_ERROR', parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '), 422);
+      }
+
+      const { oldPassword, newPassword } = parsed.data;
+
+      const user = await prisma.user.findUnique({
+        where: { id: request.user.id },
+      });
+
+      if (!user) {
+        return sendError(reply, 'RESOURCE_NOT_FOUND', 'User not found', 404);
+      }
+
+      const isValid = await bcrypt.compare(oldPassword, user.passwordHash);
+      if (!isValid) {
+        return sendError(reply, 'AUTH_INVALID_CREDENTIALS', 'Current password is incorrect', 401);
+      }
+
+      const passwordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+
+      await prisma.user.update({
+        where: { id: request.user.id },
+        data: { passwordHash },
+      });
+
+      return reply.send({ message: 'Password updated successfully' });
+    },
+  );
+
+  // ─── GET /api/users ───
+
+  fastify.get(
+    '/users',
+    { preHandler: [authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const parsed = listUsersQuerySchema.safeParse(request.query);
+      if (!parsed.success) {
+        return sendError(reply, 'VALIDATION_ERROR', parsed.error.issues.map((i) => i.message).join('; '), 422);
+      }
+
+      const { role, status, search, organizationId } = parsed.data;
+
+      // Determine which org to query
+      let targetOrgId: string | undefined;
+
+      if (request.user.role === 'superadmin') {
+        // Superadmin can filter by specific org or see all
+        targetOrgId = organizationId;
+      } else {
+        // Non-superadmin users can only see users in their own org
+        if (!request.user.organizationId) {
+          return sendError(reply, 'VALIDATION_ERROR', 'User is not associated with an organization', 400);
+        }
+        targetOrgId = request.user.organizationId;
+      }
+
+      const where: Record<string, unknown> = {};
+
+      if (targetOrgId) {
+        where.organizationId = targetOrgId;
+      }
+      if (role) {
+        where.role = role;
+      }
+      if (status) {
+        where.status = status;
+      }
+      if (search) {
+        where.OR = [
+          { name: { contains: search, mode: 'insensitive' } },
+          { email: { contains: search, mode: 'insensitive' } },
+        ];
+      }
+
+      const users = await prisma.user.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+      });
+
+      return reply.send(users.map(sanitizeUser));
+    },
+  );
+
+  // ─── POST /api/users/invite ───
+
+  fastify.post(
+    '/users/invite',
+    { preHandler: [authenticate, requireMinRole('admin')] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const parsed = inviteUserBodySchema.safeParse(request.body);
+      if (!parsed.success) {
+        return sendError(reply, 'VALIDATION_ERROR', parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '), 422);
+      }
+
+      const { email, name, role } = parsed.data;
+
+      // Non-superadmin must belong to an org
+      if (request.user.role !== 'superadmin' && !request.user.organizationId) {
+        return sendError(reply, 'VALIDATION_ERROR', 'You must belong to an organization to invite users', 400);
+      }
+
+      const organizationId = request.user.organizationId;
+
+      // Admin users can only invite 'user' or 'admin' roles, not superadmin
+      if (request.user.role === 'admin' && role !== 'user') {
+        return sendError(reply, 'AUTH_INSUFFICIENT_PERMISSIONS', 'Admin can only invite users with the "user" role', 403);
+      }
+
+      // Check email uniqueness
+      const existing = await prisma.user.findUnique({ where: { email } });
+      if (existing) {
+        return sendError(reply, 'VALIDATION_ERROR', `User with email ${email} already exists`, 422);
+      }
+
+      // Generate a random temporary password (user will set their own on first login)
+      const tempPassword = randomBytes(16).toString('hex');
+      const passwordHash = await bcrypt.hash(tempPassword, BCRYPT_ROUNDS);
+
+      const user = await prisma.user.create({
+        data: {
+          email,
+          name,
+          passwordHash,
+          role,
+          organizationId,
+        },
+      });
+
+      return reply.status(201).send(sanitizeUser(user));
+    },
+  );
+
+  // ─── PATCH /api/users/:id ───
+
+  fastify.patch(
+    '/users/:id',
+    { preHandler: [authenticate, requireMinRole('admin')] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const paramsParsed = userIdParamSchema.safeParse(request.params);
+      if (!paramsParsed.success) {
+        return sendError(reply, 'VALIDATION_ERROR', 'Invalid user id', 422);
+      }
+
+      const bodyParsed = updateUserBodySchema.safeParse(request.body);
+      if (!bodyParsed.success) {
+        return sendError(reply, 'VALIDATION_ERROR', bodyParsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '), 422);
+      }
+
+      const { id } = paramsParsed.data;
+      const data = bodyParsed.data;
+
+      if (Object.keys(data).length === 0) {
+        return sendError(reply, 'VALIDATION_ERROR', 'At least one field must be provided for update', 422);
+      }
+
+      // Cannot change own role
+      if (data.role && id === request.user.id) {
+        return sendError(reply, 'VALIDATION_ERROR', 'You cannot change your own role', 422);
+      }
+
+      const targetUser = await prisma.user.findUnique({ where: { id } });
+      if (!targetUser) {
+        return sendError(reply, 'RESOURCE_NOT_FOUND', `User with id ${id} not found`, 404);
+      }
+
+      // Admin-level permission checks
+      if (request.user.role === 'admin') {
+        // Admin can only manage users in their own org
+        if (targetUser.organizationId !== request.user.organizationId) {
+          return sendError(reply, 'AUTH_INSUFFICIENT_PERMISSIONS', 'You can only manage users in your own organization', 403);
+        }
+
+        // Admin cannot modify other admins or superadmins
+        if (targetUser.role === 'admin' || targetUser.role === 'superadmin') {
+          return sendError(reply, 'AUTH_INSUFFICIENT_PERMISSIONS', 'Admin cannot modify other admins or superadmins', 403);
+        }
+
+        // Admin cannot promote users to superadmin
+        if (data.role === 'superadmin') {
+          return sendError(reply, 'AUTH_INSUFFICIENT_PERMISSIONS', 'Admin cannot assign superadmin role', 403);
+        }
+      }
+
+      const updated = await prisma.user.update({
+        where: { id },
+        data,
+      });
+
+      return reply.send(sanitizeUser(updated));
+    },
+  );
+}

@@ -1,0 +1,110 @@
+// ─── ENUMS ───
+
+export const MESSENGERS = ['telegram', 'slack', 'whatsapp', 'gmail'] as const;
+export type Messenger = (typeof MESSENGERS)[number];
+
+export const USER_ROLES = ['superadmin', 'admin', 'user'] as const;
+export type UserRole = (typeof USER_ROLES)[number];
+
+export const USER_STATUSES = ['active', 'deactivated'] as const;
+export type UserStatus = (typeof USER_STATUSES)[number];
+
+export const CHAT_STATUSES = ['active', 'read-only'] as const;
+export type ChatStatus = (typeof CHAT_STATUSES)[number];
+
+export const CHAT_TYPES = ['direct', 'group', 'channel'] as const;
+export type ChatType = (typeof CHAT_TYPES)[number];
+
+export const BROADCAST_STATUSES = ['draft', 'scheduled', 'sending', 'sent', 'partially_failed', 'failed'] as const;
+export type BroadcastStatus = (typeof BROADCAST_STATUSES)[number];
+
+export const BROADCAST_CHAT_STATUSES = ['pending', 'sent', 'failed', 'retrying', 'retry_exhausted'] as const;
+export type BroadcastChatStatus = (typeof BROADCAST_CHAT_STATUSES)[number];
+
+export const INTEGRATION_STATUSES = ['connected', 'disconnected', 'token_expired', 'session_expired'] as const;
+export type IntegrationStatus = (typeof INTEGRATION_STATUSES)[number];
+
+export const DELIVERY_STATUSES = ['sent', 'delivered', 'read', 'failed'] as const;
+export type DeliveryStatus = (typeof DELIVERY_STATUSES)[number];
+
+export const ORG_STATUSES = ['active', 'suspended'] as const;
+export type OrgStatus = (typeof ORG_STATUSES)[number];
+
+export const ACTIVITY_CATEGORIES = [
+  'chats', 'messages', 'broadcast', 'templates',
+  'users', 'integrations', 'settings', 'organizations',
+] as const;
+export type ActivityCategory = (typeof ACTIVITY_CATEGORIES)[number];
+
+// ─── MESSENGER COLORS ───
+
+export const MESSENGER_COLORS: Record<Messenger, { bg: string; text: string; label: string }> = {
+  telegram:  { bg: '#e6f1fb', text: '#0c447c', label: 'TG' },
+  slack:     { bg: '#eeedfe', text: '#3c3489', label: 'SL' },
+  whatsapp:  { bg: '#eaf3de', text: '#3b6d11', label: 'WA' },
+  gmail:     { bg: '#fcebeb', text: '#a32d2d', label: 'GM' },
+};
+
+// ─── EDIT LIMITS ───
+
+export const MESSAGE_EDIT_LIMITS: Record<Messenger, number | null> = {
+  telegram:  48 * 60 * 60,   // 48 hours in seconds
+  slack:     null,            // unlimited
+  whatsapp:  15 * 60,        // 15 minutes in seconds
+  gmail:     0,              // not supported (0 = disabled)
+};
+
+// ─── DEFAULT ANTIBAN SETTINGS ───
+
+export const DEFAULT_ANTIBAN: Record<Messenger, {
+  messagesPerBatch: number;
+  delayBetweenMessages: number;
+  delayBetweenBatches: number;
+  maxMessagesPerHour: number;
+  maxMessagesPerDay: number;
+}> = {
+  telegram: {
+    messagesPerBatch: 10,
+    delayBetweenMessages: 5,
+    delayBetweenBatches: 180,
+    maxMessagesPerHour: 50,
+    maxMessagesPerDay: 300,
+  },
+  whatsapp: {
+    messagesPerBatch: 3,
+    delayBetweenMessages: 15,
+    delayBetweenBatches: 600,
+    maxMessagesPerHour: 20,
+    maxMessagesPerDay: 80,
+  },
+  slack: {
+    messagesPerBatch: 30,
+    delayBetweenMessages: 1,
+    delayBetweenBatches: 30,
+    maxMessagesPerHour: 200,
+    maxMessagesPerDay: 2000,
+  },
+  gmail: {
+    messagesPerBatch: 5,
+    delayBetweenMessages: 8,
+    delayBetweenBatches: 180,
+    maxMessagesPerHour: 80,
+    maxMessagesPerDay: 400,
+  },
+};
+
+// ─── ERROR CODES ───
+
+export const ERROR_CODES = {
+  AUTH_INVALID_CREDENTIALS: { statusCode: 401, message: 'Invalid email or password' },
+  AUTH_TOKEN_EXPIRED: { statusCode: 401, message: 'Token has expired' },
+  AUTH_INSUFFICIENT_PERMISSIONS: { statusCode: 403, message: 'Insufficient permissions' },
+  RESOURCE_NOT_FOUND: { statusCode: 404, message: 'Resource not found' },
+  VALIDATION_ERROR: { statusCode: 422, message: 'Validation error' },
+  RATE_LIMIT_EXCEEDED: { statusCode: 429, message: 'Rate limit exceeded' },
+  MESSENGER_API_ERROR: { statusCode: 502, message: 'Messenger API error' },
+  MESSENGER_RATE_LIMITED: { statusCode: 429, message: 'Messenger rate limit reached' },
+  INTERNAL_ERROR: { statusCode: 500, message: 'Internal server error' },
+} as const;
+
+export type ErrorCode = keyof typeof ERROR_CODES;

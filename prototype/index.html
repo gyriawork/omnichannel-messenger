@@ -1,0 +1,798 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Omnichannel Messenger V1.1 — Full Prototype</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+--bg:#fff;--bg2:#f8fafc;--bg3:#f1f5f9;--text:#1e293b;--text2:#64748b;--text3:#94a3b8;
+--border:#e2e8f0;--border2:#cbd5e1;--accent:#6366f1;--accent-bg:#eef2ff;--accent2:#4f46e5;
+--green:#16a34a;--green-bg:#f0fdf4;--red:#dc2626;--red-bg:#fef2f2;--amber:#d97706;--amber-bg:#fffbeb;
+--tg-bg:#e6f1fb;--tg:#0c447c;--sl-bg:#eeedfe;--sl:#3c3489;--wa-bg:#eaf3de;--wa:#3b6d11;--gm-bg:#fcebeb;--gm:#a32d2d;
+--font:'Inter',system-ui,sans-serif;--radius:10px;--radius-sm:6px;
+}
+body{font-family:var(--font);background:var(--bg2);color:var(--text);height:100vh;display:flex;overflow:hidden}
+button{font-family:var(--font);cursor:pointer}
+input,select,textarea{font-family:var(--font)}
+
+/* SIDEBAR */
+.sidebar{width:56px;background:linear-gradient(180deg,#1e1b4b 0%,#312e81 100%);display:flex;flex-direction:column;align-items:center;padding:10px 0;gap:2px;flex-shrink:0;z-index:10}
+.sidebar .logo{width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,#6366f1,#4f46e5);box-shadow:0 2px 8px rgba(99,102,241,.3);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:600;font-size:13px;margin-bottom:14px;cursor:pointer}
+.nav-i{width:40px;height:40px;border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;cursor:pointer;color:#666;transition:all .2s cubic-bezier(.4,0,.2,1);border:none;background:none;position:relative}
+.nav-i:hover{background:rgba(255,255,255,.08);backdrop-filter:blur(8px);color:rgba(255,255,255,.6)}
+.nav-i.active{background:rgba(99,102,241,.15);color:rgba(255,255,255,.9)}
+.nav-i svg{width:20px;height:20px}
+.nav-i .badge{position:absolute;top:4px;right:4px;background:var(--red);color:#fff;font-size:8px;padding:1px 4px;border-radius:8px;font-weight:600}
+.sb-bottom{margin-top:auto;display:flex;flex-direction:column;gap:4px;align-items:center}
+.avatar-sm{width:30px;height:30px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:600;cursor:pointer}
+
+/* MAIN */
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.page{display:none;flex:1;overflow:hidden}
+.page.active{display:flex;flex-direction:column}
+
+/* TOP BAR */
+.topbar{height:50px;background:var(--bg);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 24px;gap:12px;flex-shrink:0}
+.topbar h1{font-size:16px;font-weight:600}
+.topbar .breadcrumb{font-size:12px;color:var(--text3)}
+
+/* PILL / TAG */
+.pill{font-size:11px;padding:3px 10px;border-radius:20px;font-weight:600;white-space:nowrap;display:inline-block}
+.tag{font-size:11px;padding:2px 7px;border-radius:8px;display:inline-block;margin:1px}
+
+/* CARD */
+.card{background:var(--bg);box-shadow:0 1px 2px rgba(0,0,0,.05);border-radius:12px;padding:16px;transition:box-shadow .2s ease}
+.metric-card{background:var(--bg2);border-radius:var(--radius);padding:14px 16px}
+.metric-card .label{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px}
+.metric-card .value{font-size:22px;font-weight:600;margin-top:2px}
+
+/* TABLE */
+.tbl{width:100%;border-collapse:collapse;font-size:13px}
+.tbl th{text-align:left;font-weight:400;font-size:12px;color:var(--text3);padding:8px 10px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg)}
+.tbl td{padding:8px 10px;border-bottom:1px solid var(--border)}
+.tbl tr:hover td{background:var(--bg2)}
+.tbl .cb{width:16px;height:16px;accent-color:var(--accent);cursor:pointer}
+
+/* BUTTONS */
+.btn{padding:6px 14px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:12px;background:var(--bg);color:var(--text);transition:all .2s cubic-bezier(.4,0,.2,1)}
+.btn:hover{background:var(--bg2);border-color:var(--border2)}
+.btn-primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+.btn-primary:hover{background:var(--accent2);transform:translateY(-1px);box-shadow:0 2px 4px rgba(99,102,241,.4)}
+.btn-danger{color:var(--red);border-color:var(--red)}
+.btn-ghost{border:none;background:none;color:var(--text2);padding:6px 10px}
+.btn-ghost:hover{color:var(--text);background:var(--bg2)}
+.btn-sm{padding:4px 10px;font-size:11px}
+
+/* INPUT */
+.inp{border:1.5px solid var(--border);border-radius:8px;padding:7px 12px;font-size:13px;outline:none;transition:border .15s;background:var(--bg);width:100%}
+.inp:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(99,102,241,.15)}
+.inp-sm{padding:5px 10px;font-size:12px}
+select.inp{cursor:pointer}
+
+/* TAB */
+.tabs{display:flex;gap:0;border-bottom:1px solid var(--border)}
+.tab{padding:8px 16px;font-size:13px;cursor:pointer;border:none;background:none;color:var(--text2);border-bottom:2px solid transparent;transition:all .2s cubic-bezier(.4,0,.2,1)}
+.tab:hover{color:var(--text)}
+.tab.active{color:var(--text);font-weight:600;border-bottom-color:var(--accent)}
+
+/* MODAL */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);backdrop-filter:blur(4px);z-index:100;display:none;align-items:center;justify-content:center}
+.modal-overlay.open{display:flex}
+.modal{background:var(--bg);border-radius:16px;padding:24px;box-shadow:0 10px 25px rgba(0,0,0,.15);width:90%;max-width:560px;max-height:80vh;overflow-y:auto}
+.modal h3{font-size:16px;font-weight:600;margin-bottom:14px}
+.modal-close{float:right;border:none;background:none;font-size:20px;cursor:pointer;color:var(--text3)}
+
+/* TOGGLE */
+.toggle{width:40px;height:22px;border-radius:11px;background:var(--bg3);cursor:pointer;position:relative;border:none;transition:background .2s}
+.toggle.on{background:var(--accent)}
+.toggle::after{content:'';position:absolute;width:18px;height:18px;border-radius:50%;background:#fff;top:2px;left:2px;transition:left .2s}
+.toggle.on::after{left:20px}
+
+/* SLIDER GROUP */
+.slider-group{margin-bottom:14px}
+.slider-group label{font-size:12px;color:var(--text2);display:flex;justify-content:space-between;margin-bottom:4px}
+.slider-group input[type=range]{width:100%;accent-color:var(--accent)}
+.slider-group .rec{font-size:11px;color:var(--text3);margin-top:2px}
+
+/* RISK METER */
+.risk-meter{height:8px;border-radius:4px;background:linear-gradient(90deg,var(--green),#eab308,#f97316,var(--red));position:relative;margin:8px 0}
+.risk-meter .marker{position:absolute;top:-4px;width:16px;height:16px;border-radius:50%;border:2px solid var(--bg);box-shadow:0 1px 4px rgba(0,0,0,.2);transform:translateX(-50%);transition:left .3s}
+
+/* MESSENGER LAYOUT */
+.msg-layout{display:flex;flex:1;overflow:hidden}
+.msg-chatlist{width:300px;border-right:1px solid var(--border);background:var(--bg);display:flex;flex-direction:column;flex-shrink:0}
+.msg-chatlist .items{flex:1;overflow-y:auto}
+.chat-item{padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border);display:flex;gap:10px;transition:background .1s}
+.chat-item:hover{background:var(--bg2)}
+.chat-item.active{background:var(--accent-bg);border-left:3px solid var(--accent);padding-left:11px}
+.chat-av{width:40px;height:40px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;flex-shrink:0;position:relative}
+.chat-av .dot{position:absolute;bottom:-1px;right:-1px;width:14px;height:14px;border-radius:50%;border:2px solid var(--bg);font-size:6px;display:flex;align-items:center;justify-content:center;font-weight:600}
+.msg-window{flex:1;display:flex;flex-direction:column;overflow:hidden;background:var(--bg)}
+.msg-header{padding:10px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;min-height:50px}
+.msg-feed{flex:1;overflow-y:auto;padding:16px 20px;display:flex;flex-direction:column;gap:4px}
+.msg-bubble-wrap{display:flex;margin-bottom:2px}
+.msg-bubble-wrap.self{justify-content:flex-end}
+.msg-bubble{max-width:65%;padding:8px 14px;border-radius:18px 18px 18px 4px;background:var(--bg2);box-shadow:0 1px 2px rgba(0,0,0,.04);font-size:13px;line-height:1.5;position:relative}
+.msg-bubble-wrap.self .msg-bubble{background:var(--accent);color:#fff;border-radius:18px 18px 4px 18px}
+.msg-sender{font-size:11px;font-weight:600;color:var(--accent);margin-bottom:1px}
+.msg-time{font-size:10px;color:var(--text3);text-align:right;margin-top:2px}
+.msg-bubble-wrap.self .msg-time{color:rgba(255,255,255,.5)}
+.msg-reply-q{padding:3px 8px;border-left:3px solid var(--accent);background:rgba(0,0,0,.04);margin-bottom:4px;font-size:11px;color:var(--text2);border-radius:2px}
+.msg-bubble-wrap.self .msg-reply-q{background:rgba(255,255,255,.15);border-left-color:rgba(255,255,255,.5);color:rgba(255,255,255,.8)}
+.msg-input-area{padding:10px 20px;border-top:1px solid var(--border)}
+.msg-input-row{display:flex;gap:8px;align-items:flex-end}
+.msg-inp{flex:1;border:1px solid var(--border);border-radius:var(--radius);padding:8px 14px;font-size:13px;outline:none;resize:none;min-height:36px;max-height:100px;font-family:var(--font)}
+.msg.inp:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(99,102,241,.15)}
+.send-btn{width:36px;height:36px;border:none;background:var(--accent);color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:transform .1s}
+.send-btn:active{transform:scale(.92)}
+.send-btn svg{width:16px;height:16px}
+.msg-actions-bar{display:flex;gap:2px;padding-bottom:4px}
+.msg-act-btn{width:30px;height:30px;border:none;background:none;cursor:pointer;border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;color:var(--text3);transition:all .2s cubic-bezier(.4,0,.2,1)}
+.msg-act-btn:hover{background:var(--bg2);color:var(--text2)}
+.msg-act-btn svg{width:16px;height:16px}
+.reply-bar{padding:6px 20px;border-top:1px solid var(--border);background:var(--bg2);display:none;align-items:center;gap:10px;font-size:12px;color:var(--text2)}
+.reply-bar.visible{display:flex}
+.reply-bar .content{flex:1;border-left:3px solid var(--accent);padding-left:8px}
+.msg-info-panel{width:0;overflow:hidden;border-left:1px solid var(--border);background:var(--bg);transition:width .2s;flex-shrink:0}
+.msg-info-panel.open{width:260px}
+.msg-info-inner{width:260px;padding:14px;overflow-y:auto;height:100%}
+.info-sec{margin-bottom:14px}
+.info-lbl{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px}
+.info-val{font-size:13px}
+
+/* DASHBOARD */
+.dash-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}
+.dash-content{padding:24px;overflow-y:auto;flex:1}
+.recent-list{display:flex;flex-direction:column;gap:0}
+.recent-item{padding:10px 0;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;font-size:13px}
+
+/* SETTINGS LAYOUT */
+.settings-layout{display:flex;flex:1;overflow:hidden}
+.settings-nav{width:200px;border-right:1px solid var(--border);background:var(--bg);padding:16px 0;flex-shrink:0;overflow-y:auto}
+.settings-nav-item{padding:8px 20px;font-size:13px;cursor:pointer;color:var(--text2);transition:all .2s cubic-bezier(.4,0,.2,1);border:none;background:none;display:block;width:100%;text-align:left}
+.settings-nav-item:hover{background:var(--bg2);color:var(--text)}
+.settings-nav-item.active{background:var(--accent-bg);color:var(--accent);font-weight:600}
+.settings-content{flex:1;padding:24px;overflow-y:auto}
+.settings-section{display:none}
+.settings-section.active{display:block}
+.form-group{margin-bottom:16px}
+.form-group label{display:block;font-size:12px;color:var(--text2);margin-bottom:4px}
+.form-row{display:flex;gap:12px;margin-bottom:16px}
+.form-row>*{flex:1}
+
+/* BROADCAST WIZARD */
+.wizard-steps{display:flex;gap:0;margin-bottom:20px;border-bottom:1px solid var(--border);padding-bottom:0}
+.wizard-step{padding:8px 16px;font-size:13px;color:var(--text3);border-bottom:2px solid transparent;cursor:pointer}
+.wizard-step.active{color:var(--accent);font-weight:600;border-bottom-color:var(--accent)}
+.wizard-step.done{color:var(--green)}
+.wizard-panel{display:none}
+.wizard-panel.active{display:block}
+
+/* ACTIVITY */
+.activity-item{display:flex;gap:12px;padding:12px 0;border-bottom:1px solid var(--border);font-size:13px;align-items:flex-start}
+.activity-dot{width:8px;height:8px;border-radius:50%;margin-top:5px;flex-shrink:0}
+.activity-time{font-size:11px;color:var(--text3);flex-shrink:0;min-width:60px}
+
+/* SCROLLBAR */
+::-webkit-scrollbar{width:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--text3)}
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<div class="sidebar">
+<div class="logo" onclick="nav('dashboard')">OM</div>
+<button class="nav-i" data-page="dashboard" onclick="nav('dashboard')" title="Dashboard">
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+</button>
+<button class="nav-i" data-page="chats" onclick="nav('chats')" title="Chats">
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+<span class="badge">4</span>
+</button>
+<button class="nav-i" data-page="messenger" onclick="nav('messenger')" title="Messenger">
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg>
+</button>
+<button class="nav-i" data-page="broadcast" onclick="nav('broadcast')" title="Broadcast">
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 2L11 13"/><path d="M22 2L15 22l-4-9-9-4z"/></svg>
+</button>
+<button class="nav-i" data-page="activity" onclick="nav('activity')" title="Activity">
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="22,12 18,12 15,21 9,3 6,12 2,12"/></svg>
+</button>
+<div class="sb-bottom">
+<button class="nav-i" data-page="settings" onclick="nav('settings')" title="Settings">
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+</button>
+<div class="avatar-sm" title="Anton (Superadmin)">AN</div>
+</div>
+</div>
+
+<div class="main">
+
+<!-- ============ DASHBOARD ============ -->
+<div class="page" id="pg-dashboard">
+<div class="topbar"><h1>Dashboard</h1></div>
+<div class="dash-content">
+<div class="dash-grid">
+<div class="metric-card" style="cursor:pointer" onclick="nav('chats')"><div class="label">Total chats</div><div class="value">47</div></div>
+<div class="metric-card" style="cursor:pointer" onclick="nav('chats')"><div class="label">Active chats</div><div class="value" style="color:var(--green)">31</div></div>
+<div class="metric-card"><div class="label">Unread messages</div><div class="value" style="color:var(--accent)">12</div></div>
+<div class="metric-card"><div class="label">Broadcasts sent</div><div class="value">8</div></div>
+</div>
+<div style="display:flex;gap:12px;margin-bottom:20px">
+<button class="btn btn-primary" onclick="nav('broadcast');showNewBroadcast()">+ New broadcast</button>
+<button class="btn" onclick="nav('chats');openAddChatModal()">+ Add chat</button>
+<button class="btn" onclick="nav('chats')">Go to chats</button>
+</div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+<div class="card">
+<div style="font-weight:600;font-size:14px;margin-bottom:10px">Recent broadcasts</div>
+<div class="recent-list">
+<div class="recent-item"><span class="pill" style="background:var(--green-bg);color:var(--green)">Sent</span><span style="flex:1">March promo campaign</span><span style="color:var(--text3);font-size:11px">2 hr ago</span></div>
+<div class="recent-item"><span class="pill" style="background:var(--amber-bg);color:var(--amber)">Scheduled</span><span style="flex:1">New game launch announcement</span><span style="color:var(--text3);font-size:11px">Tomorrow</span></div>
+<div class="recent-item"><span class="pill" style="background:var(--bg2);color:var(--text3)">Draft</span><span style="flex:1">Q1 results newsletter</span><span style="color:var(--text3);font-size:11px">3 days ago</span></div>
+</div>
+</div>
+<div class="card">
+<div style="font-weight:600;font-size:14px;margin-bottom:10px">Activity feed</div>
+<div class="recent-list">
+<div class="recent-item"><span style="color:var(--text3);font-size:11px;min-width:50px">10:31</span><span>Dmitry K. sent a message in <strong>BetOperator Group</strong></span></div>
+<div class="recent-item"><span style="color:var(--text3);font-size:11px;min-width:50px">10:22</span><span>Maria S. sent a message in <strong>BetOperator Group</strong></span></div>
+<div class="recent-item"><span style="color:var(--text3);font-size:11px;min-width:50px">09:52</span><span>Sarah replied in <strong>CasinoX</strong></span></div>
+<div class="recent-item"><span style="color:var(--text3);font-size:11px;min-width:50px">09:00</span><span>Marco sent a message in <strong>LuckySpin</strong></span></div>
+</div>
+</div>
+</div>
+<div class="card" style="margin-top:16px">
+<div style="font-weight:600;font-size:14px;margin-bottom:10px">Chats by messenger</div>
+<div style="display:flex;gap:16px;align-items:center">
+<div style="display:flex;gap:4px;align-items:flex-end;height:80px">
+<div style="width:50px;background:var(--tg-bg);border-radius:4px 4px 0 0;height:80px;display:flex;align-items:flex-end;justify-content:center;padding-bottom:4px"><span style="font-size:11px;color:var(--tg);font-weight:600">18</span></div>
+<div style="width:50px;background:var(--sl-bg);border-radius:4px 4px 0 0;height:55px;display:flex;align-items:flex-end;justify-content:center;padding-bottom:4px"><span style="font-size:11px;color:var(--sl);font-weight:600">12</span></div>
+<div style="width:50px;background:var(--wa-bg);border-radius:4px 4px 0 0;height:40px;display:flex;align-items:flex-end;justify-content:center;padding-bottom:4px"><span style="font-size:11px;color:var(--wa);font-weight:600">9</span></div>
+<div style="width:50px;background:var(--gm-bg);border-radius:4px 4px 0 0;height:30px;display:flex;align-items:flex-end;justify-content:center;padding-bottom:4px"><span style="font-size:11px;color:var(--gm);font-weight:600">8</span></div>
+</div>
+<div style="font-size:12px;color:var(--text2);display:flex;flex-direction:column;gap:4px">
+<span><span class="pill" style="background:var(--tg-bg);color:var(--tg)">TG</span> Telegram</span>
+<span><span class="pill" style="background:var(--sl-bg);color:var(--sl)">SL</span> Slack</span>
+<span><span class="pill" style="background:var(--wa-bg);color:var(--wa)">WA</span> WhatsApp</span>
+<span><span class="pill" style="background:var(--gm-bg);color:var(--gm)">GM</span> Gmail</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+<!-- ============ CHATS ============ -->
+<div class="page" id="pg-chats">
+<div class="topbar"><h1>Chats</h1></div>
+<div style="flex:1;display:flex;flex-direction:column;overflow:hidden;background:var(--bg)">
+<div style="padding:10px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border)">
+<div class="tabs" style="border-bottom:none">
+<button class="tab active" onclick="chatsTab(this,'all')">All chats</button>
+<button class="tab" onclick="chatsTab(this,'my')">My chats</button>
+</div>
+<button class="btn btn-primary btn-sm" onclick="openAddChatModal()">+ Add chat</button>
+</div>
+<div style="padding:8px 16px;display:flex;gap:8px;align-items:center;border-bottom:1px solid var(--border);flex-wrap:wrap">
+<input class="inp inp-sm" style="width:170px" placeholder="Search chats..." id="chatsSearch" oninput="renderChats()"/>
+<select class="inp inp-sm" style="width:130px" id="chatsMsgFilter" onchange="renderChats()"><option value="">All messengers</option><option>Telegram</option><option>Slack</option><option>WhatsApp</option><option>Gmail</option></select>
+<select class="inp inp-sm" style="width:120px" id="chatsStatusFilter" onchange="renderChats()"><option value="">All statuses</option><option>Active</option><option>Read-only</option></select>
+<div style="flex:1"></div>
+<button class="btn btn-sm" id="bulkAssignBtn" disabled>Bulk assign</button>
+<button class="btn btn-sm" id="bulkTagBtn" disabled>Bulk tag</button>
+<button class="btn btn-sm btn-danger" id="bulkRemoveBtn" disabled>Remove</button>
+</div>
+<div style="flex:1;overflow-y:auto">
+<table class="tbl"><thead><tr>
+<th style="width:32px"><input type="checkbox" class="cb" id="chatsSelectAll" onchange="chatsToggleAll(this.checked)"/></th>
+<th>Chat name</th><th>Messenger</th><th>Status</th><th>Last activity</th><th>Tags</th><th style="text-align:right">Msgs</th><th>Owner</th>
+</tr></thead><tbody id="chatsBody"></tbody></table>
+</div>
+<div style="padding:8px 16px;border-top:1px solid var(--border);font-size:12px;color:var(--text3);display:flex;justify-content:space-between" id="chatsFooter"></div>
+</div>
+</div>
+
+<!-- ============ MESSENGER ============ -->
+<div class="page" id="pg-messenger">
+<div class="msg-layout">
+<div class="msg-chatlist">
+<div style="padding:12px 14px;border-bottom:1px solid var(--border)"><input class="inp inp-sm" placeholder="Search chats..." id="msgSearch" oninput="renderMsgList()"/></div>
+<div class="items" id="msgChatList"></div>
+</div>
+<div class="msg-window">
+<div class="msg-header" id="msgHeader" style="display:none">
+<div style="display:flex;align-items:center;gap:10px">
+<div class="chat-av" id="mhAvatar"></div>
+<div><div style="font-size:14px;font-weight:600" id="mhName"></div><div style="font-size:11px;color:var(--text3)" id="mhMeta"></div></div>
+</div>
+<div style="display:flex;gap:6px"><button class="btn btn-sm" id="infoToggleBtn" onclick="toggleMsgInfo()">Chat info</button></div>
+</div>
+<div class="msg-feed" id="msgFeed"><div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text3);font-size:14px">Select a chat from the list</div></div>
+<div class="reply-bar" id="msgReplyBar"><div class="content" id="msgReplyContent"></div><button style="border:none;background:none;font-size:18px;cursor:pointer;color:var(--text3)" onclick="cancelMsgReply()">&times;</button></div>
+<div class="msg-input-area" id="msgInputArea" style="display:none">
+<div class="msg-input-row">
+<div class="msg-actions-bar">
+<button class="msg-act-btn" title="Attach"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg></button>
+<button class="msg-act-btn" title="Emoji"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg></button>
+</div>
+<textarea class="msg-inp" id="msgTextarea" placeholder="Type a message..." rows="1"></textarea>
+<button class="send-btn" onclick="sendMsg()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22,2 15,22 11,13 2,9"/></svg></button>
+</div>
+</div>
+</div>
+<div class="msg-info-panel" id="msgInfoPanel"><div class="msg-info-inner" id="msgInfoContent"></div></div>
+</div>
+</div>
+
+<!-- ============ BROADCAST ============ -->
+<div class="page" id="pg-broadcast">
+<div class="topbar"><h1>Broadcast</h1></div>
+<div style="flex:1;display:flex;flex-direction:column;overflow:hidden;background:var(--bg)">
+<div class="tabs" id="broadcastTabs">
+<button class="tab active" onclick="broadcastTab(this,'list')">Broadcasts</button>
+<button class="tab" onclick="broadcastTab(this,'templates')">Templates</button>
+<button class="tab" onclick="broadcastTab(this,'analytics')">Analytics</button>
+</div>
+<div style="flex:1;overflow-y:auto;padding:20px" id="broadcastContent">
+<!-- Broadcast List -->
+<div id="bc-list">
+<div style="display:flex;justify-content:space-between;margin-bottom:14px">
+<div style="font-weight:600;font-size:14px">All broadcasts</div>
+<button class="btn btn-primary btn-sm" onclick="showNewBroadcast()">+ New broadcast</button>
+</div>
+<table class="tbl"><thead><tr><th>Name</th><th>Status</th><th>Chats</th><th>Messengers</th><th>Sent at</th><th style="text-align:right">Delivery</th><th style="text-align:right">Failed</th></tr></thead><tbody>
+<tr><td style="font-weight:600;cursor:pointer" onclick="alert('Broadcast detail view')">March promo campaign</td><td><span class="pill" style="background:var(--green-bg);color:var(--green)">Sent</span></td><td>34</td><td><span class="pill" style="background:var(--tg-bg);color:var(--tg)">TG</span> <span class="pill" style="background:var(--sl-bg);color:var(--sl)">SL</span> <span class="pill" style="background:var(--wa-bg);color:var(--wa)">WA</span></td><td style="color:var(--text2)">Today, 08:15</td><td style="text-align:right;color:var(--green)">97%</td><td style="text-align:right;color:var(--red)">1</td></tr>
+<tr><td style="font-weight:600">New game launch</td><td><span class="pill" style="background:var(--amber-bg);color:var(--amber)">Scheduled</span></td><td>48</td><td><span class="pill" style="background:var(--tg-bg);color:var(--tg)">TG</span> <span class="pill" style="background:var(--sl-bg);color:var(--sl)">SL</span> <span class="pill" style="background:var(--wa-bg);color:var(--wa)">WA</span> <span class="pill" style="background:var(--gm-bg);color:var(--gm)">GM</span></td><td style="color:var(--text2)">Tomorrow, 10:00</td><td style="text-align:right">—</td><td style="text-align:right">—</td></tr>
+<tr><td style="font-weight:600">Q1 results newsletter</td><td><span class="pill" style="background:var(--bg2);color:var(--text3)">Draft</span></td><td>—</td><td>—</td><td style="color:var(--text2)">—</td><td style="text-align:right">—</td><td style="text-align:right">—</td></tr>
+<tr><td style="font-weight:600">Valentine's special offer</td><td><span class="pill" style="background:var(--green-bg);color:var(--green)">Sent</span></td><td>52</td><td><span class="pill" style="background:var(--tg-bg);color:var(--tg)">TG</span> <span class="pill" style="background:var(--wa-bg);color:var(--wa)">WA</span></td><td style="color:var(--text2)">Feb 14, 09:00</td><td style="text-align:right;color:var(--green)">100%</td><td style="text-align:right">0</td></tr>
+<tr><td style="font-weight:600">Server maintenance alert</td><td><span class="pill" style="background:var(--red-bg);color:var(--red)">Partially failed</span></td><td>28</td><td><span class="pill" style="background:var(--sl-bg);color:var(--sl)">SL</span> <span class="pill" style="background:var(--gm-bg);color:var(--gm)">GM</span></td><td style="color:var(--text2)">Feb 10, 22:00</td><td style="text-align:right;color:var(--amber)">89%</td><td style="text-align:right;color:var(--red);cursor:pointer" title="DevTeam Slack, PlayHub TG, RegTech Gmail" onclick="alert('Failed chats:\n1. DevTeam Slack — rate limit\n2. PlayHub TG — auth expired\n3. RegTech Gmail — network error')">3</td></tr>
+</tbody></table>
+</div>
+<!-- Templates -->
+<div id="bc-templates" style="display:none">
+<div style="display:flex;justify-content:space-between;margin-bottom:14px">
+<div style="font-weight:600;font-size:14px">Message templates</div>
+<button class="btn btn-primary btn-sm" onclick="alert('Template editor opens')">+ New template</button>
+</div>
+<table class="tbl"><thead><tr><th>Template name</th><th>Preview</th><th>Created by</th><th>Last modified</th><th style="text-align:right">Used</th><th></th></tr></thead><tbody>
+<tr><td style="font-weight:600">Welcome partner</td><td style="color:var(--text2)">Hi {{chat_name}}, welcome to our platform! We are...</td><td>Anton</td><td style="color:var(--text2)">Mar 20</td><td style="text-align:right">12</td><td><button class="btn btn-sm btn-ghost">Edit</button></td></tr>
+<tr><td style="font-weight:600">New game announcement</td><td style="color:var(--text2)">Exciting news! We just launched a new game that...</td><td>Anton</td><td style="color:var(--text2)">Mar 15</td><td style="text-align:right">5</td><td><button class="btn btn-sm btn-ghost">Edit</button></td></tr>
+<tr><td style="font-weight:600">Monthly report</td><td style="color:var(--text2)">Hi {{owner_name}}, here is the performance report...</td><td>Alexei</td><td style="color:var(--text2)">Mar 1</td><td style="text-align:right">3</td><td><button class="btn btn-sm btn-ghost">Edit</button></td></tr>
+</tbody></table>
+</div>
+<!-- Analytics -->
+<div id="bc-analytics" style="display:none">
+<div style="font-weight:600;font-size:14px;margin-bottom:14px">Broadcast analytics</div>
+<div style="display:flex;gap:8px;margin-bottom:16px">
+<select class="inp inp-sm" style="width:140px"><option>Last 30 days</option><option>Last 7 days</option><option>Last 90 days</option></select>
+<select class="inp inp-sm" style="width:130px"><option value="">All messengers</option><option>Telegram</option><option>Slack</option><option>WhatsApp</option><option>Gmail</option></select>
+</div>
+<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px">
+<div class="metric-card"><div class="label">Messages sent</div><div class="value">162</div></div>
+<div class="metric-card"><div class="label">Delivery rate</div><div class="value" style="color:var(--green)">96.3%</div></div>
+<div class="metric-card"><div class="label">Response rate</div><div class="value" style="color:var(--accent)">34.2%</div></div>
+</div>
+<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px">
+<div class="metric-card"><div class="label">Avg. reply time</div><div class="value">2h 14m</div></div>
+<div class="metric-card"><div class="label">Open rate (Gmail)</div><div class="value">61.8%</div></div>
+<div class="metric-card"><div class="label">Total broadcasts</div><div class="value">8</div></div>
+</div>
+<div style="font-weight:600;font-size:13px;margin-bottom:8px">By messenger</div>
+<table class="tbl"><thead><tr><th>Messenger</th><th style="text-align:right">Sent</th><th style="text-align:right">Delivered</th><th style="text-align:right">Delivery %</th><th style="text-align:right">Responses</th><th style="text-align:right">Response %</th><th style="text-align:right">Avg reply</th></tr></thead><tbody>
+<tr><td><span class="pill" style="background:var(--tg-bg);color:var(--tg)">TG Telegram</span></td><td style="text-align:right">72</td><td style="text-align:right">71</td><td style="text-align:right;color:var(--green)">98.6%</td><td style="text-align:right">28</td><td style="text-align:right">39.4%</td><td style="text-align:right">1h 45m</td></tr>
+<tr><td><span class="pill" style="background:var(--sl-bg);color:var(--sl)">SL Slack</span></td><td style="text-align:right">45</td><td style="text-align:right">45</td><td style="text-align:right;color:var(--green)">100%</td><td style="text-align:right">19</td><td style="text-align:right">42.2%</td><td style="text-align:right">52m</td></tr>
+<tr><td><span class="pill" style="background:var(--wa-bg);color:var(--wa)">WA WhatsApp</span></td><td style="text-align:right">28</td><td style="text-align:right">25</td><td style="text-align:right;color:var(--amber)">89.3%</td><td style="text-align:right">8</td><td style="text-align:right">32.0%</td><td style="text-align:right">3h 20m</td></tr>
+<tr><td><span class="pill" style="background:var(--gm-bg);color:var(--gm)">GM Gmail</span></td><td style="text-align:right">17</td><td style="text-align:right">15</td><td style="text-align:right;color:var(--amber)">88.2%</td><td style="text-align:right">3</td><td style="text-align:right">20.0%</td><td style="text-align:right">5h 10m</td></tr>
+</tbody></table>
+</div>
+<!-- New Broadcast Wizard -->
+<div id="bc-new" style="display:none">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+<div style="font-weight:600;font-size:14px">New broadcast</div>
+<button class="btn btn-sm" onclick="hideNewBroadcast()">Cancel</button>
+</div>
+<div class="wizard-steps" id="wizSteps">
+<div class="wizard-step active" onclick="wizGo(0)">1. Content</div>
+<div class="wizard-step" onclick="wizGo(1)">2. Recipients</div>
+<div class="wizard-step" onclick="wizGo(2)">3. Schedule</div>
+<div class="wizard-step" onclick="wizGo(3)">4. Review</div>
+</div>
+<div class="wizard-panel active" id="wiz0">
+<div class="form-group"><label>Broadcast name</label><input class="inp" placeholder="e.g. March promo campaign" value="New game launch Q2"/></div>
+<div class="form-group"><label>Message text</label><textarea class="inp" rows="5" placeholder="Type your message...">Hi! We are excited to announce the launch of our newest slot game "Dragon's Fortune" with 96.5% RTP and innovative bonus mechanics. Available now in your lobby!</textarea></div>
+<div style="display:flex;gap:8px;margin-bottom:14px"><button class="btn btn-sm" onclick="alert('Template picker opens')">Use template</button><button class="btn btn-sm">Attach file</button></div>
+<button class="btn btn-primary" onclick="wizGo(1)">Next: Recipients</button>
+</div>
+<div class="wizard-panel" id="wiz1">
+<div class="form-group"><label>Select chats</label><input class="inp" placeholder="Search chats by name, tag, or messenger..."/></div>
+<div style="margin-bottom:10px;font-size:13px;color:var(--text2)">Selected: <strong>23 chats</strong> (Telegram: 10, Slack: 8, WhatsApp: 3, Gmail: 2)</div>
+<div style="max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);padding:8px;margin-bottom:14px">
+<div style="padding:4px 0;font-size:13px"><input type="checkbox" checked style="accent-color:var(--accent)"/> BetOperator Group <span class="pill" style="background:var(--tg-bg);color:var(--tg)">TG</span></div>
+<div style="padding:4px 0;font-size:13px"><input type="checkbox" checked style="accent-color:var(--accent)"/> Sarah - CasinoX <span class="pill" style="background:var(--sl-bg);color:var(--sl)">SL</span></div>
+<div style="padding:4px 0;font-size:13px"><input type="checkbox" checked style="accent-color:var(--accent)"/> Marco - LuckySpin <span class="pill" style="background:var(--wa-bg);color:var(--wa)">WA</span></div>
+<div style="padding:4px 0;font-size:13px"><input type="checkbox" checked style="accent-color:var(--accent)"/> VIP Highrollers Chat <span class="pill" style="background:var(--tg-bg);color:var(--tg)">TG</span></div>
+<div style="padding:4px 0;font-size:13px"><input type="checkbox" style="accent-color:var(--accent)"/> Lisa - RegTech Ltd <span class="pill" style="background:var(--gm-bg);color:var(--gm)">GM</span></div>
+<div style="padding:4px 0;font-size:13px"><input type="checkbox" style="accent-color:var(--accent)"/> Chen Wei - Asia Ops <span class="pill" style="background:var(--wa-bg);color:var(--wa)">WA</span></div>
+</div>
+<div style="display:flex;gap:8px"><button class="btn" onclick="wizGo(0)">Back</button><button class="btn btn-primary" onclick="wizGo(2)">Next: Schedule</button></div>
+</div>
+<div class="wizard-panel" id="wiz2">
+<div style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px">
+<label style="font-size:13px;display:flex;align-items:center;gap:8px"><input type="radio" name="schedule" checked/> Send now</label>
+<label style="font-size:13px;display:flex;align-items:center;gap:8px"><input type="radio" name="schedule"/> Schedule for later</label>
+<input class="inp" type="datetime-local" style="width:250px;margin-left:24px" disabled/>
+</div>
+<div style="display:flex;gap:8px"><button class="btn" onclick="wizGo(1)">Back</button><button class="btn btn-primary" onclick="wizGo(3)">Next: Review</button></div>
+</div>
+<div class="wizard-panel" id="wiz3">
+<div class="card" style="margin-bottom:14px">
+<div style="font-weight:600;margin-bottom:8px">Review</div>
+<div style="font-size:13px;color:var(--text2);margin-bottom:6px"><strong>Name:</strong> New game launch Q2</div>
+<div style="font-size:13px;color:var(--text2);margin-bottom:6px"><strong>Recipients:</strong> 23 chats (TG: 10, SL: 8, WA: 3, GM: 2)</div>
+<div style="font-size:13px;color:var(--text2);margin-bottom:6px"><strong>Schedule:</strong> Send now</div>
+<div style="font-size:13px;color:var(--text2);margin-bottom:10px"><strong>Estimated time:</strong> ~4 min with current anti-ban settings</div>
+<div style="font-size:12px;font-weight:600;margin-bottom:4px">Risk assessment</div>
+<div class="risk-meter"><div class="marker" style="left:25%;background:var(--green)"></div></div>
+<div style="font-size:11px;color:var(--green)">Low risk. Safe for long-term use.</div>
+</div>
+<div style="display:flex;gap:8px"><button class="btn" onclick="wizGo(2)">Back</button><button class="btn btn-primary" onclick="alert('Broadcast sent to 23 chats!');hideNewBroadcast()">Send to 23 chats</button></div>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+<!-- ============ ACTIVITY ============ -->
+<div class="page" id="pg-activity">
+<div class="topbar"><h1>Activity</h1></div>
+<div style="flex:1;display:flex;flex-direction:column;overflow:hidden;background:var(--bg)">
+<div style="padding:10px 16px;display:flex;gap:8px;border-bottom:1px solid var(--border);flex-wrap:wrap">
+<select class="inp inp-sm" style="width:120px"><option value="">All users</option><option>Anton</option><option>Alexei</option></select>
+<select class="inp inp-sm" style="width:140px"><option value="">All actions</option><option>Chats</option><option>Messages</option><option>Broadcast</option><option>Settings</option></select>
+<input class="inp inp-sm" type="date" style="width:140px"/>
+<span style="font-size:11px;color:var(--text3);align-self:center;margin-left:auto">Showing 15 events</span>
+</div>
+<div style="flex:1;overflow-y:auto;padding:0 20px">
+<div class="activity-item"><div class="activity-dot" style="background:var(--accent)"></div><div class="activity-time">10:31</div><div style="flex:1"><strong>Dmitry K.</strong> sent a message in <span style="color:var(--accent);cursor:pointer" onclick="nav('messenger')">BetOperator Group</span></div><span class="pill" style="background:var(--tg-bg);color:var(--tg)">TG</span></div>
+<div class="activity-item"><div class="activity-dot" style="background:var(--accent)"></div><div class="activity-time">10:25</div><div style="flex:1"><strong>Anton</strong> replied in <span style="color:var(--accent);cursor:pointer">BetOperator Group</span></div><span class="pill" style="background:var(--tg-bg);color:var(--tg)">TG</span></div>
+<div class="activity-item"><div class="activity-dot" style="background:var(--green)"></div><div class="activity-time">09:52</div><div style="flex:1"><strong>Sarah</strong> sent a message in <span style="color:var(--accent);cursor:pointer">CasinoX</span></div><span class="pill" style="background:var(--sl-bg);color:var(--sl)">SL</span></div>
+<div class="activity-item"><div class="activity-dot" style="background:var(--amber)"></div><div class="activity-time">09:00</div><div style="flex:1"><strong>Marco</strong> sent a message in <span style="color:var(--accent);cursor:pointer">LuckySpin</span></div><span class="pill" style="background:var(--wa-bg);color:var(--wa)">WA</span></div>
+<div class="activity-item"><div class="activity-dot" style="background:var(--green)"></div><div class="activity-time">08:15</div><div style="flex:1"><strong>Anton</strong> sent broadcast <strong>March promo campaign</strong> to 34 chats</div><span class="pill" style="background:var(--green-bg);color:var(--green)">Broadcast</span></div>
+<div class="activity-item"><div class="activity-dot" style="background:var(--accent)"></div><div class="activity-time">08:00</div><div style="flex:1"><strong>Anton</strong> imported 3 chats from Telegram</div><span class="pill" style="background:var(--tg-bg);color:var(--tg)">Import</span></div>
+<div class="activity-item"><div class="activity-dot" style="background:var(--text3)"></div><div class="activity-time">Yesterday</div><div style="flex:1"><strong>Alexei</strong> changed anti-ban settings for WhatsApp</div><span class="pill" style="background:var(--bg2);color:var(--text3)">Settings</span></div>
+<div class="activity-item"><div class="activity-dot" style="background:var(--red)"></div><div class="activity-time">Yesterday</div><div style="flex:1"><strong>System</strong> broadcast partially failed: 3 chats (DevTeam SL, PlayHub TG, RegTech GM)</div><span class="pill" style="background:var(--red-bg);color:var(--red)">Failed</span></div>
+<div class="activity-item"><div class="activity-dot" style="background:var(--green)"></div><div class="activity-time">Yesterday</div><div style="flex:1"><strong>System</strong> auto-retry succeeded for PlayHub TG</div><span class="pill" style="background:var(--green-bg);color:var(--green)">Retry</span></div>
+<div class="activity-item"><div class="activity-dot" style="background:var(--accent)"></div><div class="activity-time">Mar 24</div><div style="flex:1"><strong>Anton</strong> changed chat visibility to "All users can see all chats"</div><span class="pill" style="background:var(--bg2);color:var(--text3)">Settings</span></div>
+<div class="activity-item"><div class="activity-dot" style="background:var(--green)"></div><div class="activity-time">Mar 23</div><div style="flex:1"><strong>Alexei</strong> connected WhatsApp integration</div><span class="pill" style="background:var(--wa-bg);color:var(--wa)">Integration</span></div>
+</div>
+</div>
+</div>
+
+<!-- ============ SETTINGS ============ -->
+<div class="page" id="pg-settings">
+<div class="topbar"><h1>Settings</h1></div>
+<div class="settings-layout">
+<div class="settings-nav">
+<button class="settings-nav-item active" onclick="settingsNav(this,'s-orgs')">Organizations</button>
+<button class="settings-nav-item" onclick="settingsNav(this,'s-profile')">Profile</button>
+<button class="settings-nav-item" onclick="settingsNav(this,'s-workspace')">Workspace</button>
+<button class="settings-nav-item" onclick="settingsNav(this,'s-integrations')">Integrations</button>
+<button class="settings-nav-item" onclick="settingsNav(this,'s-broadcast')">Broadcast settings</button>
+<button class="settings-nav-item" onclick="settingsNav(this,'s-general')">General</button>
+</div>
+<div class="settings-content">
+
+<!-- Organizations -->
+<div class="settings-section active" id="s-orgs">
+<div style="display:flex;justify-content:space-between;margin-bottom:16px"><h2 style="font-size:16px;font-weight:600">Organizations</h2><button class="btn btn-primary btn-sm" onclick="alert('Create organization form')">+ New organization</button></div>
+<table class="tbl"><thead><tr><th>Name</th><th>Users</th><th>Created</th><th>Status</th><th></th></tr></thead><tbody>
+<tr><td style="font-weight:600">Evoplay</td><td>5</td><td style="color:var(--text2)">Jan 15, 2026</td><td><span class="pill" style="background:var(--green-bg);color:var(--green)">Active</span></td><td><button class="btn btn-sm btn-ghost">Edit</button></td></tr>
+<tr><td style="font-weight:600">CasinoX Partners</td><td>3</td><td style="color:var(--text2)">Feb 1, 2026</td><td><span class="pill" style="background:var(--green-bg);color:var(--green)">Active</span></td><td><button class="btn btn-sm btn-ghost">Edit</button></td></tr>
+<tr><td style="font-weight:600">LuckySpin Ltd</td><td>2</td><td style="color:var(--text2)">Mar 10, 2026</td><td><span class="pill" style="background:var(--amber-bg);color:var(--amber)">Suspended</span></td><td><button class="btn btn-sm btn-ghost">Edit</button> <button class="btn btn-sm btn-ghost" style="color:var(--green)">Activate</button></td></tr>
+</tbody></table>
+</div>
+
+<!-- Profile -->
+<div class="settings-section" id="s-profile">
+<h2 style="font-size:16px;font-weight:600;margin-bottom:16px">Profile</h2>
+<div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:20px">
+<div style="width:64px;height:64px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px;font-weight:600;flex-shrink:0">AN</div>
+<div style="flex:1">
+<div class="form-group"><label>Name</label><input class="inp" value="Anton"/></div>
+<div class="form-group"><label>Email</label><input class="inp" value="anton@evoplay.com" disabled style="background:var(--bg2)"/></div>
+<button class="btn btn-sm" style="margin-bottom:10px">Change password</button><br/>
+<button class="btn btn-primary">Save profile</button>
+</div>
+</div>
+</div>
+
+<!-- Workspace -->
+<div class="settings-section" id="s-workspace">
+<h2 style="font-size:16px;font-weight:600;margin-bottom:16px">Workspace</h2>
+<div class="form-group"><label>Organization name</label><input class="inp" value="Evoplay" style="max-width:300px"/></div>
+<div class="form-row" style="max-width:400px">
+<div class="form-group"><label>Default language</label><select class="inp"><option>English</option><option>Russian</option></select></div>
+<div class="form-group"><label>Timezone</label><select class="inp"><option>UTC+3 (Europe/Kyiv)</option><option>UTC+7 (Asia/Bangkok)</option><option>UTC+8 (Asia/Bali)</option></select></div>
+</div>
+<div style="margin-bottom:16px;padding:12px;background:var(--bg2);border-radius:var(--radius);max-width:500px">
+<label style="display:flex;align-items:center;gap:10px;font-size:13px;cursor:pointer">
+<input type="checkbox" checked style="accent-color:var(--accent);width:16px;height:16px"/>
+<div><strong>Users can see all organization chats</strong><div style="font-size:11px;color:var(--text3);margin-top:2px">When enabled, all users can view and access all chats. When disabled, users only see chats they imported or were assigned to.</div></div>
+</label>
+</div>
+<button class="btn btn-primary btn-sm">Save workspace</button>
+<div style="margin-top:24px">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><h3 style="font-size:14px;font-weight:600">User management</h3><button class="btn btn-primary btn-sm" onclick="alert('Invite user form: Email + Role')">+ Invite user</button></div>
+<table class="tbl"><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Last active</th><th>Imported chats</th><th></th></tr></thead><tbody>
+<tr><td style="font-weight:600">Anton</td><td style="color:var(--text2)">anton@evoplay.com</td><td><span class="pill" style="background:var(--accent-bg);color:var(--accent)">Admin</span></td><td><span class="pill" style="background:var(--green-bg);color:var(--green)">Active</span></td><td style="color:var(--text2)">Now</td><td>28</td><td></td></tr>
+<tr><td style="font-weight:600">Alexei</td><td style="color:var(--text2)">alexei@evoplay.com</td><td><span class="pill" style="background:var(--bg2);color:var(--text2)">User</span></td><td><span class="pill" style="background:var(--green-bg);color:var(--green)">Active</span></td><td style="color:var(--text2)">2 hr ago</td><td>12</td><td><button class="btn btn-sm btn-ghost">Edit role</button></td></tr>
+<tr><td style="font-weight:600">Nina K.</td><td style="color:var(--text2)">nina@evoplay.com</td><td><span class="pill" style="background:var(--bg2);color:var(--text2)">User</span></td><td><span class="pill" style="background:var(--bg2);color:var(--text3)">Deactivated</span></td><td style="color:var(--text2)">3 days ago</td><td>7</td><td><button class="btn btn-sm btn-ghost" style="color:var(--green)">Activate</button></td></tr>
+</tbody></table>
+</div>
+</div>
+
+<!-- Integrations -->
+<div class="settings-section" id="s-integrations">
+<h2 style="font-size:16px;font-weight:600;margin-bottom:16px">Integrations</h2>
+<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;max-width:600px">
+<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><span class="pill" style="background:var(--tg-bg);color:var(--tg);font-size:13px">TG Telegram</span><span class="pill" style="background:var(--green-bg);color:var(--green)">Connected</span></div><div style="font-size:12px;color:var(--text2);margin-bottom:10px">Linked to: +380 *** ** 42</div><div style="display:flex;gap:6px"><button class="btn btn-sm btn-danger">Disconnect</button><button class="btn btn-sm">Settings</button></div></div>
+<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><span class="pill" style="background:var(--sl-bg);color:var(--sl);font-size:13px">SL Slack</span><span class="pill" style="background:var(--green-bg);color:var(--green)">Connected</span></div><div style="font-size:12px;color:var(--text2);margin-bottom:10px">Workspace: Evoplay Team</div><div style="display:flex;gap:6px"><button class="btn btn-sm btn-danger">Disconnect</button><button class="btn btn-sm">Settings</button></div></div>
+<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><span class="pill" style="background:var(--wa-bg);color:var(--wa);font-size:13px">WA WhatsApp</span><span class="pill" style="background:var(--amber-bg);color:var(--amber)">Session expired</span></div><div style="font-size:12px;color:var(--text2);margin-bottom:10px">Last active: 2 days ago</div><div style="display:flex;gap:6px"><button class="btn btn-sm btn-primary">Reconnect</button><button class="btn btn-sm btn-danger">Disconnect</button></div></div>
+<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><span class="pill" style="background:var(--gm-bg);color:var(--gm);font-size:13px">GM Gmail</span><span class="pill" style="background:var(--bg2);color:var(--text3)">Disconnected</span></div><div style="font-size:12px;color:var(--text2);margin-bottom:10px">Not connected</div><div style="display:flex;gap:6px"><button class="btn btn-sm btn-primary">Connect</button></div></div>
+</div>
+</div>
+
+<!-- Broadcast Settings -->
+<div class="settings-section" id="s-broadcast">
+<h2 style="font-size:16px;font-weight:600;margin-bottom:16px">Broadcast settings (anti-ban)</h2>
+<div class="tabs" style="margin-bottom:16px" id="abTabs">
+<button class="tab active" onclick="abTab(this,'ab-tg')">Telegram</button>
+<button class="tab" onclick="abTab(this,'ab-wa')">WhatsApp</button>
+<button class="tab" onclick="abTab(this,'ab-sl')">Slack</button>
+<button class="tab" onclick="abTab(this,'ab-gm')">Gmail</button>
+</div>
+<div id="ab-tg" style="max-width:500px">
+<div class="slider-group"><label><span>Messages per batch</span><span id="tg-batch-val">10</span></label><input type="range" min="1" max="50" value="10" oninput="this.previousElementSibling.querySelector('span:last-child').textContent=this.value;updateRisk()"/><div class="rec">Recommended: 5-10 for new accounts, 20-30 for established</div></div>
+<div class="slider-group"><label><span>Delay between messages</span><span id="tg-delay-val">5s</span></label><input type="range" min="1" max="60" value="5" oninput="this.previousElementSibling.querySelector('span:last-child').textContent=this.value+'s';updateRisk()"/><div class="rec">Recommended: 3-5 seconds</div></div>
+<div class="slider-group"><label><span>Delay between batches</span><span id="tg-bdelay-val">3m</span></label><input type="range" min="1" max="30" value="3" oninput="this.previousElementSibling.querySelector('span:last-child').textContent=this.value+'m';updateRisk()"/><div class="rec">Recommended: 2-5 minutes</div></div>
+<div class="slider-group"><label><span>Max messages per hour</span><span>50</span></label><input type="range" min="10" max="200" value="50" oninput="this.previousElementSibling.querySelector('span:last-child').textContent=this.value;updateRisk()"/><div class="rec">New accounts: 30, Established: 50+</div></div>
+<div class="slider-group"><label><span>Max messages per day</span><span>300</span></label><input type="range" min="50" max="2000" value="300" oninput="this.previousElementSibling.querySelector('span:last-child').textContent=this.value;updateRisk()"/><div class="rec">Recommended: 200-500</div></div>
+<div style="margin-top:14px;padding:12px;background:var(--bg2);border-radius:var(--radius)">
+<div style="font-size:12px;font-weight:600;margin-bottom:6px">Risk assessment</div>
+<div class="risk-meter"><div class="marker" id="riskMarker" style="left:20%;background:var(--green)"></div></div>
+<div style="font-size:11px;color:var(--green)" id="riskText">Low risk. Safe for long-term use. Sending will be slow.</div>
+<div style="margin-top:8px;font-size:12px;color:var(--text2)"><strong>Estimated:</strong> 50 chats ~ 8 min | Daily capacity: ~300 chats/day</div>
+</div>
+</div>
+<div id="ab-wa" style="display:none;max-width:500px">
+<div class="slider-group"><label><span>Messages per batch</span><span>3</span></label><input type="range" min="1" max="20" value="3"/><div class="rec">Recommended: 3-5 (WhatsApp is strict)</div></div>
+<div class="slider-group"><label><span>Delay between messages</span><span>15s</span></label><input type="range" min="5" max="120" value="15"/><div class="rec">Recommended: 10-20 seconds</div></div>
+<div class="slider-group"><label><span>Max messages per hour</span><span>20</span></label><input type="range" min="5" max="50" value="20"/><div class="rec">New numbers: 15-20. Established: 30-40</div></div>
+<div style="padding:10px;background:var(--amber-bg);border-radius:var(--radius);font-size:12px;color:var(--amber);margin-top:10px">Warning: WhatsApp has the strictest rate limits. New numbers are limited to ~20 msg/hour for the first 7 days.</div>
+</div>
+<div id="ab-sl" style="display:none;max-width:500px">
+<div class="slider-group"><label><span>Messages per batch</span><span>30</span></label><input type="range" min="1" max="100" value="30"/><div class="rec">Slack is lenient within workspace, 20-50 OK</div></div>
+<div class="slider-group"><label><span>Delay between messages</span><span>1s</span></label><input type="range" min="1" max="30" value="1"/><div class="rec">Recommended: 1-2 seconds</div></div>
+<div class="slider-group"><label><span>Max messages per hour</span><span>200</span></label><input type="range" min="50" max="500" value="200"/><div class="rec">Practically no limits within workspace</div></div>
+<div style="padding:10px;background:var(--green-bg);border-radius:var(--radius);font-size:12px;color:var(--green);margin-top:10px">Slack has minimal rate limiting for workspace-internal messages.</div>
+</div>
+<div id="ab-gm" style="display:none;max-width:500px">
+<div class="slider-group"><label><span>Messages per batch</span><span>5</span></label><input type="range" min="1" max="30" value="5"/><div class="rec">Recommended: 5-10</div></div>
+<div class="slider-group"><label><span>Delay between messages</span><span>8s</span></label><input type="range" min="3" max="60" value="8"/><div class="rec">Recommended: 5-10 seconds</div></div>
+<div class="slider-group"><label><span>Max messages per hour</span><span>80</span></label><input type="range" min="10" max="100" value="80"/><div class="rec">Google limit: ~100/hour for regular accounts</div></div>
+</div>
+<div style="margin-top:20px;border-top:1px solid var(--border);padding-top:16px;max-width:500px">
+<div style="font-weight:600;font-size:14px;margin-bottom:12px">Auto-retry settings</div>
+<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px"><span style="font-size:13px">Auto-retry enabled</span><button class="toggle on" onclick="this.classList.toggle('on')"></button></div>
+<div class="slider-group"><label><span>Max retry attempts</span><span>3</span></label><input type="range" min="1" max="5" value="3"/></div>
+<div class="slider-group"><label><span>Retry window (hours)</span><span>6</span></label><input type="range" min="1" max="24" value="6"/></div>
+</div>
+<button class="btn btn-primary" style="margin-top:14px">Save broadcast settings</button>
+</div>
+
+<!-- General -->
+<div class="settings-section" id="s-general">
+<h2 style="font-size:16px;font-weight:600;margin-bottom:16px">General settings</h2>
+<h3 style="font-size:14px;font-weight:600;margin-bottom:10px">Chat tags</h3>
+<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+<span class="tag" style="background:#faeeda;color:#633806">VIP <button style="border:none;background:none;cursor:pointer;color:#633806;font-size:14px">&times;</button></span>
+<span class="tag" style="background:#eaf3de;color:#27500a">Active <button style="border:none;background:none;cursor:pointer;color:#27500a;font-size:14px">&times;</button></span>
+<span class="tag" style="background:#e6f1fb;color:#0c447c">Partner <button style="border:none;background:none;cursor:pointer;color:#0c447c;font-size:14px">&times;</button></span>
+<span class="tag" style="background:#eeedfe;color:#3c3489">Lead <button style="border:none;background:none;cursor:pointer;color:#3c3489;font-size:14px">&times;</button></span>
+<span class="tag" style="background:#e1f5ee;color:#085041">Support <button style="border:none;background:none;cursor:pointer;color:#085041;font-size:14px">&times;</button></span>
+<span class="tag" style="background:#fbeaf0;color:#72243e">APAC <button style="border:none;background:none;cursor:pointer;color:#72243e;font-size:14px">&times;</button></span>
+<span class="tag" style="background:#fcebeb;color:#791f1f">Compliance <button style="border:none;background:none;cursor:pointer;color:#791f1f;font-size:14px">&times;</button></span>
+<button class="btn btn-sm" onclick="alert('Create tag: Name + Color picker')">+ New tag</button>
+</div>
+<h3 style="font-size:14px;font-weight:600;margin:20px 0 10px">Notifications</h3>
+<div style="display:flex;flex-direction:column;gap:12px;max-width:400px">
+<div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:13px">Email notifications</span><button class="toggle on" onclick="this.classList.toggle('on')"></button></div>
+<div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:13px">Desktop notifications</span><button class="toggle" onclick="this.classList.toggle('on')"></button></div>
+<div class="form-group"><label>Notification scope</label><select class="inp" style="width:200px"><option>All chats</option><option>My chats only</option></select></div>
+</div>
+</div>
+
+</div>
+</div>
+</div>
+
+</div><!-- /main -->
+
+<!-- ADD CHAT MODAL -->
+<div class="modal-overlay" id="addChatModal">
+<div class="modal">
+<button class="modal-close" onclick="closeAddChatModal()">&times;</button>
+<h3>Import chats</h3>
+<div id="acStep1">
+<p style="font-size:13px;color:var(--text2);margin-bottom:10px">Select a messenger to import chats from:</p>
+<div style="display:flex;gap:8px;flex-wrap:wrap" id="acMsgPicker"></div>
+</div>
+<div id="acStep2" style="display:none">
+<p style="font-size:13px;color:var(--text2);margin-bottom:8px" id="acLabel"></p>
+<input class="inp inp-sm" placeholder="Search chats..." style="margin-bottom:8px"/>
+<div id="acList" style="max-height:240px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);padding:8px"></div>
+<div style="margin-top:10px;display:flex;gap:8px;justify-content:flex-end">
+<button class="btn btn-sm" onclick="acBack()">Back</button>
+<button class="btn btn-primary btn-sm" id="acImportBtn" onclick="acDoImport()">Add 0 chats</button>
+</div>
+</div>
+</div>
+</div>
+
+<script>
+const MC={Telegram:{bg:'#e6f1fb',c:'#0c447c',i:'TG'},Slack:{bg:'#eeedfe',c:'#3c3489',i:'SL'},WhatsApp:{bg:'#eaf3de',c:'#3b6d11',i:'WA'},Gmail:{bg:'#fcebeb',c:'#a32d2d',i:'GM'}};
+const TC={VIP:{bg:'#faeeda',c:'#633806'},Active:{bg:'#eaf3de',c:'#27500a'},Partner:{bg:'#e6f1fb',c:'#0c447c'},Lead:{bg:'#eeedfe',c:'#3c3489'},Support:{bg:'#e1f5ee',c:'#085041'},APAC:{bg:'#fbeaf0',c:'#72243e'},Compliance:{bg:'#fcebeb',c:'#791f1f'},Internal:{bg:'#f1efe8',c:'#444441'}};
+
+const chats=[
+{id:1,name:'BetOperator Group',msg:'Telegram',status:'Active',time:'2 min ago',ts:1,tags:['VIP','Active'],msgs:342,owner:'Anton',importedBy:'Anton',unread:3,
+messages:[{from:'Dmitry K.',text:'Hi team, we need to integrate the new slot API',time:'10:15',self:false},{from:'You',text:'Sure, I can prepare the documentation by tomorrow',time:'10:18',self:true},{from:'Dmitry K.',text:'Great. Also, can you share the RTP configs?',time:'10:20',self:false},{from:'Maria S.',text:'I have the latest RTP sheet, sending now',time:'10:22',self:false},{from:'You',text:'Perfect, will cross-reference with analytics',time:'10:25',self:true},{from:'Dmitry K.',text:'Let me check the API docs and get back to you',time:'10:31',self:false}]},
+{id:2,name:'Sarah - CasinoX',msg:'Slack',status:'Active',time:'15 min',ts:2,tags:['Partner'],msgs:128,owner:'Anton',importedBy:'Anton',unread:0,
+messages:[{from:'Sarah',text:'Hey! Just saw the new game preview',time:'09:40',self:false},{from:'You',text:'Thanks! We spent a lot of time on the animations',time:'09:45',self:true},{from:'Sarah',text:'The new game launch looks great!',time:'09:52',self:false}]},
+{id:3,name:'Marco - LuckySpin',msg:'WhatsApp',status:'Active',time:'1 hr',ts:3,tags:['Lead'],msgs:56,owner:'Alexei',importedBy:'Alexei',unread:1,
+messages:[{from:'Marco',text:'Hi, I wanted to discuss partnership terms',time:'08:30',self:false},{from:'You',text:'Of course! What time works for you?',time:'08:35',self:true},{from:'Marco',text:'Can we schedule a call?',time:'09:00',self:false}]},
+{id:4,name:'Dev Team Internal',msg:'Slack',status:'Active',time:'2 hr',ts:4,tags:['Internal'],msgs:890,owner:'Anton',importedBy:'Anton',unread:0,
+messages:[{from:'Igor M.',text:'Starting the deploy process now',time:'07:00',self:false},{from:'Igor M.',text:'Deploy is done',time:'07:45',self:false}]},
+{id:5,name:'Lisa - RegTech',msg:'Gmail',status:'Active',time:'3 hr',ts:5,tags:['Compliance'],msgs:34,owner:'Anton',importedBy:'Anton',unread:0,
+messages:[{from:'Lisa',text:'Please find the compliance report attached',time:'06:30',self:false}]},
+{id:6,name:'VIP Highrollers',msg:'Telegram',status:'Active',time:'30 min',ts:1.5,tags:['VIP','Partner'],msgs:512,owner:'Anton',importedBy:'Anton',unread:0,
+messages:[{from:'Jake R.',text:'Tournament results are in. Incredible engagement!',time:'09:50',self:false},{from:'You',text:'Yes, 40% increase in daily active players',time:'10:00',self:true}]},
+{id:7,name:'Old Migration',msg:'Telegram',status:'Read-only',time:'2 weeks',ts:10,tags:['Internal'],msgs:1204,owner:'Anton',importedBy:'Anton',unread:0,
+messages:[{from:'System',text:'Migration completed. 1,204 messages transferred',time:'14:00',self:false}]},
+{id:8,name:'Chen Wei - Asia',msg:'WhatsApp',status:'Active',time:'1 day',ts:8,tags:['APAC'],msgs:67,owner:'Anton',importedBy:'Alexei',unread:0,
+messages:[{from:'Chen Wei',text:'Market data is ready. Vietnam showing strongest growth',time:'15:00',self:false}]},
+{id:9,name:'Payments Alerts',msg:'Gmail',status:'Active',time:'4 hr',ts:6,tags:['Active'],msgs:203,owner:'Alexei',importedBy:'Alexei',unread:0,
+messages:[{from:'System',text:'Daily settlement: 47 transactions, $124,500 total',time:'06:00',self:false}]},
+{id:10,name:'PlayHub Support',msg:'Telegram',status:'Active',time:'5 hr',ts:7,tags:['Support'],msgs:89,owner:'Alexei',importedBy:'Anton',unread:0,
+messages:[{from:'Agent',text:'Issue resolved, thanks!',time:'Yesterday',self:false}]}
+];
+
+let chatsSel=new Set(), activeMsg=null, msgInfoOpen=false, msgReplyIdx=null, chatsTabMode='all';
+
+// NAV
+function nav(p){
+document.querySelectorAll('.page').forEach(el=>el.classList.remove('active'));
+document.getElementById('pg-'+p).classList.add('active');
+document.querySelectorAll('.nav-i').forEach(b=>b.classList.remove('active'));
+const btn=document.querySelector(`.nav-i[data-page="${p}"]`);
+if(btn)btn.classList.add('active');
+if(p==='chats')renderChats();
+if(p==='messenger'){renderMsgList();if(!activeMsg){document.getElementById('msgHeader').style.display='none';document.getElementById('msgInputArea').style.display='none';document.getElementById('msgFeed').innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text3);font-size:14px">Select a chat from the list</div>';}}
+}
+
+// CHATS
+function chatsTab(btn,mode){chatsTabMode=mode;document.querySelectorAll('#pg-chats .tab').forEach(t=>t.classList.remove('active'));btn.classList.add('active');chatsSel.clear();renderChats();}
+function renderChats(){
+const q=document.getElementById('chatsSearch').value.toLowerCase();
+const fm=document.getElementById('chatsMsgFilter').value;
+const fs=document.getElementById('chatsStatusFilter').value;
+let f=chatsTabMode==='my'?chats.filter(c=>c.owner==='Anton'):chats;
+if(q)f=f.filter(c=>c.name.toLowerCase().includes(q));
+if(fm)f=f.filter(c=>c.msg===fm);
+if(fs)f=f.filter(c=>c.status===fs);
+f.sort((a,b)=>a.ts-b.ts);
+document.getElementById('chatsBody').innerHTML=f.map(c=>{
+const m=MC[c.msg],ch=chatsSel.has(c.id);
+return`<tr><td><input type="checkbox" class="cb" ${ch?'checked':''} onchange="chatsToggle(${c.id},this.checked)"/></td>
+<td style="font-weight:600;cursor:pointer" onclick="nav('messenger');selectMsg(${c.id})">${c.name}${c.unread?` <span style="background:var(--accent);color:#fff;font-size:10px;padding:1px 5px;border-radius:8px">${c.unread}</span>`:''}</td>
+<td><span class="pill" style="background:${m.bg};color:${m.c}">${m.i}</span></td>
+<td><span class="pill" style="background:${c.status==='Active'?'var(--green-bg)':'var(--bg2)'};color:${c.status==='Active'?'var(--green)':'var(--text3)'}">${c.status}</span></td>
+<td style="color:var(--text2)">${c.time}</td>
+<td>${c.tags.map(t=>{const tc=TC[t]||{bg:'#f1efe8',c:'#444'};return`<span class="tag" style="background:${tc.bg};color:${tc.c}">${t}</span>`}).join('')}</td>
+<td style="text-align:right;color:var(--text2)">${c.msgs}</td>
+<td><div style="display:flex;align-items:center;gap:4px"><div style="width:20px;height:20px;border-radius:50%;background:var(--accent-bg);display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:600;color:var(--accent)">${c.owner.slice(0,2).toUpperCase()}</div><span style="font-size:12px">${c.owner}</span></div></td></tr>`;}).join('');
+document.getElementById('chatsFooter').innerHTML=`<span>Showing ${f.length} of ${chats.length}</span><span>${chatsSel.size} selected</span>`;
+const on=chatsSel.size>0;
+document.getElementById('bulkAssignBtn').disabled=!on;document.getElementById('bulkTagBtn').disabled=!on;document.getElementById('bulkRemoveBtn').disabled=!on;
+}
+function chatsToggle(id,ch){if(ch)chatsSel.add(id);else chatsSel.delete(id);renderChats();}
+function chatsToggleAll(ch){chats.forEach(c=>{if(ch)chatsSel.add(c.id);else chatsSel.delete(c.id)});renderChats();}
+
+// ADD CHAT MODAL
+const importable={Telegram:['Crypto Partners','News Channel','Dev Updates','Marketing Group'],Slack:['#design-review','#sales-pipeline','DM: Jake Rivera'],WhatsApp:['Investor Group','Support Escalations'],Gmail:['Newsletter Replies','HR Correspondence']};
+let acSelected=new Set(),acMessenger='';
+function openAddChatModal(){document.getElementById('addChatModal').classList.add('open');document.getElementById('acStep1').style.display='block';document.getElementById('acStep2').style.display='none';
+const p=document.getElementById('acMsgPicker');p.innerHTML=Object.keys(MC).map(m=>{const v=MC[m];return`<button class="btn" onclick="acPick('${m}')" style="display:flex;align-items:center;gap:6px"><span class="pill" style="background:${v.bg};color:${v.c}">${v.i}</span>${m}</button>`}).join('');}
+function closeAddChatModal(){document.getElementById('addChatModal').classList.remove('open');acSelected.clear();}
+function acPick(m){acMessenger=m;acSelected.clear();document.getElementById('acStep1').style.display='none';document.getElementById('acStep2').style.display='block';document.getElementById('acLabel').textContent='Select chats from '+m+':';
+const list=importable[m]||[];document.getElementById('acList').innerHTML=list.map(n=>`<div style="padding:5px 0;display:flex;align-items:center;gap:8px;font-size:13px;border-bottom:1px solid var(--border)"><input type="checkbox" style="accent-color:var(--accent)" onchange="acToggle('${n}',this.checked)"/>${n}</div>`).join('');acUpdateBtn();}
+function acBack(){document.getElementById('acStep1').style.display='block';document.getElementById('acStep2').style.display='none';acSelected.clear();}
+function acToggle(n,ch){if(ch)acSelected.add(n);else acSelected.delete(n);acUpdateBtn();}
+function acUpdateBtn(){document.getElementById('acImportBtn').textContent='Add '+acSelected.size+' chat'+(acSelected.size!==1?'s':'');}
+function acDoImport(){if(!acSelected.size)return;acSelected.forEach(n=>{chats.unshift({id:Date.now()+Math.random(),name:n,msg:acMessenger,status:'Active',time:'Just now',ts:0,tags:[],msgs:0,owner:'Anton',importedBy:'Anton',unread:0,messages:[]});});closeAddChatModal();renderChats();renderMsgList();}
+
+// MESSENGER
+function renderMsgList(){
+const q=(document.getElementById('msgSearch').value||'').toLowerCase();
+const f=chats.filter(c=>c.name.toLowerCase().includes(q)).sort((a,b)=>a.ts-b.ts);
+document.getElementById('msgChatList').innerHTML=f.map(c=>{const m=MC[c.msg];const isA=activeMsg&&activeMsg.id===c.id;const last=c.messages[c.messages.length-1];
+return`<div class="chat-item ${isA?'active':''}" onclick="selectMsg(${c.id})">
+<div class="chat-av" style="background:${m.bg};color:${m.c}">${c.name.split(' ').map(w=>w[0]).slice(0,2).join('')}<div class="dot" style="background:${m.bg};color:${m.c}">${m.i}</div></div>
+<div style="flex:1;min-width:0"><div style="display:flex;justify-content:space-between;margin-bottom:2px"><span style="font-size:13px;font-weight:${c.unread?500:400};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${c.name}</span><span style="font-size:11px;color:var(--text3);flex-shrink:0;margin-left:6px">${c.time}</span></div>
+<div style="display:flex;justify-content:space-between"><span style="font-size:12px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${last?last.text.slice(0,40):'No messages'}</span>${c.unread?`<span style="background:var(--accent);color:#fff;font-size:9px;padding:1px 5px;border-radius:8px;flex-shrink:0;margin-left:4px">${c.unread}</span>`:''}</div></div></div>`}).join('');}
+
+function selectMsg(id){
+activeMsg=chats.find(c=>c.id===id);if(activeMsg.unread)activeMsg.unread=0;
+const m=MC[activeMsg.msg];
+document.getElementById('msgHeader').style.display='flex';
+document.getElementById('mhAvatar').style.background=m.bg;document.getElementById('mhAvatar').style.color=m.c;document.getElementById('mhAvatar').innerHTML=m.i;
+document.getElementById('mhName').textContent=activeMsg.name;
+document.getElementById('mhMeta').innerHTML=`<span class="pill" style="background:${m.bg};color:${m.c}">${activeMsg.msg}</span> <span style="margin-left:4px;color:${activeMsg.status==='Active'?'var(--green)':'var(--text3)'}">${activeMsg.status}</span>`;
+renderMsgFeed();
+document.getElementById('msgInputArea').style.display=activeMsg.status==='Active'?'block':'none';
+if(msgInfoOpen)renderMsgInfo();
+cancelMsgReply();renderMsgList();
+}
+function renderMsgFeed(){
+const el=document.getElementById('msgFeed');
+el.innerHTML=activeMsg.messages.map((msg,i)=>{
+const rq=msg.replyTo!=null?`<div class="msg-reply-q"><strong>${activeMsg.messages[msg.replyTo].from}:</strong> ${activeMsg.messages[msg.replyTo].text.slice(0,50)}...</div>`:'';
+return`<div class="msg-bubble-wrap ${msg.self?'self':''}" oncontextmenu="event.preventDefault();startReply(${i})">
+<div class="msg-bubble">${rq}${!msg.self?`<div class="msg-sender">${msg.from}</div>`:''}${msg.text}<div class="msg-time">${msg.time}</div></div></div>`}).join('');
+el.scrollTop=el.scrollHeight;
+}
+function startReply(idx){msgReplyIdx=idx;const msg=activeMsg.messages[idx];document.getElementById('msgReplyContent').innerHTML=`<strong>${msg.from}:</strong> ${msg.text.slice(0,60)}`;document.getElementById('msgReplyBar').classList.add('visible');document.getElementById('msgTextarea').focus();}
+function cancelMsgReply(){msgReplyIdx=null;document.getElementById('msgReplyBar').classList.remove('visible');}
+function sendMsg(){const inp=document.getElementById('msgTextarea');if(!inp.value.trim()||!activeMsg)return;const m={from:'You',text:inp.value.trim(),time:new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}),self:true};if(msgReplyIdx!=null)m.replyTo=msgReplyIdx;activeMsg.messages.push(m);inp.value='';cancelMsgReply();renderMsgFeed();renderMsgList();}
+document.getElementById('msgTextarea').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg();}});
+function toggleMsgInfo(){msgInfoOpen=!msgInfoOpen;document.getElementById('msgInfoPanel').classList.toggle('open',msgInfoOpen);document.getElementById('infoToggleBtn').classList.toggle('active',msgInfoOpen);if(msgInfoOpen&&activeMsg)renderMsgInfo();}
+function renderMsgInfo(){if(!activeMsg)return;const m=MC[activeMsg.msg];const parts=[...new Set(activeMsg.messages.filter(x=>!x.self).map(x=>x.from))];
+document.getElementById('msgInfoContent').innerHTML=`
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><span style="font-weight:600;font-size:14px">Chat details</span><button onclick="toggleMsgInfo()" style="border:none;background:none;font-size:18px;cursor:pointer;color:var(--text3)">&times;</button></div>
+<div class="info-sec"><div class="info-lbl">Chat name</div><div class="info-val">${activeMsg.name}</div></div>
+<div class="info-sec"><div class="info-lbl">Messenger</div><span class="pill" style="background:${m.bg};color:${m.c}">${m.i} ${activeMsg.msg}</span></div>
+<div class="info-sec"><div class="info-lbl">Status</div><span class="pill" style="background:${activeMsg.status==='Active'?'var(--green-bg)':'var(--bg2)'};color:${activeMsg.status==='Active'?'var(--green)':'var(--text3)'}">${activeMsg.status}</span></div>
+<div class="info-sec"><div class="info-lbl">Owner</div><div class="info-val">${activeMsg.owner}</div></div>
+<div class="info-sec"><div class="info-lbl">Imported by</div><div class="info-val">${activeMsg.importedBy}</div></div>
+<div class="info-sec"><div class="info-lbl">Tags</div><div style="margin-top:2px">${activeMsg.tags.map(t=>{const tc=TC[t]||{bg:'#f1efe8',c:'#444'};return`<span class="tag" style="background:${tc.bg};color:${tc.c}">${t}</span>`}).join('')||'<span style="font-size:12px;color:var(--text3)">No tags</span>'}</div></div>
+<div class="info-sec"><div class="info-lbl">Messages</div><div class="info-val">${activeMsg.messages.length}</div></div>
+<div class="info-sec"><div class="info-lbl">Participants (${parts.length+1})</div><div style="margin-top:4px">${parts.map(p=>`<div style="padding:4px 0;font-size:13px;display:flex;align-items:center;gap:6px"><div style="width:22px;height:22px;border-radius:50%;background:var(--bg2);display:flex;align-items:center;justify-content:center;font-size:8px;color:var(--text2);font-weight:600">${p.split(' ').map(w=>w[0]).join('')}</div>${p}</div>`).join('')}<div style="padding:4px 0;font-size:13px;display:flex;align-items:center;gap:6px"><div style="width:22px;height:22px;border-radius:50%;background:var(--accent-bg);display:flex;align-items:center;justify-content:center;font-size:8px;color:var(--accent);font-weight:600">AN</div>You</div></div></div>`;}
+
+// BROADCAST
+function broadcastTab(btn,t){document.querySelectorAll('#broadcastTabs .tab').forEach(b=>b.classList.remove('active'));btn.classList.add('active');['list','templates','analytics','new'].forEach(s=>{const el=document.getElementById('bc-'+s);if(el)el.style.display=s===t?'block':'none'});}
+function showNewBroadcast(){['list','templates','analytics'].forEach(s=>{const el=document.getElementById('bc-'+s);if(el)el.style.display='none'});document.getElementById('bc-new').style.display='block';wizGo(0);}
+function hideNewBroadcast(){document.getElementById('bc-new').style.display='none';document.getElementById('bc-list').style.display='block';}
+function wizGo(n){document.querySelectorAll('.wizard-panel').forEach((p,i)=>{p.classList.toggle('active',i===n)});document.querySelectorAll('.wizard-step').forEach((s,i)=>{s.classList.toggle('active',i===n);s.classList.toggle('done',i<n)});}
+
+// SETTINGS
+function settingsNav(btn,id){document.querySelectorAll('.settings-nav-item').forEach(b=>b.classList.remove('active'));btn.classList.add('active');document.querySelectorAll('.settings-section').forEach(s=>s.classList.remove('active'));document.getElementById(id).classList.add('active');}
+function abTab(btn,id){document.querySelectorAll('#abTabs .tab').forEach(b=>b.classList.remove('active'));btn.classList.add('active');['ab-tg','ab-wa','ab-sl','ab-gm'].forEach(s=>{document.getElementById(s).style.display=s===id?'block':'none'});}
+function updateRisk(){const sliders=document.querySelectorAll('#ab-tg input[type=range]');if(sliders.length<5)return;const batch=+sliders[0].value,delay=+sliders[1].value,bdelay=+sliders[2].value,perH=+sliders[3].value;
+const score=(batch/50*25)+(1-delay/60)*25+(1-bdelay/30)*25+(perH/200*25);const pct=Math.min(100,Math.max(0,score));
+const marker=document.getElementById('riskMarker');marker.style.left=pct+'%';
+const txt=document.getElementById('riskText');
+if(pct<25){marker.style.background='var(--green)';txt.style.color='var(--green)';txt.textContent='Low risk. Safe for long-term use.';}
+else if(pct<50){marker.style.background='#eab308';txt.style.color='#eab308';txt.textContent='Moderate risk. Acceptable for established accounts.';}
+else if(pct<75){marker.style.background='#f97316';txt.style.color='#f97316';txt.textContent='High risk. May trigger rate limits.';}
+else{marker.style.background='var(--red)';txt.style.color='var(--red)';txt.textContent='Dangerous. High probability of account ban.';}}
+
+// INIT
+nav('dashboard');
+</script>
+</body>
+</html>
