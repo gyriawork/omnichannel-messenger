@@ -1,0 +1,208 @@
+import type { Server as HttpServer } from 'node:http';
+import { Server } from 'socket.io';
+import jwt from 'jsonwebtoken';
+import prisma from '../lib/prisma.js';
+
+// ─── Types ───
+
+interface JwtPayload {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  organizationId: string | null;
+}
+
+interface SocketUser {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  organizationId: string | null;
+}
+
+// ─── Singleton ───
+
+let io: Server | null = null;
+
+/**
+ * Returns the Socket.io server instance. Throws if called before
+ * `createWebSocketServer()`. Use this in route handlers to emit events.
+ */
+export function getIO(): Server {
+  if (!io) {
+    throw new Error('WebSocket server has not been initialized. Call createWebSocketServer() first.');
+  }
+  return io;
+}
+
+// ─── Helpers ───
+
+function getJwtSecret(): string {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) throw new Error('JWT_SECRET is not set');
+  return secret;
+}
+
+/**
+ * Verify that a chat belongs to the given organization.
+ */
+async function chatBelongsToOrg(chatId: string, organizationId: string): Promise<boolean> {
+  const chat = await prisma.chat.findFirst({
+    where: { id: chatId, organizationId },
+    select: { id: true },
+  });
+  return chat !== null;
+}
+
+// ─── Typing throttle state ───
+
+const typingThrottle = new Map<string, number>(); // `userId:chatId` → last emit timestamp
+const TYPING_THROTTLE_MS = 2000;
+
+// ─── Factory ───
+
+/**
+ * Creates and configures the Socket.io server, attaching it to the provided
+ * HTTP server so it shares the same port as Fastify.
+ */
+export function createWebSocketServer(httpServer: HttpServer): Server {
+  if (io) return io;
+
+  io = new Server(httpServer, {
+    cors: {
+      origin: process.env.APP_URL ?? 'http://localhost:3000',
+      credentials: true,
+    },
+    path: '/socket.io',
+  });
+
+  // ── Authentication middleware ──
+
+  io.use((socket, next) => {
+    const token = socket.handshake.auth?.token as string | undefined;
+
+    if (!token) {
+      return next(new Error('Authentication required'));
+    }
+
+    try {
+      const payload = jwt.verify(token, getJwtSecret()) as JwtPayload;
+
+      // Attach user data to socket
+      (socket.data as { user: SocketUser }).user = {
+        id: payload.id,
+        email: payload.email,
+        name: payload.name,
+        role: payload.role,
+        organizationId: payload.organizationId,
+      };
+
+      next();
+    } catch {
+      next(new Error('Invalid or expired token'));
+    }
+  });
+
+  // ── Connection handler ──
+
+  io.on('connection', (socket) => {
+    const user = (socket.data as { user: SocketUser }).user;
+
+    // Automatically join the organization room
+    if (user.organizationId) {
+      socket.join(`org:${user.organizationId}`);
+    }
+
+    // ── join_chat ──
+
+    socket.on('join_chat', async (data: { chatId: string }) => {
+      const { chatId } = data;
+
+      if (!chatId || !user.organizationId) {
+        socket.emit('error', { message: 'Invalid chatId or no organization' });
+        return;
+      }
+
+      const belongs = await chatBelongsToOrg(chatId, user.organizationId);
+      if (!belongs) {
+        socket.emit('error', { message: 'Chat not found or access denied' });
+        return;
+      }
+
+      socket.join(`chat:${chatId}`);
+    });
+
+    // ── leave_chat ──
+
+    socket.on('leave_chat', (data: { chatId: string }) => {
+      const { chatId } = data;
+      if (chatId) {
+        socket.leave(`chat:${chatId}`);
+      }
+    });
+
+    // ── typing ──
+
+    socket.on('typing', (data: { chatId: string }) => {
+      const { chatId } = data;
+      if (!chatId) return;
+
+      // Throttle: one typing event per user per chat every TYPING_THROTTLE_MS
+      const key = `${user.id}:${chatId}`;
+      const now = Date.now();
+      const lastEmit = typingThrottle.get(key) ?? 0;
+
+      if (now - lastEmit < TYPING_THROTTLE_MS) return;
+
+      typingThrottle.set(key, now);
+
+      // Broadcast to room, excluding the sender
+      socket.to(`chat:${chatId}`).emit('typing', {
+        chatId,
+        userId: user.id,
+        userName: user.name,
+      });
+    });
+
+    // ── mark_read ──
+
+    socket.on('mark_read', async (data: { chatId: string; messageId: string }) => {
+      const { chatId, messageId } = data;
+
+      if (!chatId || !messageId || !user.organizationId) return;
+
+      const belongs = await chatBelongsToOrg(chatId, user.organizationId);
+      if (!belongs) return;
+
+      // Upsert ChatPreference to set unread = false
+      await prisma.chatPreference.upsert({
+        where: {
+          userId_chatId: {
+            userId: user.id,
+            chatId,
+          },
+        },
+        update: { unread: false },
+        create: {
+          userId: user.id,
+          chatId,
+          unread: false,
+        },
+      });
+    });
+
+    // ── disconnect ──
+
+    socket.on('disconnect', () => {
+      // Clean up typing throttle entries for this user
+      for (const [key] of typingThrottle) {
+        if (key.startsWith(`${user.id}:`)) {
+          typingThrottle.delete(key);
+        }
+      }
+    });
+  });
+
+  return io;
+}

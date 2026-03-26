@@ -7,6 +7,11 @@ import prisma from './lib/prisma.js';
 import authRoutes from './routes/auth.js';
 import organizationRoutes from './routes/organizations.js';
 import userRoutes from './routes/users.js';
+import messageRoutes from './routes/messages.js';
+import chatRoutes from './routes/chats.js';
+import chatPreferenceRoutes from './routes/chat-preferences.js';
+import tagRoutes from './routes/tags.js';
+import { createWebSocketServer } from './websocket/index.js';
 
 // ─── Create server ───
 
@@ -57,6 +62,10 @@ fastify.addContentTypeParser(
 await fastify.register(authRoutes, { prefix: '/api/auth' });
 await fastify.register(organizationRoutes, { prefix: '/api/organizations' });
 await fastify.register(userRoutes, { prefix: '/api/users' });
+await fastify.register(messageRoutes, { prefix: '/api' });
+await fastify.register(chatRoutes, { prefix: '/api' });
+await fastify.register(chatPreferenceRoutes, { prefix: '/api' });
+await fastify.register(tagRoutes, { prefix: '/api' });
 
 // Health check
 fastify.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));
@@ -109,6 +118,11 @@ const HOST = process.env.HOST ?? '0.0.0.0';
 try {
   await fastify.listen({ port: PORT, host: HOST });
   fastify.log.info(`Server listening on ${HOST}:${PORT}`);
+
+  // Attach Socket.io to the same HTTP server
+  const httpServer = fastify.server;
+  const io = createWebSocketServer(httpServer);
+  fastify.log.info('WebSocket server attached');
 } catch (err) {
   fastify.log.fatal(err);
   process.exit(1);
