@@ -3,7 +3,20 @@ import IORedis from 'ioredis';
 import prisma from './lib/prisma.js';
 import { decryptCredentials } from './lib/crypto.js';
 import { createAdapter } from './integrations/factory.js';
-import { DEFAULT_ANTIBAN, type Messenger } from '@omnichannel/shared';
+type Messenger = 'telegram' | 'slack' | 'whatsapp' | 'gmail';
+
+const DEFAULT_ANTIBAN: Record<Messenger, {
+  messagesPerBatch: number;
+  delayBetweenMessages: number;
+  delayBetweenBatches: number;
+  maxMessagesPerHour: number;
+  maxMessagesPerDay: number;
+}> = {
+  telegram: { messagesPerBatch: 10, delayBetweenMessages: 5, delayBetweenBatches: 180, maxMessagesPerHour: 50, maxMessagesPerDay: 300 },
+  whatsapp: { messagesPerBatch: 3, delayBetweenMessages: 15, delayBetweenBatches: 600, maxMessagesPerHour: 20, maxMessagesPerDay: 80 },
+  slack: { messagesPerBatch: 30, delayBetweenMessages: 1, delayBetweenBatches: 30, maxMessagesPerHour: 200, maxMessagesPerDay: 2000 },
+  gmail: { messagesPerBatch: 5, delayBetweenMessages: 8, delayBetweenBatches: 180, maxMessagesPerHour: 80, maxMessagesPerDay: 400 },
+};
 
 // ─── Redis connections ───
 

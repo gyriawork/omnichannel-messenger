@@ -1,5 +1,5 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
-import type { UserRole } from '@omnichannel/shared';
+type UserRole = 'superadmin' | 'admin' | 'user';
 
 // ─── Types ───
 
