@@ -1,0 +1,286 @@
+import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import prisma from '../lib/prisma.js';
+import { getIO } from '../websocket/index.js';
+
+// ─── Webhook secret verification ───
+
+function verifyTelegramSecret(request: FastifyRequest): boolean {
+  const secret = request.headers['x-telegram-bot-api-secret-token'];
+  const expected = process.env.TELEGRAM_WEBHOOK_SECRET;
+  if (!expected) return true; // no secret configured = skip check (dev)
+  return secret === expected;
+}
+
+function verifySlackRequest(request: FastifyRequest): boolean {
+  // Slack sends a verification challenge on setup
+  // In production, verify using signing secret
+  return true; // simplified for now
+}
+
+// ─── Helper: save incoming message ───
+
+async function saveIncomingMessage(params: {
+  externalChatId: string;
+  messenger: string;
+  organizationId: string;
+  senderName: string;
+  senderExternalId: string;
+  text?: string;
+  attachments?: unknown;
+  externalMessageId?: string;
+}) {
+  // Find the chat
+  const chat = await prisma.chat.findFirst({
+    where: {
+      externalChatId: params.externalChatId,
+      messenger: params.messenger,
+      organizationId: params.organizationId,
+    },
+  });
+
+  if (!chat) {
+    // Chat not imported — ignore
+    return null;
+  }
+
+  // Save message
+  const message = await prisma.message.create({
+    data: {
+      chatId: chat.id,
+      senderName: params.senderName,
+      senderExternalId: params.senderExternalId,
+      isSelf: false,
+      text: params.text || '',
+      externalMessageId: params.externalMessageId,
+      attachments: params.attachments ? JSON.parse(JSON.stringify(params.attachments)) : undefined,
+    },
+  });
+
+  // Update chat lastActivityAt and messageCount
+  await prisma.chat.update({
+    where: { id: chat.id },
+    data: {
+      lastActivityAt: new Date(),
+      messageCount: { increment: 1 },
+    },
+  });
+
+  // Emit real-time event via WebSocket
+  try {
+    const io = getIO();
+    io.to(`org:${params.organizationId}`).emit('chat_updated', {
+      chatId: chat.id,
+    });
+    io.to(`chat:${chat.id}`).emit('new_message', {
+      chatId: chat.id,
+      message: {
+        id: message.id,
+        chatId: chat.id,
+        senderName: message.senderName,
+        text: message.text,
+        isSelf: false,
+        createdAt: message.createdAt,
+      },
+    });
+  } catch {
+    // WebSocket might not be initialized in tests
+  }
+
+  return message;
+}
+
+// ─── Routes ───
+
+export default async function webhookRoutes(fastify: FastifyInstance): Promise<void> {
+
+  // ── Telegram Webhook ──
+  // Telegram sends updates as POST to this endpoint
+  fastify.post(
+    '/webhooks/telegram',
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      if (!verifyTelegramSecret(request)) {
+        return reply.status(403).send({ error: 'Invalid secret' });
+      }
+
+      const body = request.body as Record<string, unknown>;
+
+      // Handle message update
+      const message = body.message as Record<string, unknown> | undefined;
+      if (!message) {
+        return reply.send({ ok: true }); // Not a message update
+      }
+
+      const chat = message.chat as Record<string, unknown>;
+      const from = message.from as Record<string, unknown>;
+      const text = (message.text as string) || (message.caption as string) || '';
+
+      const chatId = String(chat.id);
+      const senderName = [from.first_name, from.last_name].filter(Boolean).join(' ') || 'Unknown';
+      const senderId = String(from.id);
+
+      // Find all orgs that have this chat imported
+      const importedChats = await prisma.chat.findMany({
+        where: { externalChatId: chatId, messenger: 'telegram' },
+        select: { organizationId: true },
+      });
+
+      for (const ic of importedChats) {
+        await saveIncomingMessage({
+          externalChatId: chatId,
+          messenger: 'telegram',
+          organizationId: ic.organizationId,
+          senderName,
+          senderExternalId: senderId,
+          text,
+          externalMessageId: String(message.message_id),
+        });
+      }
+
+      return reply.send({ ok: true });
+    },
+  );
+
+  // ── Slack Event Webhook ──
+  // Slack sends events to this endpoint
+  fastify.post(
+    '/webhooks/slack',
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const body = request.body as Record<string, unknown>;
+
+      // Handle Slack URL verification challenge
+      if (body.type === 'url_verification') {
+        return reply.send({ challenge: body.challenge });
+      }
+
+      if (body.type !== 'event_callback') {
+        return reply.send({ ok: true });
+      }
+
+      const event = body.event as Record<string, unknown>;
+      if (!event || event.type !== 'message' || event.subtype) {
+        return reply.send({ ok: true }); // Not a regular message
+      }
+
+      const channelId = event.channel as string;
+      const userId = event.user as string;
+      const text = (event.text as string) || '';
+      const ts = event.ts as string;
+
+      // Look up user name from Slack (simplified — in production cache this)
+      const senderName = userId; // Would call Slack API to resolve
+
+      const importedChats = await prisma.chat.findMany({
+        where: { externalChatId: channelId, messenger: 'slack' },
+        select: { organizationId: true },
+      });
+
+      for (const ic of importedChats) {
+        await saveIncomingMessage({
+          externalChatId: channelId,
+          messenger: 'slack',
+          organizationId: ic.organizationId,
+          senderName,
+          senderExternalId: userId,
+          text,
+          externalMessageId: ts,
+        });
+      }
+
+      return reply.send({ ok: true });
+    },
+  );
+
+  // ── WhatsApp Webhook ──
+  // WhatsApp (Baileys) uses local session, but if using Business API:
+  fastify.post(
+    '/webhooks/whatsapp',
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const body = request.body as Record<string, unknown>;
+
+      // WhatsApp Business API verification
+      if (request.method === 'GET') {
+        const query = request.query as Record<string, string>;
+        if (query['hub.verify_token'] === process.env.WHATSAPP_VERIFY_TOKEN) {
+          return reply.send(query['hub.challenge']);
+        }
+        return reply.status(403).send({ error: 'Invalid verify token' });
+      }
+
+      const entry = (body.entry as Array<Record<string, unknown>>)?.[0];
+      const changes = (entry?.changes as Array<Record<string, unknown>>)?.[0];
+      const value = changes?.value as Record<string, unknown>;
+      const messages = value?.messages as Array<Record<string, unknown>>;
+
+      if (!messages?.length) {
+        return reply.send({ ok: true });
+      }
+
+      for (const msg of messages) {
+        const from = msg.from as string; // phone number
+        const text = (msg.text as Record<string, unknown>)?.body as string || '';
+        const msgId = msg.id as string;
+
+        const importedChats = await prisma.chat.findMany({
+          where: { externalChatId: from, messenger: 'whatsapp' },
+          select: { organizationId: true },
+        });
+
+        for (const ic of importedChats) {
+          await saveIncomingMessage({
+            externalChatId: from,
+            messenger: 'whatsapp',
+            organizationId: ic.organizationId,
+            senderName: from,
+            senderExternalId: from,
+            text,
+            externalMessageId: msgId,
+          });
+        }
+      }
+
+      return reply.send({ ok: true });
+    },
+  );
+
+  // ── Gmail Push Notification ──
+  // Google Pub/Sub sends notifications when new emails arrive
+  fastify.post(
+    '/webhooks/gmail',
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const body = request.body as Record<string, unknown>;
+      const message = body.message as Record<string, unknown>;
+
+      if (!message?.data) {
+        return reply.send({ ok: true });
+      }
+
+      // Decode base64 notification data
+      const decoded = JSON.parse(
+        Buffer.from(message.data as string, 'base64').toString(),
+      ) as { emailAddress: string; historyId: string };
+
+      fastify.log.info(
+        { email: decoded.emailAddress, historyId: decoded.historyId },
+        'Gmail push notification received',
+      );
+
+      // In production: use historyId to fetch new messages via Gmail API
+      // Then save them using saveIncomingMessage()
+      // This requires the Gmail adapter to fetch the actual message content
+
+      return reply.status(200).send({ ok: true });
+    },
+  );
+
+  // ── GET verification endpoints (for Slack/WhatsApp setup) ──
+  fastify.get(
+    '/webhooks/whatsapp',
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const query = request.query as Record<string, string>;
+      if (query['hub.verify_token'] === (process.env.WHATSAPP_VERIFY_TOKEN || 'omnichannel-verify')) {
+        return reply.send(query['hub.challenge'] || 'OK');
+      }
+      return reply.status(403).send({ error: 'Invalid verify token' });
+    },
+  );
+}

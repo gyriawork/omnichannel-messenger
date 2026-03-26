@@ -3,6 +3,7 @@ import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
 import cookie from '@fastify/cookie';
+import multipart from '@fastify/multipart';
 import prisma from './lib/prisma.js';
 import authRoutes from './routes/auth.js';
 import organizationRoutes from './routes/organizations.js';
@@ -17,6 +18,8 @@ import settingsRoutes from './routes/settings.js';
 import templateRoutes from './routes/templates.js';
 import activityRoutes from './routes/activity.js';
 import workspaceRoutes from './routes/workspace-settings.js';
+import uploadRoutes from './routes/uploads.js';
+import webhookRoutes from './routes/webhooks.js';
 import { createWebSocketServer } from './websocket/index.js';
 import { validateEnv } from './lib/env.js';
 
@@ -52,6 +55,10 @@ await fastify.register(rateLimit, {
 
 await fastify.register(cookie);
 
+await fastify.register(multipart, {
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB
+});
+
 // ─── Body size limit ───
 
 fastify.addContentTypeParser(
@@ -68,6 +75,9 @@ fastify.addContentTypeParser(
 
 // ─── Routes ───
 
+// Webhooks registered first — they don't require auth
+await fastify.register(webhookRoutes, { prefix: '/api' });
+
 await fastify.register(authRoutes, { prefix: '/api/auth' });
 await fastify.register(organizationRoutes, { prefix: '/api/organizations' });
 await fastify.register(userRoutes, { prefix: '/api/users' });
@@ -81,6 +91,7 @@ await fastify.register(settingsRoutes, { prefix: '/api' });
 await fastify.register(templateRoutes, { prefix: '/api' });
 await fastify.register(activityRoutes, { prefix: '/api' });
 await fastify.register(workspaceRoutes, { prefix: '/api' });
+await fastify.register(uploadRoutes, { prefix: '/api' });
 
 // Health check
 fastify.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));
