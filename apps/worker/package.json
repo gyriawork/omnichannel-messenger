@@ -10,6 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@omnichannel/shared": "*",
     "@prisma/client": "^5.15.0",
     "bullmq": "^5.8.0",
     "ioredis": "^5.4.0",
