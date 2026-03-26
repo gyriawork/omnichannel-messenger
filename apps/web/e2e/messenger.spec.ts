@@ -4,7 +4,7 @@ import { login } from './helpers';
 test.describe('Messenger', () => {
   test.beforeEach(async ({ page }) => {
     await login(page);
-    await page.click('a[href="/messenger"], text=Messenger');
+    await page.locator('a[href="/messenger"]').click();
     await expect(page).toHaveURL(/\/messenger/);
   });
 
@@ -13,7 +13,7 @@ test.describe('Messenger', () => {
     await expect(page.locator('text=Chats').first()).toBeVisible();
 
     // Should show seeded chats
-    await expect(page.locator('text=Dmitry Volkov').or(page.locator('text=#general'))).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText('Dmitry Volkov').first()).toBeVisible({ timeout: 10000 });
   });
 
   test('should filter chats by messenger type', async ({ page }) => {
@@ -30,6 +30,6 @@ test.describe('Messenger', () => {
     await page.click('text=Dmitry Volkov');
 
     // Should show message area with seeded messages
-    await expect(page.locator('text=discuss the new proposal').or(page.locator('text=updated document'))).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText('discuss the new proposal').first()).toBeVisible({ timeout: 10000 });
   });
 });

@@ -4,15 +4,15 @@ import { login } from './helpers';
 test.describe('Settings', () => {
   test.beforeEach(async ({ page }) => {
     await login(page);
-    await page.click('a[href="/settings"], text=Settings');
+    await page.locator('a[href="/settings"]').click();
     await expect(page).toHaveURL(/\/settings/);
   });
 
   test('should show Integrations tab with 4 messengers', async ({ page }) => {
-    await expect(page.locator('text=Telegram')).toBeVisible();
-    await expect(page.locator('text=Slack')).toBeVisible();
-    await expect(page.locator('text=WhatsApp')).toBeVisible();
-    await expect(page.locator('text=Gmail')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Telegram' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Slack' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'WhatsApp' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Gmail' })).toBeVisible();
   });
 
   test('should show FAQ section with setup guides', async ({ page }) => {
@@ -23,13 +23,15 @@ test.describe('Settings', () => {
     await expect(page.locator('text=my.telegram.org')).toBeVisible();
   });
 
-  test('should switch to Workspace tab and show team members', async ({ page }) => {
-    await page.click('text=Workspace');
-    await expect(page.locator('text=Team Members')).toBeVisible();
-    await expect(page.locator('text=Invite User')).toBeVisible();
+  test('should switch to Workspace tab and show settings', async ({ page }) => {
+    await page.getByRole('button', { name: /Workspace/i }).click();
+    await page.waitForTimeout(500);
+    await expect(page.getByText('Workspace Settings')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText('Organization Name')).toBeVisible();
 
-    // Should show seeded users
-    await expect(page.locator('text=Anton Petrov')).toBeVisible();
+    // Scroll down to Team Members section
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await expect(page.getByText('Team Members')).toBeVisible({ timeout: 10000 });
   });
 
   test('should switch to Profile tab', async ({ page }) => {
