@@ -23,7 +23,7 @@
     "prisma": "^5.15.0"
   },
   "prisma": {
-    "schema": "../api/prisma/schema.prisma"
+    "schema": "prisma/schema.prisma"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",

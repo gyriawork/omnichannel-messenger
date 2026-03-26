@@ -1,0 +1,277 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── MULTI-TENANCY ───
+
+model Organization {
+  id                   String   @id @default(uuid())
+  name                 String
+  logo                 String?
+  defaultLanguage      String   @default("en")
+  timezone             String   @default("UTC")
+  chatVisibilityAll    Boolean  @default(true)
+  status               String   @default("active") // active | suspended
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  users                User[]
+  chats                Chat[]
+  broadcasts           Broadcast[]
+  templates            Template[]
+  tags                 Tag[]
+  integrations         Integration[]
+  antibanSettings      AntibanSettings[]
+  activityLogs         ActivityLog[]
+  globalBroadcastLimits Json?   // max values admin can't exceed
+}
+
+// ─── USERS ───
+
+model User {
+  id               String   @id @default(uuid())
+  email            String   @unique
+  name             String
+  passwordHash     String
+  avatar           String?
+  role             String   @default("user") // superadmin | admin | user
+  status           String   @default("active") // active | deactivated
+  lastActiveAt     DateTime?
+  organizationId   String?
+  organization     Organization? @relation(fields: [organizationId], references: [id])
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  ownedChats       Chat[]   @relation("ChatOwner")
+  importedChats    Chat[]   @relation("ChatImporter")
+  broadcasts       Broadcast[]
+  templates        Template[]
+  refreshTokens    RefreshToken[]
+  chatPreferences  ChatPreference[]
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+// ─── CHATS ───
+
+model Chat {
+  id               String   @id @default(uuid())
+  name             String
+  messenger        String   // telegram | slack | whatsapp | gmail
+  externalChatId   String   // ID in the messenger's system
+  chatType         String   @default("direct") // direct | group | channel
+  status           String   @default("active") // active | read-only
+  organizationId   String
+  organization     Organization @relation(fields: [organizationId], references: [id])
+  ownerId          String?
+  owner            User?    @relation("ChatOwner", fields: [ownerId], references: [id])
+  importedById     String
+  importedBy       User     @relation("ChatImporter", fields: [importedById], references: [id])
+  messageCount     Int      @default(0)
+  lastActivityAt   DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  messages         Message[]
+  tags             ChatTag[]
+  preferences      ChatPreference[]
+  broadcastChats   BroadcastChat[]
+  participants     ChatParticipant[]
+
+  @@unique([externalChatId, messenger, organizationId])
+  @@index([organizationId])
+  @@index([ownerId])
+  @@index([importedById])
+}
+
+model ChatTag {
+  chatId  String
+  tagId   String
+  chat    Chat @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  tag     Tag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([chatId, tagId])
+}
+
+model ChatPreference {
+  id       String  @id @default(uuid())
+  userId   String
+  chatId   String
+  pinned   Boolean @default(false)
+  favorite Boolean @default(false)
+  muted    Boolean @default(false)
+  unread   Boolean @default(false) // manual unread mark
+  user     User    @relation(fields: [userId], references: [id])
+  chat     Chat    @relation(fields: [chatId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, chatId])
+}
+
+model ChatParticipant {
+  id             String @id @default(uuid())
+  chatId         String
+  chat           Chat   @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  externalUserId String
+  displayName    String
+  role           String? // admin | member
+
+  @@unique([chatId, externalUserId])
+}
+
+// ─── MESSAGES ───
+
+model Message {
+  id               String   @id @default(uuid())
+  chatId           String
+  chat             Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  externalMessageId String?
+  senderName       String
+  senderExternalId String?
+  isSelf           Boolean  @default(false)
+  text             String
+  editedAt         DateTime?
+  replyToMessageId String?  // internal message ID
+  replyToMessage   Message? @relation("MessageReply", fields: [replyToMessageId], references: [id])
+  replies          Message[] @relation("MessageReply")
+  isPinned         Boolean  @default(false)
+  deliveryStatus   String?  // sent | delivered | read | failed
+  attachments      Json?    // [{url, filename, mimeType, size}]
+  createdAt        DateTime @default(now())
+
+  @@index([chatId, createdAt])
+}
+
+// ─── BROADCASTS ───
+
+model Broadcast {
+  id               String   @id @default(uuid())
+  name             String
+  messageText      String
+  attachments      Json?
+  status           String   @default("draft") // draft | scheduled | sending | sent | partially_failed | failed
+  scheduledAt      DateTime?
+  sentAt           DateTime?
+  deliveryRate     Float?
+  organizationId   String
+  organization     Organization @relation(fields: [organizationId], references: [id])
+  createdById      String
+  createdBy        User     @relation(fields: [createdById], references: [id])
+  templateId       String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  chats            BroadcastChat[]
+
+  @@index([organizationId])
+}
+
+model BroadcastChat {
+  id            String  @id @default(uuid())
+  broadcastId   String
+  broadcast     Broadcast @relation(fields: [broadcastId], references: [id], onDelete: Cascade)
+  chatId        String
+  chat          Chat    @relation(fields: [chatId], references: [id])
+  status        String  @default("pending") // pending | sent | failed | retrying | retry_exhausted
+  errorReason   String?
+  retryCount    Int     @default(0)
+  sentAt        DateTime?
+
+  @@unique([broadcastId, chatId])
+}
+
+// ─── TEMPLATES ───
+
+model Template {
+  id             String   @id @default(uuid())
+  name           String
+  messageText    String
+  usageCount     Int      @default(0)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  createdById    String
+  createdBy      User     @relation(fields: [createdById], references: [id])
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+// ─── TAGS ───
+
+model Tag {
+  id             String   @id @default(uuid())
+  name           String
+  color          String
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  chats          ChatTag[]
+
+  @@unique([name, organizationId])
+}
+
+// ─── INTEGRATIONS ───
+
+model Integration {
+  id             String   @id @default(uuid())
+  messenger      String   // telegram | slack | whatsapp | gmail
+  status         String   @default("disconnected") // connected | disconnected | token_expired | session_expired
+  credentials    Json     // encrypted: tokens, session data, etc.
+  settings       Json?    // per-integration settings (e.g. Slack channels)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  userId         String   // which user connected this integration
+  connectedAt    DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([messenger, organizationId, userId])
+}
+
+// ─── ANTIBAN ───
+
+model AntibanSettings {
+  id                    String @id @default(uuid())
+  messenger             String // telegram | slack | whatsapp | gmail
+  messagesPerBatch      Int
+  delayBetweenMessages  Int    // seconds
+  delayBetweenBatches   Int    // seconds
+  maxMessagesPerHour    Int
+  maxMessagesPerDay     Int
+  autoRetryEnabled      Boolean @default(true)
+  maxRetryAttempts      Int     @default(3)
+  retryWindowHours      Int     @default(6)
+  organizationId        String
+  organization          Organization @relation(fields: [organizationId], references: [id])
+
+  @@unique([messenger, organizationId])
+}
+
+// ─── ACTIVITY LOG ───
+
+model ActivityLog {
+  id             String   @id @default(uuid())
+  category       String   // chats | messages | broadcast | templates | users | integrations | settings | organizations
+  action         String   // e.g. "chat_imported", "broadcast_sent"
+  description    String
+  targetType     String?  // chat | broadcast | template | user | integration | organization
+  targetId       String?
+  userId         String?
+  userName       String?
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  metadata       Json?
+  createdAt      DateTime @default(now())
+
+  @@index([organizationId, createdAt])
+  @@index([category])
+}
