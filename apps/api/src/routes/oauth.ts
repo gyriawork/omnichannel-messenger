@@ -242,7 +242,7 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
 
       // Verify the token works by connecting with the adapter
       const credentials = { token: botToken };
-      const adapter = createAdapter('slack', credentials);
+      const adapter = await createAdapter('slack', credentials);
       try {
         await adapter.connect();
       } catch (err) {

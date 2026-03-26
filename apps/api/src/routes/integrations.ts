@@ -215,7 +215,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
       });
 
       // Try to connect using the adapter to verify credentials
-      const adapter = createAdapter(messenger, credentials);
+      const adapter = await createAdapter(messenger, credentials);
       try {
         await adapter.connect();
       } catch (err) {
@@ -295,7 +295,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
       // Graceful disconnect is best-effort — don't block on adapter failures
       try {
         const credentials = decryptCredentials(integration.credentials as string);
-        const adapter = createAdapter(messenger, credentials);
+        const adapter = await createAdapter(messenger, credentials);
         await adapter.disconnect().catch(() => {});
       } catch {
         // Disconnect failures are not critical — we still mark as disconnected
@@ -357,7 +357,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
       }
 
       // Attempt reconnection
-      const adapter = createAdapter(messenger, credentials);
+      const adapter = await createAdapter(messenger, credentials);
       try {
         await adapter.connect();
       } catch (err) {

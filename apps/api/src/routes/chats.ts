@@ -208,7 +208,7 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
         // Try to list chats via the adapter
         try {
           const credentials = decryptCredentials(integration.credentials as string);
-          const adapter = createAdapter(messenger, credentials);
+          const adapter = await createAdapter(messenger, credentials);
           await adapter.connect();
           const chats = await adapter.listChats();
           return reply.send({ chats });
