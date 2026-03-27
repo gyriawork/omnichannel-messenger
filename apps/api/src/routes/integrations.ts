@@ -14,32 +14,6 @@ let StringSession: any, Api: any, computeCheck: any;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let startWhatsAppPairing: any, cancelPairing: any;
 
-try {
-  const tgMod = await import('../integrations/telegram.js');
-  createAuthClient = tgMod.createAuthClient;
-  storePendingAuth = tgMod.storePendingAuth;
-  getPendingAuth = tgMod.getPendingAuth;
-  removePendingAuth = tgMod.removePendingAuth;
-  TelegramAdapter = tgMod.TelegramAdapter;
-
-  const sessions = await import('telegram/sessions/index.js');
-  StringSession = sessions.StringSession;
-  const apiMod = await import('telegram');
-  Api = apiMod.Api;
-  const pwMod = await import('telegram/Password.js');
-  computeCheck = pwMod.computeCheck;
-} catch (e) {
-  console.warn('Telegram integration unavailable:', (e as Error).message);
-}
-
-try {
-  const waMod = await import('../integrations/whatsapp.js');
-  startWhatsAppPairing = waMod.startWhatsAppPairing;
-  cancelPairing = waMod.cancelPairing;
-} catch (e) {
-  console.warn('WhatsApp integration unavailable:', (e as Error).message);
-}
-
 import { getIO } from '../websocket/index.js';
 
 // ─── Zod Schemas ───
@@ -141,6 +115,33 @@ function sanitizeIntegration(integration: {
 // ─── Plugin ───
 
 export default async function integrationRoutes(fastify: FastifyInstance): Promise<void> {
+  // Load telegram/whatsapp inside plugin (not at module level) to avoid crashing if native deps fail
+  try {
+    const tgMod = await import('../integrations/telegram.js');
+    createAuthClient = tgMod.createAuthClient;
+    storePendingAuth = tgMod.storePendingAuth;
+    getPendingAuth = tgMod.getPendingAuth;
+    removePendingAuth = tgMod.removePendingAuth;
+    TelegramAdapter = tgMod.TelegramAdapter;
+
+    const sessions = await import('telegram/sessions/index.js');
+    StringSession = sessions.StringSession;
+    const apiMod = await import('telegram');
+    Api = apiMod.Api;
+    const pwMod = await import('telegram/Password.js');
+    computeCheck = pwMod.computeCheck;
+  } catch (e) {
+    console.warn('Telegram integration unavailable:', (e as Error).message);
+  }
+
+  try {
+    const waMod = await import('../integrations/whatsapp.js');
+    startWhatsAppPairing = waMod.startWhatsAppPairing;
+    cancelPairing = waMod.cancelPairing;
+  } catch (e) {
+    console.warn('WhatsApp integration unavailable:', (e as Error).message);
+  }
+
   const authPreHandlers = [authenticate];
 
   // ─── GET /integrations ───
