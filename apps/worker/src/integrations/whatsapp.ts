@@ -1,20 +1,26 @@
 // ─── WhatsApp Adapter (Baileys) ───
 // Real implementation using @whiskeysockets/baileys with QR code auth flow.
 
-import {
-  makeWASocket,
+import baileys from '@whiskeysockets/baileys';
+import type {
+  WASocket,
+  ConnectionState,
+  AuthenticationState,
+  AuthenticationCreds,
+  SignalDataTypeMap,
+  SignalDataSet,
+  SignalKeyStore,
+} from '@whiskeysockets/baileys';
+
+// Handle ESM/CJS interop: baileys default export may be the function or module
+const makeWASocket = (typeof baileys === 'function' ? baileys : (baileys as any).default ?? (baileys as any).makeWASocket) as typeof baileys;
+const {
   DisconnectReason,
   fetchLatestBaileysVersion,
   makeCacheableSignalKeyStore,
-  type WASocket,
-  type ConnectionState,
-  type AuthenticationState,
-  type AuthenticationCreds,
-  type SignalDataTypeMap,
-  type SignalDataSet,
-  type SignalKeyStore,
   initAuthCreds,
-} from '@whiskeysockets/baileys';
+} = baileys as any;
+
 import { Boom } from '@hapi/boom';
 import { EventEmitter } from 'node:events';
 import type { MessengerAdapter } from './base.js';
