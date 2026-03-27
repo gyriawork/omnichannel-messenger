@@ -42,6 +42,8 @@ import {
   useSearchMessages,
   type MessageAttachment,
 } from '@/hooks/useChats';
+import { useReactions } from '@/hooks/useReactions';
+import { ReactionsBubble } from './ReactionsBubble';
 import type { Chat, Message, MessengerType } from '@/types/chat';
 
 function getMessengerDotColor(messenger: MessengerType): string {
@@ -167,6 +169,15 @@ function MessageBubble({
   const { mutate: deleteMessage, isPending: isDeletePending } = useDeleteMessage();
   const { mutate: pinMessage } = usePinMessage();
   const { mutate: sendMessage, isPending: isRetrySending } = useSendMessage();
+
+  const {
+    reactions,
+    isLoading: isReactionsLoading,
+    addReaction,
+    removeReaction,
+    isAddingReaction,
+    isRemovingReaction,
+  } = useReactions(message.chatId, message.id);
 
   const handleRetry = useCallback(() => {
     sendMessage(
@@ -443,6 +454,15 @@ function MessageBubble({
             </button>
           )}
         </div>
+
+        {/* Emoji reactions */}
+        <ReactionsBubble
+          reactions={reactions}
+          onAddReaction={addReaction}
+          onRemoveReaction={removeReaction}
+          isLoading={isAddingReaction || isRemovingReaction}
+          showPicker={isSelf}
+        />
       </div>
     </div>
   );

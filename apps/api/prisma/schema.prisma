@@ -160,9 +160,25 @@ model Message {
   createdAt        DateTime @default(now())
 
   attachmentFiles  Attachment[]
+  reactions        Reaction[]
 
   @@index([chatId, createdAt])
   @@index([externalMessageId])
+}
+
+// ─── REACTIONS ───
+
+model Reaction {
+  id        String   @id @default(uuid())
+  messageId String
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId    String
+  emoji     String   // Unicode emoji character
+  createdAt DateTime @default(now())
+
+  @@unique([messageId, userId, emoji])
+  @@index([messageId])
+  @@index([userId])
 }
 
 // ─── BROADCASTS ───

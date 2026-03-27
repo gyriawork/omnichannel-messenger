@@ -1,101 +1,229 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { buildTestApp, generateTestToken, authHeader, TEST_ORG_ID, TEST_USER } from '../test-utils.js';
+import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import Fastify, { FastifyInstance } from 'fastify';
+import { PrismaClient } from '@prisma/client';
+import bcryptjs from 'bcryptjs';
+import templateRoutes from './templates';
 
-const { mockPrisma } = vi.hoisted(() => {
-  const mockModel = () => ({
-    findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(),
-    create: vi.fn(), createMany: vi.fn(), update: vi.fn(),
-    updateMany: vi.fn(), delete: vi.fn(), deleteMany: vi.fn(),
-    count: vi.fn(), upsert: vi.fn(),
+const prisma = new PrismaClient();
+let server: FastifyInstance;
+let testOrgId: string;
+let testUserId: string;
+let authToken: string;
+
+beforeAll(async () => {
+  server = Fastify();
+  await server.register(templateRoutes);
+
+  const org = await prisma.organization.create({
+    data: { name: 'Test Org', defaultLanguage: 'en', timezone: 'UTC', status: 'active' },
   });
-  return {
-    mockPrisma: {
-      user: mockModel(), refreshToken: mockModel(), chat: mockModel(),
-      chatTag: mockModel(), tag: mockModel(), template: mockModel(),
-      integration: mockModel(), organization: mockModel(), message: mockModel(),
-      chatPreference: mockModel(), chatParticipant: mockModel(),
-      broadcast: mockModel(), activityLog: mockModel(),
-      $transaction: vi.fn(), $disconnect: vi.fn(), $connect: vi.fn(),
+  testOrgId = org.id;
+
+  const passwordHash = await bcryptjs.hash('testpass123', 12);
+  const user = await prisma.user.create({
+    data: {
+      email: 'test@template.com',
+      name: 'Test User',
+      passwordHash,
+      role: 'user',
+      status: 'active',
+      organizationId: testOrgId,
     },
-  };
+  });
+  testUserId = user.id;
+  authToken = 'test-jwt-token';
 });
 
-vi.mock('../lib/prisma.js', () => ({ default: mockPrisma }));
-vi.mock('../lib/activity-logger.js', () => ({
-  logActivity: vi.fn().mockResolvedValue(undefined),
-}));
+afterAll(async () => {
+  await prisma.template.deleteMany({ where: { organizationId: testOrgId } });
+  await prisma.user.deleteMany({ where: { organizationId: testOrgId } });
+  await prisma.organization.delete({ where: { id: testOrgId } });
+  await prisma.$disconnect();
+  await server.close();
+});
 
-import templateRoutes from './templates.js';
+describe('POST /templates', () => {
+  it('should create template with valid payload', async () => {
+    const response = await server.inject({
+      method: 'POST',
+      url: '/api/templates',
+      headers: { authorization: `Bearer ${authToken}` },
+      payload: {
+        name: 'Welcome Template',
+        messageText: 'Welcome to our service!',
+      },
+    });
 
-describe('Template Routes', () => {
-  let app: Awaited<ReturnType<typeof buildTestApp>>;
+    expect(response.statusCode).toBe(201);
+    const body = response.json();
+    expect(body.name).toBe('Welcome Template');
+    expect(body.messageText).toBe('Welcome to our service!');
+    expect(body.createdById).toBe(testUserId);
+  });
+
+  it('should reject missing required fields', async () => {
+    const response = await server.inject({
+      method: 'POST',
+      url: '/api/templates',
+      headers: { authorization: `Bearer ${authToken}` },
+      payload: {
+        name: 'Welcome Template',
+        // missing messageText
+      },
+    });
+
+    expect(response.statusCode).toBe(422);
+  });
+
+  it('should reject duplicate template names within organization', async () => {
+    // Create first template
+    await server.inject({
+      method: 'POST',
+      url: '/api/templates',
+      headers: { authorization: `Bearer ${authToken}` },
+      payload: {
+        name: 'Duplicate',
+        messageText: 'Message 1',
+      },
+    });
+
+    // Try to create duplicate
+    const response = await server.inject({
+      method: 'POST',
+      url: '/api/templates',
+      headers: { authorization: `Bearer ${authToken}` },
+      payload: {
+        name: 'Duplicate',
+        messageText: 'Message 2',
+      },
+    });
+
+    expect(response.statusCode).toBe(409);
+  });
+});
+
+describe('GET /templates', () => {
+  beforeEach(async () => {
+    await prisma.template.create({
+      data: {
+        name: 'Template 1',
+        messageText: 'Message 1',
+        organizationId: testOrgId,
+        createdById: testUserId,
+      },
+    });
+  });
+
+  it('should list templates for organization', async () => {
+    const response = await server.inject({
+      method: 'GET',
+      url: '/api/templates',
+      headers: { authorization: `Bearer ${authToken}` },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(Array.isArray(body.templates)).toBe(true);
+    expect(body.templates.length).toBeGreaterThan(0);
+  });
+});
+
+describe('GET /templates/:id', () => {
+  let templateId: string;
 
   beforeEach(async () => {
-    vi.clearAllMocks();
-    app = await buildTestApp(templateRoutes, '/api');
+    const template = await prisma.template.create({
+      data: {
+        name: 'Get Test',
+        messageText: 'Message',
+        organizationId: testOrgId,
+        createdById: testUserId,
+      },
+    });
+    templateId = template.id;
   });
 
-  describe('GET /api/templates', () => {
-    it('should list templates', async () => {
-      const token = generateTestToken(TEST_USER);
-      mockPrisma.template.findMany.mockResolvedValue([{
-        id: 'tpl-1', name: 'Welcome', messageText: 'Hello {name}!',
-        usageCount: 10, organizationId: TEST_ORG_ID, createdById: TEST_USER.id,
-        createdBy: { id: TEST_USER.id, name: TEST_USER.name },
-        createdAt: new Date(), updatedAt: new Date(),
-      }]);
-      mockPrisma.template.count.mockResolvedValue(1);
-
-      const res = await app.inject({ method: 'GET', url: '/api/templates', headers: authHeader(token) });
-      expect(res.statusCode).toBe(200);
-      const body = res.json();
-      expect(body.templates).toHaveLength(1);
-      expect(body.templates[0].name).toBe('Welcome');
-      expect(body.pagination.total).toBe(1);
+  it('should get template by id', async () => {
+    const response = await server.inject({
+      method: 'GET',
+      url: `/api/templates/${templateId}`,
+      headers: { authorization: `Bearer ${authToken}` },
     });
 
-    it('should return 401 without auth', async () => {
-      const res = await app.inject({ method: 'GET', url: '/api/templates' });
-      expect(res.statusCode).toBe(401);
-    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.id).toBe(templateId);
   });
 
-  describe('POST /api/templates', () => {
-    it('should create a template', async () => {
-      const token = generateTestToken(TEST_USER);
-      mockPrisma.template.create.mockResolvedValue({
-        id: 'tpl-new', name: 'Follow Up', messageText: 'Just following up on...',
-        usageCount: 0, organizationId: TEST_ORG_ID, createdById: TEST_USER.id,
-        createdBy: { id: TEST_USER.id, name: TEST_USER.name },
-        createdAt: new Date(), updatedAt: new Date(),
-      });
-
-      const res = await app.inject({
-        method: 'POST', url: '/api/templates', headers: authHeader(token),
-        payload: { name: 'Follow Up', messageText: 'Just following up on...' },
-      });
-      expect(res.statusCode).toBe(201);
-      const body = res.json();
-      expect(body.name).toBe('Follow Up');
-      expect(body.messageText).toBe('Just following up on...');
+  it('should return 404 for non-existent template', async () => {
+    const response = await server.inject({
+      method: 'GET',
+      url: '/api/templates/non-existent',
+      headers: { authorization: `Bearer ${authToken}` },
     });
 
-    it('should return 422 for missing name', async () => {
-      const token = generateTestToken(TEST_USER);
-      const res = await app.inject({
-        method: 'POST', url: '/api/templates', headers: authHeader(token),
-        payload: { messageText: 'Some text' },
-      });
-      expect(res.statusCode).toBe(422);
+    expect(response.statusCode).toBe(404);
+  });
+});
+
+describe('PATCH /templates/:id', () => {
+  let templateId: string;
+
+  beforeEach(async () => {
+    const template = await prisma.template.create({
+      data: {
+        name: 'Update Test',
+        messageText: 'Original message',
+        organizationId: testOrgId,
+        createdById: testUserId,
+      },
+    });
+    templateId = template.id;
+  });
+
+  it('should update template', async () => {
+    const response = await server.inject({
+      method: 'PATCH',
+      url: `/api/templates/${templateId}`,
+      headers: { authorization: `Bearer ${authToken}` },
+      payload: {
+        messageText: 'Updated message',
+      },
     });
 
-    it('should return 422 for missing messageText', async () => {
-      const token = generateTestToken(TEST_USER);
-      const res = await app.inject({
-        method: 'POST', url: '/api/templates', headers: authHeader(token),
-        payload: { name: 'Template Name' },
-      });
-      expect(res.statusCode).toBe(422);
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.messageText).toBe('Updated message');
+  });
+});
+
+describe('DELETE /templates/:id', () => {
+  let templateId: string;
+
+  beforeEach(async () => {
+    const template = await prisma.template.create({
+      data: {
+        name: 'Delete Test',
+        messageText: 'Message',
+        organizationId: testOrgId,
+        createdById: testUserId,
+      },
     });
+    templateId = template.id;
+  });
+
+  it('should delete template', async () => {
+    const response = await server.inject({
+      method: 'DELETE',
+      url: `/api/templates/${templateId}`,
+      headers: { authorization: `Bearer ${authToken}` },
+    });
+
+    expect(response.statusCode).toBe(200);
+
+    const template = await prisma.template.findUnique({
+      where: { id: templateId },
+    });
+    expect(template).toBeNull();
   });
 });

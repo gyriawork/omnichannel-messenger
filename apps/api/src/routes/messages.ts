@@ -42,6 +42,10 @@ const searchMessagesQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
 });
 
+const addReactionBodySchema = z.object({
+  emoji: z.string().min(1).max(2), // Single emoji (may be 1-2 UTF-16 chars)
+});
+
 // ─── Helpers ───
 
 function sendError(reply: FastifyReply, code: string, message: string, statusCode: number) {
@@ -501,6 +505,178 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
       });
 
       return reply.status(200).send({ messages });
+    },
+  );
+
+  // ── POST /chats/:chatId/messages/:messageId/reactions — Add emoji reaction ──
+
+  fastify.post(
+    '/chats/:chatId/messages/:messageId/reactions',
+    { preHandler: [authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { chatId, messageId } = request.params as { chatId: string; messageId: string };
+
+      const parsed = addReactionBodySchema.safeParse(request.body);
+      if (!parsed.success) {
+        return sendError(reply, 'VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 422);
+      }
+
+      const { emoji } = parsed.data;
+
+      // Verify chat access
+      const chat = await verifyChat(chatId, request.user.organizationId, reply);
+      if (!chat) return;
+
+      // Verify message exists in this chat
+      const message = await prisma.message.findFirst({
+        where: { id: messageId, chatId },
+        select: { id: true },
+      });
+
+      if (!message) {
+        return sendError(reply, 'RESOURCE_NOT_FOUND', 'Message not found in this chat', 404);
+      }
+
+      // Upsert reaction (create new or reset createdAt if re-adding same emoji)
+      const reaction = await prisma.reaction.upsert({
+        where: {
+          messageId_userId_emoji: {
+            messageId,
+            userId: request.user.id,
+            emoji,
+          },
+        },
+        update: {
+          createdAt: new Date(), // Reset timestamp on re-add
+        },
+        create: {
+          messageId,
+          userId: request.user.id,
+          emoji,
+        },
+      });
+
+      // Emit WebSocket event
+      try {
+        getIO().to(`chat:${chatId}`).emit('reaction_added', {
+          chatId,
+          messageId,
+          reaction: {
+            emoji: reaction.emoji,
+            userId: reaction.userId,
+            createdAt: reaction.createdAt,
+          },
+        });
+      } catch {
+        // WebSocket not initialized yet — non-fatal
+      }
+
+      return reply.status(201).send(reaction);
+    },
+  );
+
+  // ── GET /chats/:chatId/messages/:messageId/reactions — Get reactions grouped by emoji ──
+
+  fastify.get(
+    '/chats/:chatId/messages/:messageId/reactions',
+    { preHandler: [authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { chatId, messageId } = request.params as { chatId: string; messageId: string };
+
+      // Verify chat access
+      const chat = await verifyChat(chatId, request.user.organizationId, reply);
+      if (!chat) return;
+
+      // Verify message exists in this chat
+      const message = await prisma.message.findFirst({
+        where: { id: messageId, chatId },
+        select: { id: true },
+      });
+
+      if (!message) {
+        return sendError(reply, 'RESOURCE_NOT_FOUND', 'Message not found in this chat', 404);
+      }
+
+      // Fetch all reactions for this message
+      const reactions = await prisma.reaction.findMany({
+        where: { messageId },
+        select: { userId: true, emoji: true, createdAt: true },
+        orderBy: { createdAt: 'asc' },
+      });
+
+      // Group by emoji, count, and check if current user reacted
+      const grouped = reactions.reduce(
+        (acc, reaction) => {
+          const existing = acc.find((r) => r.emoji === reaction.emoji);
+          if (existing) {
+            existing.count += 1;
+            if (reaction.userId === request.user.id) {
+              existing.userReacted = true;
+            }
+          } else {
+            acc.push({
+              emoji: reaction.emoji,
+              count: 1,
+              userReacted: reaction.userId === request.user.id,
+            });
+          }
+          return acc;
+        },
+        [] as Array<{ emoji: string; count: number; userReacted: boolean }>,
+      );
+
+      return reply.status(200).send({ reactions: grouped });
+    },
+  );
+
+  // ── DELETE /chats/:chatId/messages/:messageId/reactions/:emoji — Remove emoji reaction ──
+
+  fastify.delete(
+    '/chats/:chatId/messages/:messageId/reactions/:emoji',
+    { preHandler: [authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { chatId, messageId, emoji } = request.params as { chatId: string; messageId: string; emoji: string };
+
+      // Verify chat access
+      const chat = await verifyChat(chatId, request.user.organizationId, reply);
+      if (!chat) return;
+
+      // Verify message exists in this chat
+      const message = await prisma.message.findFirst({
+        where: { id: messageId, chatId },
+        select: { id: true },
+      });
+
+      if (!message) {
+        return sendError(reply, 'RESOURCE_NOT_FOUND', 'Message not found in this chat', 404);
+      }
+
+      // Delete reaction (only own reactions)
+      const deleted = await prisma.reaction.deleteMany({
+        where: {
+          messageId,
+          emoji,
+          userId: request.user.id,
+        },
+      });
+
+      if (deleted.count === 0) {
+        return sendError(reply, 'RESOURCE_NOT_FOUND', 'Reaction not found', 404);
+      }
+
+      // Emit WebSocket event
+      try {
+        getIO().to(`chat:${chatId}`).emit('reaction_removed', {
+          chatId,
+          messageId,
+          emoji,
+          userId: request.user.id,
+        });
+      } catch {
+        // WebSocket not initialized yet — non-fatal
+      }
+
+      return reply.status(204).send();
     },
   );
 }

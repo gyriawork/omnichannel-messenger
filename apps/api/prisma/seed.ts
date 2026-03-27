@@ -315,6 +315,65 @@ async function main() {
   });
   console.log('Templates: 3 created');
 
+  // ─── Antiban Settings ───
+  const antibanDefaults = {
+    telegram: {
+      messagesPerBatch: 10,
+      delayBetweenMessages: 5,
+      delayBetweenBatches: 180,
+      maxMessagesPerHour: 50,
+      maxMessagesPerDay: 300,
+      autoRetryEnabled: true,
+      maxRetryAttempts: 3,
+      retryWindowHours: 6,
+    },
+    slack: {
+      messagesPerBatch: 30,
+      delayBetweenMessages: 1,
+      delayBetweenBatches: 30,
+      maxMessagesPerHour: 200,
+      maxMessagesPerDay: 2000,
+      autoRetryEnabled: true,
+      maxRetryAttempts: 3,
+      retryWindowHours: 6,
+    },
+    whatsapp: {
+      messagesPerBatch: 3,
+      delayBetweenMessages: 15,
+      delayBetweenBatches: 600,
+      maxMessagesPerHour: 20,
+      maxMessagesPerDay: 80,
+      autoRetryEnabled: true,
+      maxRetryAttempts: 3,
+      retryWindowHours: 6,
+    },
+    gmail: {
+      messagesPerBatch: 5,
+      delayBetweenMessages: 8,
+      delayBetweenBatches: 180,
+      maxMessagesPerHour: 80,
+      maxMessagesPerDay: 400,
+      autoRetryEnabled: true,
+      maxRetryAttempts: 3,
+      retryWindowHours: 6,
+    },
+  };
+
+  const antibanSettings = await Promise.all(
+    Object.entries(antibanDefaults).map(([messenger, settings]) =>
+      prisma.antibanSettings.upsert({
+        where: { messenger_organizationId: { messenger, organizationId: org.id } },
+        update: {},
+        create: {
+          messenger,
+          organizationId: org.id,
+          ...settings,
+        },
+      })
+    )
+  );
+  console.log(`Antiban Settings: ${antibanSettings.map((s) => s.messenger).join(', ')}`);
+
   // ─── Activity Log ───
   await prisma.activityLog.createMany({
     data: [
