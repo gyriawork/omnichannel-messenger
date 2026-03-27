@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -17,6 +17,7 @@ import {
   Save,
   Search,
   X,
+  Paperclip,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -29,6 +30,8 @@ import {
 } from '@/hooks/useBroadcasts';
 import { useTemplates, useTemplateUse } from '@/hooks/useTemplates';
 import type { MessengerType } from '@/types/chat';
+import type { BroadcastAttachment } from '@/types/broadcast';
+import { api } from '@/lib/api';
 
 const messengerMeta: Record<
   string,
@@ -83,6 +86,9 @@ export function BroadcastWizard() {
   const [messengerFilter, setMessengerFilter] = useState<MessengerType | null>(
     null,
   );
+  const [broadcastAttachments, setBroadcastAttachments] = useState<BroadcastAttachment[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<React.ElementRef<'input'>>(null);
 
   const { data: existingBroadcast } = useBroadcast(editId || undefined);
   const { data: chatsData } = useChats();
@@ -195,6 +201,26 @@ export function BroadcastWizard() {
     }
   }
 
+  const handleBroadcastFileChange = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = Array.from(e.target.files ?? []);
+      if (files.length === 0) return;
+      e.target.value = '';
+      setIsUploading(true);
+      try {
+        for (const file of files) {
+          const result = await api.upload<{ file: BroadcastAttachment }>('/api/uploads', file);
+          setBroadcastAttachments((prev) => [...prev, result.file]);
+        }
+      } catch {
+        toast.error('Failed to upload file');
+      } finally {
+        setIsUploading(false);
+      }
+    },
+    [],
+  );
+
   async function onSaveDraft(data: BroadcastFormData) {
     try {
       if (editId) {
@@ -205,6 +231,7 @@ export function BroadcastWizard() {
           chatIds: data.chatIds,
           scheduledAt:
             data.scheduleType === 'later' ? data.scheduledAt : undefined,
+          attachments: broadcastAttachments.length > 0 ? broadcastAttachments : undefined,
         });
         toast.success('Broadcast updated');
       } else {
@@ -214,6 +241,7 @@ export function BroadcastWizard() {
           chatIds: data.chatIds,
           scheduledAt:
             data.scheduleType === 'later' ? data.scheduledAt : undefined,
+          attachments: broadcastAttachments.length > 0 ? broadcastAttachments : undefined,
         });
         toast.success('Broadcast saved as draft');
       }
@@ -234,6 +262,7 @@ export function BroadcastWizard() {
           chatIds: data.chatIds,
           scheduledAt:
             data.scheduleType === 'later' ? data.scheduledAt : undefined,
+          attachments: broadcastAttachments.length > 0 ? broadcastAttachments : undefined,
         });
       } else {
         const created = await createMutation.mutateAsync({
@@ -242,6 +271,7 @@ export function BroadcastWizard() {
           chatIds: data.chatIds,
           scheduledAt:
             data.scheduleType === 'later' ? data.scheduledAt : undefined,
+          attachments: broadcastAttachments.length > 0 ? broadcastAttachments : undefined,
         });
         broadcastId = created.id;
       }
@@ -403,6 +433,56 @@ export function BroadcastWizard() {
                   </option>
                 ))}
               </select>
+            </div>
+
+            {/* File attachments */}
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                Attachments (optional)
+              </label>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                className="hidden"
+                onChange={handleBroadcastFileChange}
+                accept="image/*,application/pdf,text/plain,text/csv,.doc,.docx,.xls,.xlsx,.zip,.mp4,.mp3"
+              />
+              {broadcastAttachments.length > 0 && (
+                <div className="mb-2 flex flex-wrap gap-1.5">
+                  {broadcastAttachments.map((att, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-700"
+                    >
+                      <span className="max-w-[160px] truncate">{att.filename}</span>
+                      <span className="text-slate-400">
+                        {att.size < 1024 * 1024
+                          ? `${(att.size / 1024).toFixed(0)}KB`
+                          : `${(att.size / 1024 / 1024).toFixed(1)}MB`}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setBroadcastAttachments((prev) => prev.filter((_, j) => j !== i))
+                        }
+                        className="ml-0.5 text-slate-400 hover:text-red-500"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploading}
+                className="flex items-center gap-2 rounded-lg border-[1.5px] border-dashed border-slate-300 px-4 py-2.5 text-sm text-slate-500 transition-colors hover:border-accent hover:text-accent disabled:opacity-50"
+              >
+                <Paperclip className="h-4 w-4" />
+                {isUploading ? 'Uploading...' : 'Attach files'}
+              </button>
             </div>
           </div>
         )}

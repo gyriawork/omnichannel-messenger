@@ -67,6 +67,13 @@ export function useMessages(chatId: string | undefined) {
   });
 }
 
+export interface MessageAttachment {
+  url: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+}
+
 export function useSendMessage() {
   const queryClient = useQueryClient();
 
@@ -75,14 +82,17 @@ export function useSendMessage() {
       chatId,
       text,
       replyToId,
+      attachments,
     }: {
       chatId: string;
       text: string;
       replyToId?: string;
+      attachments?: MessageAttachment[];
     }) => {
       return api.post<Message>(`/api/chats/${chatId}/messages`, {
         text,
-        replyToId,
+        replyToMessageId: replyToId,
+        attachments,
       });
     },
     onSuccess: (_data, variables) => {

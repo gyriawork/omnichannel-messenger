@@ -72,12 +72,20 @@ export interface BroadcastAnalytics {
   topFailReasons: Array<{ reason: string; count: number }>;
 }
 
+export interface BroadcastAttachment {
+  url: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+}
+
 export interface CreateBroadcastInput {
   name: string;
   messageText: string;
   chatIds: string[];
   scheduledAt?: string;
   templateId?: string;
+  attachments?: BroadcastAttachment[];
 }
 
 export interface UpdateBroadcastInput {
@@ -86,6 +94,7 @@ export interface UpdateBroadcastInput {
   chatIds?: string[];
   scheduledAt?: string;
   templateId?: string;
+  attachments?: BroadcastAttachment[];
 }
 
 export const ANTIBAN_DEFAULTS: Record<string, AntibanSettings> = {

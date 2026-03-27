@@ -14,7 +14,7 @@ const listMessagesQuerySchema = z.object({
 });
 
 const sendMessageBodySchema = z.object({
-  text: z.string().min(1).max(10000),
+  text: z.string().max(10000).default(''),
   replyToMessageId: z.string().uuid().optional(),
   attachments: z
     .array(

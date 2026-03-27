@@ -139,6 +139,34 @@ export const api = {
 
   delete: <T>(endpoint: string, options?: RequestOptions) =>
     request<T>(endpoint, { ...options, method: 'DELETE' }),
+
+  upload: async <T>(endpoint: string, file: File): Promise<T> => {
+    const token = await getAccessToken();
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const response = await fetch(`${BASE_URL}${endpoint}`, {
+      method: 'POST',
+      headers,
+      credentials: 'include',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({
+        error: { code: 'UNKNOWN', message: 'Upload failed' },
+      }));
+      throw new ApiError(
+        response.status,
+        errorData.error?.code || 'UNKNOWN',
+        errorData.error?.message || 'Upload failed',
+      );
+    }
+    return response.json();
+  },
 };
 
 export { ApiError, setAccessToken, clearTokens };

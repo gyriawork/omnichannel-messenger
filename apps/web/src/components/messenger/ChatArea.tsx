@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { api } from '@/lib/api';
 import { useChatStore } from '@/stores/chat';
 import {
   useMessages,
@@ -38,6 +39,7 @@ import {
   useDeleteMessage,
   usePinMessage,
   useSearchMessages,
+  type MessageAttachment,
 } from '@/hooks/useChats';
 import type { Chat, Message, MessengerType } from '@/types/chat';
 
@@ -611,33 +613,39 @@ function SearchBar({
 
 function ComposeBar({ chatId }: { chatId: string }) {
   const [text, setText] = useState('');
+  const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const replyingTo = useChatStore((s) => s.replyingTo);
   const setReplyingTo = useChatStore((s) => s.setReplyingTo);
   const { mutate: sendMessage, isPending } = useSendMessage();
 
+  const canSend = (text.trim().length > 0 || attachments.length > 0) && !isPending && !isUploading;
+
   const handleSubmit = useCallback(
     (e?: FormEvent) => {
       e?.preventDefault();
-      const trimmed = text.trim();
-      if (!trimmed || isPending) return;
+      if (!canSend) return;
 
       sendMessage(
         {
           chatId,
-          text: trimmed,
+          text: text.trim(),
           replyToId: replyingTo?.id,
+          attachments: attachments.length > 0 ? attachments : undefined,
         },
         {
           onSuccess: () => {
             setText('');
+            setAttachments([]);
             setReplyingTo(null);
             textareaRef.current?.focus();
           },
         },
       );
     },
-    [text, chatId, replyingTo, isPending, sendMessage, setReplyingTo],
+    [text, attachments, chatId, replyingTo, canSend, isPending, sendMessage, setReplyingTo],
   );
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -646,6 +654,31 @@ function ComposeBar({ chatId }: { chatId: string }) {
       handleSubmit();
     }
   };
+
+  const handleFileChange = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = Array.from(e.target.files ?? []);
+      if (files.length === 0) return;
+      e.target.value = '';
+
+      setIsUploading(true);
+      try {
+        for (const file of files) {
+          const result = await api.upload<{ file: MessageAttachment }>('/api/uploads', file);
+          setAttachments((prev) => [...prev, result.file]);
+        }
+      } catch {
+        toast.error('Failed to upload file');
+      } finally {
+        setIsUploading(false);
+      }
+    },
+    [],
+  );
+
+  const removeAttachment = useCallback((index: number) => {
+    setAttachments((prev) => prev.filter((_, i) => i !== index));
+  }, []);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -679,10 +712,52 @@ function ComposeBar({ chatId }: { chatId: string }) {
         </div>
       )}
 
+      {/* Attachment previews */}
+      {attachments.length > 0 && (
+        <div className="mb-2 flex flex-wrap gap-1.5">
+          {attachments.map((att, i) => (
+            <div
+              key={i}
+              className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-700"
+            >
+              <Paperclip className="h-3 w-3 flex-shrink-0 text-slate-400" />
+              <span className="max-w-[140px] truncate">{att.filename}</span>
+              <span className="text-slate-400">
+                {att.size < 1024 * 1024
+                  ? `${(att.size / 1024).toFixed(0)}KB`
+                  : `${(att.size / 1024 / 1024).toFixed(1)}MB`}
+              </span>
+              <button
+                type="button"
+                onClick={() => removeAttachment(i)}
+                className="ml-0.5 text-slate-400 hover:text-red-500"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       <form onSubmit={handleSubmit} className="flex items-end gap-2">
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={handleFileChange}
+          accept="image/*,application/pdf,text/plain,text/csv,.doc,.docx,.xls,.xlsx,.zip,.mp4,.mp3"
+        />
         <button
           type="button"
-          className="mb-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={isUploading}
+          className={cn(
+            'mb-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg transition-colors',
+            isUploading
+              ? 'text-accent animate-pulse'
+              : 'text-slate-400 hover:bg-slate-100 hover:text-slate-600',
+          )}
           title="Attach file"
         >
           <Paperclip className="h-5 w-5" />
@@ -693,17 +768,17 @@ function ComposeBar({ chatId }: { chatId: string }) {
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Type a message..."
+          placeholder={attachments.length > 0 ? 'Add a caption...' : 'Type a message...'}
           rows={1}
           className="min-h-[36px] flex-1 resize-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-700 placeholder-slate-400 outline-none transition-shadow focus:border-accent focus:bg-white focus:shadow-focus-ring"
         />
 
         <button
           type="submit"
-          disabled={!text.trim() || isPending}
+          disabled={!canSend}
           className={cn(
             'mb-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg transition-all',
-            text.trim() && !isPending
+            canSend
               ? 'bg-accent text-white shadow-accent-sm hover:bg-accent-hover'
               : 'bg-slate-100 text-slate-300',
           )}
