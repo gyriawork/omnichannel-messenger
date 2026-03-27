@@ -1,16 +1,18 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useRef, useEffect } from 'react';
 import {
   Search,
   Plus,
   Pin,
+  PinOff,
   Volume2,
+  VolumeX,
   Star,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useChatStore } from '@/stores/chat';
-import { useChats } from '@/hooks/useChats';
+import { useChats, useChatPreferences } from '@/hooks/useChats';
 import { ImportChatsModal } from './ImportChatsModal';
 import type { Chat, MessengerType } from '@/types/chat';
 
@@ -107,10 +109,36 @@ function ChatItem({ chat, isActive }: { chat: Chat; isActive: boolean }) {
   const isPinned = chat.preferences?.pinned;
   const isMuted = chat.preferences?.muted;
   const isFavorite = chat.preferences?.favorite;
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const { mutate: updatePreferences } = useChatPreferences();
+
+  useEffect(() => {
+    if (!menu) return;
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenu(null);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [menu]);
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setMenu({ x: e.clientX, y: e.clientY });
+  };
+
+  const pref = (patch: { pinned?: boolean; favorite?: boolean; muted?: boolean }) => {
+    updatePreferences({ chatId: chat.id, preferences: patch });
+    setMenu(null);
+  };
 
   return (
+    <>
     <button
       onClick={() => setActiveChat(chat)}
+      onContextMenu={handleContextMenu}
       className={cn(
         'group flex w-full items-start gap-3 px-4 py-3 text-left transition-colors duration-150',
         isActive
@@ -190,10 +218,42 @@ function ChatItem({ chat, isActive }: { chat: Chat; isActive: boolean }) {
       {/* Unread badge */}
       {isUnread && (
         <div className="mt-1 flex h-5 min-w-[20px] flex-shrink-0 items-center justify-center rounded-full bg-accent px-1.5 text-[10px] font-bold text-white">
-          {chat.messageCount > 0 ? chat.messageCount : ''}
+          {chat.messageCount > 0 ? chat.messageCount : '·'}
         </div>
       )}
     </button>
+
+    {/* Context menu */}
+    {menu && (
+      <div
+        ref={menuRef}
+        style={{ top: menu.y, left: menu.x }}
+        className="fixed z-50 min-w-[160px] overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
+      >
+        <button
+          onClick={() => pref({ pinned: !isPinned })}
+          className="flex w-full items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+        >
+          {isPinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
+          {isPinned ? 'Unpin' : 'Pin'}
+        </button>
+        <button
+          onClick={() => pref({ favorite: !isFavorite })}
+          className="flex w-full items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+        >
+          <Star className={cn('h-3.5 w-3.5', isFavorite && 'fill-amber-400 text-amber-400')} />
+          {isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+        </button>
+        <button
+          onClick={() => pref({ muted: !isMuted })}
+          className="flex w-full items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+        >
+          {isMuted ? <Volume2 className="h-3.5 w-3.5" /> : <VolumeX className="h-3.5 w-3.5" />}
+          {isMuted ? 'Unmute' : 'Mute'}
+        </button>
+      </div>
+    )}
+    </>
   );
 }
 

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import EmojiPicker, { EmojiClickData } from 'emoji-picker-react';
+import EmojiPicker, { EmojiClickData, Theme } from 'emoji-picker-react';
 
 interface ReactionsPickerProps {
   onEmojiSelect: (emoji: string) => void;
@@ -58,7 +58,7 @@ export const ReactionsPicker: React.FC<ReactionsPickerProps> = ({
         >
           <EmojiPicker
             onEmojiClick={handleEmojiClick}
-            theme="light"
+            theme={Theme.LIGHT}
             width={350}
             height={400}
             searchPlaceHolder="Search emoji..."
