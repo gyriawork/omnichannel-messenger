@@ -6,6 +6,8 @@ const envSchema = z.object({
   JWT_SECRET: z.string().min(16, 'JWT_SECRET must be at least 16 chars'),
   JWT_REFRESH_SECRET: z.string().min(16, 'JWT_REFRESH_SECRET must be at least 16 chars'),
   CREDENTIALS_ENCRYPTION_KEY: z.string().min(1, 'CREDENTIALS_ENCRYPTION_KEY is required'),
+  SLACK_SIGNING_SECRET: z.string().optional(),
+  TELEGRAM_WEBHOOK_SECRET: z.string().optional(),
   APP_URL: z.string().optional().default('http://localhost:3000'),
   PORT: z.string().optional().default('3001'),
   HOST: z.string().optional().default('0.0.0.0'),

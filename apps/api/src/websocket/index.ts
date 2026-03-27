@@ -147,9 +147,13 @@ export function createWebSocketServer(httpServer: HttpServer): Server {
 
     // ── typing ──
 
-    socket.on('typing', (data: { chatId: string }) => {
+    socket.on('typing', async (data: { chatId: string }) => {
       const { chatId } = data;
-      if (!chatId) return;
+      if (!chatId || !user.organizationId) return;
+
+      // Verify the user's org owns this chat before broadcasting
+      const belongs = await chatBelongsToOrg(chatId, user.organizationId);
+      if (!belongs) return;
 
       // Throttle: one typing event per user per chat every TYPING_THROTTLE_MS
       const key = `${user.id}:${chatId}`;

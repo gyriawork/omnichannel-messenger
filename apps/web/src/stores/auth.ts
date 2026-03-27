@@ -33,15 +33,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   login: async (email: string, password: string) => {
     const data = await api.post<{
       accessToken: string;
-      refreshToken: string;
       user: User;
     }>('/api/auth/login', { email, password });
 
     setAccessToken(data.accessToken);
     localStorage.setItem('user', JSON.stringify(data.user));
-    if (data.refreshToken) {
-      localStorage.setItem('refreshToken', data.refreshToken);
-    }
+    // Refresh token is stored in httpOnly cookie by the server
 
     set({
       user: data.user,
@@ -53,15 +50,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   register: async (email: string, password: string, name: string) => {
     const data = await api.post<{
       accessToken: string;
-      refreshToken: string;
       user: User;
     }>('/api/auth/register', { email, password, name });
 
     setAccessToken(data.accessToken);
     localStorage.setItem('user', JSON.stringify(data.user));
-    if (data.refreshToken) {
-      localStorage.setItem('refreshToken', data.refreshToken);
-    }
+    // Refresh token is stored in httpOnly cookie by the server
 
     set({
       user: data.user,
@@ -72,17 +66,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   logout: async () => {
     try {
-      const storedRefreshToken = localStorage.getItem('refreshToken');
-      if (storedRefreshToken) {
-        await api.post('/api/auth/logout', { refreshToken: storedRefreshToken });
-      }
+      // Server reads refresh token from httpOnly cookie
+      await api.post('/api/auth/logout');
     } catch {
       // Silently ignore errors — logout should always succeed client-side
     }
 
     clearTokens();
     localStorage.removeItem('user');
-    localStorage.removeItem('refreshToken');
     set({
       user: null,
       accessToken: null,
@@ -93,20 +84,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   refreshToken: async () => {
     try {
-      // Send localStorage token as body fallback; cookie takes priority on server
-      const storedRefreshToken = localStorage.getItem('refreshToken');
-      const body = storedRefreshToken ? { refreshToken: storedRefreshToken } : undefined;
+      // Server reads refresh token from httpOnly cookie
       const data = await api.post<{
         accessToken: string;
-        refreshToken: string;
         user: User;
-      }>('/api/auth/refresh', body);
+      }>('/api/auth/refresh');
 
       setAccessToken(data.accessToken);
       localStorage.setItem('user', JSON.stringify(data.user));
-      if (data.refreshToken) {
-        localStorage.setItem('refreshToken', data.refreshToken);
-      }
 
       set({
         user: data.user,

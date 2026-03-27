@@ -47,12 +47,16 @@ model User {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
+  deletedAt        DateTime?
+
   ownedChats       Chat[]   @relation("ChatOwner")
   importedChats    Chat[]   @relation("ChatImporter")
   broadcasts       Broadcast[]
   templates        Template[]
   refreshTokens    RefreshToken[]
   chatPreferences  ChatPreference[]
+
+  @@index([organizationId])
 }
 
 model RefreshToken {
@@ -62,6 +66,8 @@ model RefreshToken {
   user      User     @relation(fields: [userId], references: [id])
   expiresAt DateTime
   createdAt DateTime @default(now())
+
+  @@index([expiresAt])
 }
 
 // ─── CHATS ───
@@ -81,6 +87,7 @@ model Chat {
   importedBy       User     @relation("ChatImporter", fields: [importedById], references: [id])
   messageCount     Int      @default(0)
   lastActivityAt   DateTime?
+  deletedAt        DateTime?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -128,6 +135,7 @@ model ChatParticipant {
   role           String? // admin | member
 
   @@unique([chatId, externalUserId])
+  @@index([chatId])
 }
 
 // ─── MESSAGES ───
@@ -147,10 +155,14 @@ model Message {
   replies          Message[] @relation("MessageReply")
   isPinned         Boolean  @default(false)
   deliveryStatus   String?  // sent | delivered | read | failed
-  attachments      Json?    // [{url, filename, mimeType, size}]
+  attachmentsLegacy Json?   @map("attachments") // legacy JSON field, use attachmentFiles relation instead
+  deletedAt        DateTime?
   createdAt        DateTime @default(now())
 
+  attachmentFiles  Attachment[]
+
   @@index([chatId, createdAt])
+  @@index([externalMessageId])
 }
 
 // ─── BROADCASTS ───
@@ -169,6 +181,7 @@ model Broadcast {
   createdById      String
   createdBy        User     @relation(fields: [createdById], references: [id])
   templateId       String?
+  deletedAt        DateTime?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -189,6 +202,7 @@ model BroadcastChat {
   sentAt        DateTime?
 
   @@unique([broadcastId, chatId])
+  @@index([status])
 }
 
 // ─── TEMPLATES ───
@@ -202,6 +216,7 @@ model Template {
   organization   Organization @relation(fields: [organizationId], references: [id])
   createdById    String
   createdBy      User     @relation(fields: [createdById], references: [id])
+  deletedAt      DateTime?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 }
@@ -274,4 +289,32 @@ model ActivityLog {
 
   @@index([organizationId, createdAt])
   @@index([category])
+}
+
+// ─── INCOMING WEBHOOKS ───
+
+model IncomingWebhook {
+  id             String    @id @default(uuid())
+  source         String    // telegram | slack | whatsapp | gmail
+  payload        Json
+  processedAt    DateTime?
+  error          String?
+  createdAt      DateTime  @default(now())
+
+  @@index([source, createdAt])
+}
+
+// ─── ATTACHMENTS ───
+
+model Attachment {
+  id           String   @id @default(uuid())
+  messageId    String
+  message      Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  url          String
+  filename     String
+  mimeType     String
+  size         Int
+  createdAt    DateTime @default(now())
+
+  @@index([messageId])
 }

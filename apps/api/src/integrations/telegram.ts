@@ -4,6 +4,7 @@
 
 import { TelegramClient, Api } from 'telegram';
 import { StringSession } from 'telegram/sessions/index.js';
+import IORedis from 'ioredis';
 import type { MessengerAdapter } from './base.js';
 import { MessengerError } from './base.js';
 
@@ -16,8 +17,12 @@ export interface TelegramCredentials {
   phoneNumber?: string;
 }
 
-// ─── Temporary client store for multi-step auth ───
-// Key = `${userId}:${phoneNumber}`, value = { client, phoneNumber, createdAt }
+// ─── Redis-backed pending auth store for multi-step Telegram auth ───
+// TelegramClient holds a live MTProto connection and cannot be serialized,
+// so we keep a local Map for client references while storing metadata in
+// Redis with a 300s TTL. Redis handles expiry automatically — no cleanup
+// interval needed. When a Redis key expires the local client reference
+// becomes orphaned and will be overwritten on the next auth attempt.
 
 interface PendingAuth {
   client: TelegramClient;
@@ -27,64 +32,110 @@ interface PendingAuth {
   createdAt: number;
 }
 
-const pendingAuths = new Map<string, PendingAuth>();
+interface PendingAuthMeta {
+  phoneNumber: string;
+  apiId: number;
+  apiHash: string;
+  createdAt: number;
+}
 
-const PENDING_AUTH_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const PENDING_AUTH_TTL_SECONDS = 300; // 5 minutes
+const REDIS_KEY_PREFIX = 'telegram:pending-auth:';
 
-/** Periodic cleanup of expired pending auth entries. */
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, entry] of pendingAuths) {
-    if (now - entry.createdAt > PENDING_AUTH_TTL_MS) {
-      entry.client.disconnect().catch(() => {});
-      pendingAuths.delete(key);
-    }
+/** Local map for TelegramClient references (not serializable). */
+const localClients = new Map<string, TelegramClient>();
+
+/** Lazily-initialized Redis client for pending auth metadata. */
+let redis: IORedis | null = null;
+
+function getRedis(): IORedis {
+  if (!redis) {
+    redis = new IORedis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
+      maxRetriesPerRequest: 3,
+      lazyConnect: true,
+    });
+    redis.connect().catch(() => {});
   }
-}, 60_000); // sweep every 60s
+  return redis;
+}
+
+function redisKey(userPhone: string): string {
+  return `${REDIS_KEY_PREFIX}${userPhone}`;
+}
 
 /**
  * Store a temporary TelegramClient during multi-step auth.
+ * Metadata is persisted to Redis with a 300s TTL; the live client
+ * reference is held in a local Map.
  */
-export function storePendingAuth(
+export async function storePendingAuth(
   userId: string,
   phoneNumber: string,
   client: TelegramClient,
   apiId: number,
   apiHash: string,
-): void {
+): Promise<void> {
   const key = `${userId}:${phoneNumber}`;
-  // Clean up any previous entry
-  const prev = pendingAuths.get(key);
+
+  // Clean up any previous local client
+  const prev = localClients.get(key);
   if (prev) {
-    prev.client.disconnect().catch(() => {});
+    prev.disconnect().catch(() => {});
   }
-  pendingAuths.set(key, {
-    client,
-    phoneNumber,
-    apiId,
-    apiHash,
-    createdAt: Date.now(),
-  });
+
+  // Store client reference locally
+  localClients.set(key, client);
+
+  // Store serializable metadata in Redis with TTL
+  const meta: PendingAuthMeta = { phoneNumber, apiId, apiHash, createdAt: Date.now() };
+  await getRedis().set(redisKey(key), JSON.stringify(meta), 'EX', PENDING_AUTH_TTL_SECONDS);
 }
 
 /**
- * Retrieve and remove a pending auth client.
+ * Retrieve a pending auth client. Returns undefined if expired or not found.
  */
-export function getPendingAuth(userId: string, phoneNumber: string): PendingAuth | undefined {
+export async function getPendingAuth(userId: string, phoneNumber: string): Promise<PendingAuth | undefined> {
   const key = `${userId}:${phoneNumber}`;
-  return pendingAuths.get(key);
+
+  const raw = await getRedis().get(redisKey(key));
+  if (!raw) {
+    // Expired or never stored — clean up local client if any
+    const orphan = localClients.get(key);
+    if (orphan) {
+      orphan.disconnect().catch(() => {});
+      localClients.delete(key);
+    }
+    return undefined;
+  }
+
+  const client = localClients.get(key);
+  if (!client) {
+    // Redis has metadata but local client is gone (e.g. process restarted)
+    await getRedis().del(redisKey(key));
+    return undefined;
+  }
+
+  const meta: PendingAuthMeta = JSON.parse(raw);
+  return {
+    client,
+    phoneNumber: meta.phoneNumber,
+    apiId: meta.apiId,
+    apiHash: meta.apiHash,
+    createdAt: meta.createdAt,
+  };
 }
 
 /**
  * Remove a pending auth entry (on success or explicit cancel).
  */
-export function removePendingAuth(userId: string, phoneNumber: string): void {
+export async function removePendingAuth(userId: string, phoneNumber: string): Promise<void> {
   const key = `${userId}:${phoneNumber}`;
-  const entry = pendingAuths.get(key);
-  if (entry) {
-    // Don't disconnect — caller owns the client now
-    pendingAuths.delete(key);
-  }
+
+  // Remove from Redis
+  await getRedis().del(redisKey(key));
+
+  // Remove local client reference — don't disconnect, caller owns it now
+  localClients.delete(key);
 }
 
 // ─── Adapter ───

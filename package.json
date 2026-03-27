@@ -10,6 +10,7 @@
     "dev": "turbo run dev",
     "build": "turbo run build",
     "lint": "turbo run lint",
+    "format": "prettier --write \"**/*.{ts,tsx,js,json,md}\"",
     "db:generate": "turbo run db:generate --filter=api",
     "db:migrate": "turbo run db:migrate --filter=api",
     "db:push": "turbo run db:push --filter=api"

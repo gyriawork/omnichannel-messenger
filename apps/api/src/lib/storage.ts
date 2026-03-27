@@ -16,8 +16,8 @@ const s3 = new S3Client({
     ? `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`
     : 'http://localhost:9000', // local MinIO fallback for dev
   credentials: {
-    accessKeyId: R2_ACCESS_KEY_ID || 'minioadmin',
-    secretAccessKey: R2_SECRET_ACCESS_KEY || 'minioadmin',
+    accessKeyId: R2_ACCESS_KEY_ID || (process.env.MINIO_ACCESS_KEY ?? ''),
+    secretAccessKey: R2_SECRET_ACCESS_KEY || (process.env.MINIO_SECRET_KEY ?? ''),
   },
 });
 

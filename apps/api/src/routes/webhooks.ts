@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import prisma from '../lib/prisma.js';
 import { saveIncomingMessage } from '../services/message-service.js';
 
@@ -7,14 +8,44 @@ import { saveIncomingMessage } from '../services/message-service.js';
 function verifyTelegramSecret(request: FastifyRequest): boolean {
   const secret = request.headers['x-telegram-bot-api-secret-token'];
   const expected = process.env.TELEGRAM_WEBHOOK_SECRET;
-  if (!expected) return true; // no secret configured = skip check (dev)
+  if (!expected) {
+    if (process.env.NODE_ENV === 'production') return false; // require in production
+    return true; // skip check in dev
+  }
   return secret === expected;
 }
 
 function verifySlackRequest(request: FastifyRequest): boolean {
-  // Slack sends a verification challenge on setup
-  // In production, verify using signing secret
-  return true; // simplified for now
+  const signingSecret = process.env.SLACK_SIGNING_SECRET;
+  if (!signingSecret) {
+    if (process.env.NODE_ENV === 'production') return false;
+    return true; // skip check in dev
+  }
+
+  const timestamp = request.headers['x-slack-request-timestamp'] as string;
+  const slackSignature = request.headers['x-slack-signature'] as string;
+
+  if (!timestamp || !slackSignature) return false;
+
+  // Reject requests older than 5 minutes to prevent replay attacks
+  const fiveMinutesAgo = Math.floor(Date.now() / 1000) - 300;
+  if (parseInt(timestamp, 10) < fiveMinutesAgo) return false;
+
+  // Reconstruct the raw body for verification
+  const rawBody = JSON.stringify(request.body);
+  const sigBasestring = `v0:${timestamp}:${rawBody}`;
+  const hmac = createHmac('sha256', signingSecret).update(sigBasestring).digest('hex');
+  const computedSignature = `v0=${hmac}`;
+
+  // Timing-safe comparison
+  try {
+    return timingSafeEqual(
+      Buffer.from(computedSignature, 'utf8'),
+      Buffer.from(slackSignature, 'utf8'),
+    );
+  } catch {
+    return false;
+  }
 }
 
 // ─── Routes ───
@@ -75,9 +106,13 @@ export default async function webhookRoutes(fastify: FastifyInstance): Promise<v
     async (request: FastifyRequest, reply: FastifyReply) => {
       const body = request.body as Record<string, unknown>;
 
-      // Handle Slack URL verification challenge
+      // Handle Slack URL verification challenge (must respond before signature check)
       if (body.type === 'url_verification') {
         return reply.send({ challenge: body.challenge });
+      }
+
+      if (!verifySlackRequest(request)) {
+        return reply.status(403).send({ error: 'Invalid Slack signature' });
       }
 
       if (body.type !== 'event_callback') {

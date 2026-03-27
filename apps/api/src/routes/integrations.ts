@@ -451,7 +451,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
         );
 
         // Store the client for step 2
-        storePendingAuth(request.user.id, phoneNumber, client, apiId, apiHash);
+        await storePendingAuth(request.user.id, phoneNumber, client, apiId, apiHash);
 
         return reply.send({
           phoneCodeHash: sendResult.phoneCodeHash,
@@ -493,7 +493,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
         return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
       }
 
-      const pending = getPendingAuth(request.user.id, phoneNumber);
+      const pending = await getPendingAuth(request.user.id, phoneNumber);
       if (!pending) {
         return sendError(
           reply,
@@ -541,7 +541,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
         const sessionString = (client.session as typeof StringSession.prototype).save();
 
         // Clean up pending auth
-        removePendingAuth(request.user.id, phoneNumber);
+        await removePendingAuth(request.user.id, phoneNumber);
 
         // Store credentials encrypted in DB
         const credentials = {

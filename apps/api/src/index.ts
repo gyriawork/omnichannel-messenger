@@ -25,6 +25,7 @@ import { createWebSocketServer } from './websocket/index.js';
 import { validateEnv } from './lib/env.js';
 import { startRedisSubscriber, stopRedisSubscriber } from './services/redis-subscriber.js';
 import { getTelegramManager } from './services/telegram-connection-manager.js';
+import { csrfProtection } from './middleware/csrf.js';
 
 const env = validateEnv();
 
@@ -45,7 +46,11 @@ const fastify = Fastify({
 await fastify.register(cors, {
   origin: (origin, cb) => {
     const appUrl = process.env.APP_URL ?? 'http://localhost:3000';
-    if (!origin || origin === appUrl || origin.endsWith('--omnichannel-messenger.netlify.app') || origin === 'http://localhost:3000') {
+    const allowedOrigins = [appUrl, 'http://localhost:3000'];
+    const netlifyUrl = process.env.NETLIFY_DEPLOY_URL;
+    if (netlifyUrl) allowedOrigins.push(netlifyUrl);
+
+    if (!origin || allowedOrigins.includes(origin)) {
       cb(null, true);
     } else {
       cb(null, false);
@@ -64,6 +69,8 @@ await fastify.register(rateLimit, {
 });
 
 await fastify.register(cookie);
+
+fastify.addHook('onRequest', csrfProtection);
 
 await fastify.register(multipart, {
   limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB

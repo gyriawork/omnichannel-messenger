@@ -71,13 +71,7 @@ const loginSchema = z.object({
   password: z.string().min(1, 'Password is required'),
 });
 
-const refreshSchema = z.object({
-  refreshToken: z.string().min(1).optional(),
-});
-
-const logoutSchema = z.object({
-  refreshToken: z.string().min(1).optional(),
-});
+// refresh and logout read token from httpOnly cookie — no body schema needed
 
 // ─── Cookie helper ───
 
@@ -178,7 +172,6 @@ export default async function authRoutes(fastify: FastifyInstance): Promise<void
 
       return reply.status(201).send({
         accessToken,
-        refreshToken,
         user: userResponse(user),
       });
     },
@@ -247,7 +240,6 @@ export default async function authRoutes(fastify: FastifyInstance): Promise<void
 
       return reply.status(200).send({
         accessToken,
-        refreshToken,
         user: userResponse(user),
       });
     },
@@ -258,12 +250,9 @@ export default async function authRoutes(fastify: FastifyInstance): Promise<void
   fastify.post(
     '/refresh',
     async (request: FastifyRequest, reply: FastifyReply) => {
-      const parsed = refreshSchema.safeParse(request.body ?? {});
-
-      // Cookie takes priority, then body fallback
+      // Read refresh token exclusively from httpOnly cookie
       const refreshToken =
-        (request.cookies as Record<string, string | undefined>)?.refreshToken ??
-        parsed.data?.refreshToken;
+        (request.cookies as Record<string, string | undefined>)?.refreshToken;
 
       if (!refreshToken) {
         return reply.status(401).send({
@@ -282,6 +271,7 @@ export default async function authRoutes(fastify: FastifyInstance): Promise<void
       });
 
       if (!storedToken) {
+        clearRefreshTokenCookie(reply);
         return reply.status(401).send({
           error: {
             code: 'AUTH_TOKEN_EXPIRED',
@@ -295,6 +285,7 @@ export default async function authRoutes(fastify: FastifyInstance): Promise<void
       if (storedToken.expiresAt < new Date()) {
         // Clean up expired token
         await prisma.refreshToken.delete({ where: { id: storedToken.id } });
+        clearRefreshTokenCookie(reply);
         return reply.status(401).send({
           error: {
             code: 'AUTH_TOKEN_EXPIRED',
@@ -307,7 +298,10 @@ export default async function authRoutes(fastify: FastifyInstance): Promise<void
       // Generate new access token
       const accessToken = generateAccessToken(storedToken.user);
 
-      return reply.status(200).send({ accessToken });
+      return reply.status(200).send({
+        accessToken,
+        user: userResponse(storedToken.user),
+      });
     },
   );
 
@@ -316,12 +310,9 @@ export default async function authRoutes(fastify: FastifyInstance): Promise<void
   fastify.post(
     '/logout',
     async (request: FastifyRequest, reply: FastifyReply) => {
-      const parsed = logoutSchema.safeParse(request.body ?? {});
-
-      // Cookie takes priority, then body fallback
+      // Read refresh token from httpOnly cookie
       const refreshToken =
-        (request.cookies as Record<string, string | undefined>)?.refreshToken ??
-        parsed.data?.refreshToken;
+        (request.cookies as Record<string, string | undefined>)?.refreshToken;
 
       if (refreshToken) {
         // Delete refresh token (ignore if not found -- idempotent)
