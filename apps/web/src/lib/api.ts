@@ -4,6 +4,14 @@ type RequestOptions = Omit<RequestInit, 'body'> & {
   body?: unknown;
 };
 
+// Callback registered by the auth store so api.ts can notify it when a silent
+// token refresh succeeds.  This avoids a circular import (api ↔ auth).
+let onTokenRefreshed: ((token: string) => void) | null = null;
+
+export function registerTokenRefreshCallback(cb: (token: string) => void) {
+  onTokenRefreshed = cb;
+}
+
 class ApiError extends Error {
   constructor(
     public statusCode: number,
@@ -28,38 +36,30 @@ function clearTokens() {
   localStorage.removeItem('accessToken');
 }
 
-// Prevent multiple concurrent refresh calls
+// Singleton promise lock — prevents multiple concurrent refresh calls
 let refreshPromise: Promise<string | null> | null = null;
 
 async function refreshAccessToken(): Promise<string | null> {
-  // If a refresh is already in progress, wait for it
-  if (refreshPromise) return refreshPromise;
+  try {
+    const response = await fetch(`${BASE_URL}/api/auth/refresh`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
 
-  refreshPromise = (async () => {
-    try {
-      const response = await fetch(`${BASE_URL}/api/auth/refresh`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: '{}',
-      });
+    if (!response.ok) return null;
 
-      if (!response.ok) return null;
-
-      const data = await response.json();
-      if (data.accessToken) {
-        setAccessToken(data.accessToken);
-        return data.accessToken;
-      }
-      return null;
-    } catch {
-      return null;
-    } finally {
-      refreshPromise = null;
+    const data = await response.json();
+    if (data.accessToken) {
+      setAccessToken(data.accessToken);
+      onTokenRefreshed?.(data.accessToken);
+      return data.accessToken;
     }
-  })();
-
-  return refreshPromise;
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 async function request<T>(
@@ -95,7 +95,10 @@ async function request<T>(
   let response = await fetch(`${BASE_URL}${endpoint}`, config);
 
   if (response.status === 401 && token) {
-    const newToken = await refreshAccessToken();
+    if (!refreshPromise) {
+      refreshPromise = refreshAccessToken().finally(() => { refreshPromise = null; });
+    }
+    const newToken = await refreshPromise;
     if (newToken) {
       headers['Authorization'] = `Bearer ${newToken}`;
       config.headers = headers;

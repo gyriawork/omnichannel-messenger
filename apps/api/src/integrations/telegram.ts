@@ -4,6 +4,7 @@
 
 import { TelegramClient, Api } from 'telegram';
 import { StringSession } from 'telegram/sessions/index.js';
+import { CustomFile } from 'telegram/client/uploads.js';
 import IORedis from 'ioredis';
 import type { MessengerAdapter } from './base.js';
 import { MessengerError } from './base.js';
@@ -219,15 +220,60 @@ export class TelegramAdapter implements MessengerAdapter {
   async sendMessage(
     externalChatId: string,
     text: string,
-    options?: { replyToExternalId?: string },
+    options?: {
+      replyToExternalId?: string;
+      attachments?: Array<{ url: string; filename: string; mimeType: string }>;
+    },
   ): Promise<{ externalMessageId: string }> {
     this.ensureConnected();
 
     try {
       const peer = await this.resolvePeer(externalChatId);
+      const replyTo = options?.replyToExternalId
+        ? parseInt(options.replyToExternalId, 10)
+        : undefined;
+
+      if (options?.attachments && options.attachments.length > 0) {
+        let firstMessageId: string | undefined;
+
+        for (let i = 0; i < options.attachments.length; i++) {
+          const attachment = options.attachments[i];
+          try {
+            const response = await fetch(attachment.url);
+            const arrayBuffer = await response.arrayBuffer();
+            const buffer = Buffer.from(arrayBuffer);
+            const customFile = new CustomFile(attachment.filename, buffer.length, '', buffer);
+
+            const result = await this.client!.sendFile(peer, {
+              file: customFile,
+              caption: i === 0 ? text : '',
+              replyTo: i === 0 ? replyTo : undefined,
+            });
+
+            if (i === 0) {
+              firstMessageId = result.id.toString();
+            }
+          } catch {
+            // If attachment send fails, continue with remaining attachments
+          }
+        }
+
+        // If all attachment sends failed and we have text, fall back to sending text only
+        if (!firstMessageId) {
+          const result = await this.client!.sendMessage(peer, {
+            message: text,
+            replyTo,
+          });
+          return { externalMessageId: result.id.toString() };
+        }
+
+        return { externalMessageId: firstMessageId };
+      }
+
+      // Text-only path (original behavior)
       const result = await this.client!.sendMessage(peer, {
         message: text,
-        replyTo: options?.replyToExternalId ? parseInt(options.replyToExternalId, 10) : undefined,
+        replyTo,
       });
 
       return { externalMessageId: result.id.toString() };

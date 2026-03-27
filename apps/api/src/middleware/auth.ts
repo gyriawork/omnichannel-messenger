@@ -53,14 +53,13 @@ export async function authenticate(
       organizationId: payload.organizationId,
     };
   } catch (err) {
-    const message =
-      err instanceof jwt.TokenExpiredError
-        ? 'Access token has expired'
-        : 'Invalid access token';
+    const isExpired = err instanceof jwt.TokenExpiredError;
+    const code = isExpired ? 'AUTH_TOKEN_EXPIRED' : 'AUTH_INVALID_CREDENTIALS';
+    const message = isExpired ? 'Access token has expired' : 'Invalid access token';
 
     return reply.status(401).send({
       error: {
-        code: 'AUTH_TOKEN_EXPIRED',
+        code,
         message,
         statusCode: 401,
       },

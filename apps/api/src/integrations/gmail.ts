@@ -123,7 +123,10 @@ export class GmailAdapter implements MessengerAdapter {
   async sendMessage(
     externalChatId: string,
     text: string,
-    options?: { replyToExternalId?: string },
+    options?: {
+      replyToExternalId?: string;
+      attachments?: Array<{ url: string; filename: string; mimeType: string }>;
+    },
   ): Promise<{ externalMessageId: string }> {
     this.ensureConnected();
 
@@ -162,25 +165,84 @@ export class GmailAdapter implements MessengerAdapter {
         inReplyTo = messageId;
       }
 
-      // Build the raw email message
-      const messageParts = [
-        `To: ${to}`,
-        `Subject: ${subject}`,
-        `Content-Type: text/plain; charset=utf-8`,
-      ];
+      const hasAttachments = options?.attachments && options.attachments.length > 0;
+      let raw: string;
 
-      if (inReplyTo) {
-        messageParts.push(`In-Reply-To: ${inReplyTo}`);
-        messageParts.push(`References: ${references}`);
+      if (hasAttachments) {
+        // Build a multipart/mixed MIME message with attachments
+        const boundary = `boundary_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+
+        const headers: string[] = [
+          `To: ${to}`,
+          `Subject: ${subject}`,
+          `MIME-Version: 1.0`,
+          `Content-Type: multipart/mixed; boundary="${boundary}"`,
+        ];
+
+        if (inReplyTo) {
+          headers.push(`In-Reply-To: ${inReplyTo}`);
+          headers.push(`References: ${references}`);
+        }
+
+        const parts: string[] = [];
+
+        // Text body part
+        parts.push(
+          `--${boundary}`,
+          `Content-Type: text/plain; charset=utf-8`,
+          `Content-Transfer-Encoding: 7bit`,
+          ``,
+          text,
+        );
+
+        // Attachment parts
+        for (const attachment of options!.attachments!) {
+          try {
+            const response = await fetch(attachment.url);
+            const arrayBuffer = await response.arrayBuffer();
+            const base64Data = Buffer.from(arrayBuffer).toString('base64');
+
+            parts.push(
+              `--${boundary}`,
+              `Content-Type: ${attachment.mimeType}; name="${attachment.filename}"`,
+              `Content-Disposition: attachment; filename="${attachment.filename}"`,
+              `Content-Transfer-Encoding: base64`,
+              ``,
+              base64Data,
+            );
+          } catch {
+            // If attachment download fails, skip it and continue
+          }
+        }
+
+        parts.push(`--${boundary}--`);
+
+        raw = Buffer.from([...headers, '', ...parts].join('\r\n'))
+          .toString('base64')
+          .replace(/\+/g, '-')
+          .replace(/\//g, '_')
+          .replace(/=+$/, '');
+      } else {
+        // Text-only MIME message (original behavior)
+        const messageParts = [
+          `To: ${to}`,
+          `Subject: ${subject}`,
+          `Content-Type: text/plain; charset=utf-8`,
+        ];
+
+        if (inReplyTo) {
+          messageParts.push(`In-Reply-To: ${inReplyTo}`);
+          messageParts.push(`References: ${references}`);
+        }
+
+        messageParts.push('', text);
+
+        raw = Buffer.from(messageParts.join('\r\n'))
+          .toString('base64')
+          .replace(/\+/g, '-')
+          .replace(/\//g, '_')
+          .replace(/=+$/, '');
       }
-
-      messageParts.push('', text);
-
-      const raw = Buffer.from(messageParts.join('\r\n'))
-        .toString('base64')
-        .replace(/\+/g, '-')
-        .replace(/\//g, '_')
-        .replace(/=+$/, '');
 
       const result = await this.gmail!.users.messages.send({
         userId: 'me',

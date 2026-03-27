@@ -54,7 +54,7 @@ export async function saveIncomingMessage(params: SaveIncomingMessageParams) {
       isSelf: params.isSelf ?? false,
       text: params.text || '',
       externalMessageId: params.externalMessageId,
-      attachments: params.attachments ? JSON.parse(JSON.stringify(params.attachments)) : undefined,
+      attachmentsLegacy: params.attachments ? JSON.parse(JSON.stringify(params.attachments)) : undefined,
       ...(params.createdAt ? { createdAt: params.createdAt } : {}),
     },
   });

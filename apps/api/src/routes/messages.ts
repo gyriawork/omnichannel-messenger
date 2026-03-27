@@ -198,7 +198,7 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
             isSelf: true,
             text,
             replyToMessageId: replyToMessageId ?? null,
-            attachments: attachments ?? undefined,
+            attachmentsLegacy: attachments ?? undefined,
             deliveryStatus: 'sent',
           },
           include: {
@@ -243,10 +243,18 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
             replyToExternalId = replyMsg?.externalMessageId ?? undefined;
           }
 
+          const savedAttachments = await prisma.attachment.findMany({
+            where: { messageId: message.id },
+            select: { url: true, filename: true, mimeType: true },
+          });
+
           const result = await adapter.sendMessage(
             chat.externalChatId,
             text,
-            replyToExternalId ? { replyToExternalId } : undefined,
+            {
+              replyToExternalId,
+              attachments: savedAttachments.length > 0 ? savedAttachments : undefined,
+            },
           );
           externalMessageId = result.externalMessageId;
           deliveryStatus = 'delivered';

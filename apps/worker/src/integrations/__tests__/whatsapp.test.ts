@@ -1,34 +1,40 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MessengerError } from '../base.js';
 
-// ─── Mock Baileys ───
+// ─── Hoisted mocks ───
 
-const mocks = vi.hoisted(() => ({
-  sendMessage: vi.fn(),
-  groupFetchAllParticipating: vi.fn(),
-  end: vi.fn(),
-}));
+const mocks = vi.hoisted(() => {
+  // Store for capturing ev.on handlers
+  const eventHandlers: Record<string, ((...args: unknown[]) => void)[]> = {};
 
-// Connection update handler will be captured here so tests can trigger events
-let connectionUpdateHandler: ((update: Record<string, unknown>) => void) | null = null;
+  const sendMessage = vi.fn();
+  const groupFetchAllParticipating = vi.fn();
+  const end = vi.fn();
+
+  const createSocket = () => ({
+    sendMessage,
+    groupFetchAllParticipating,
+    end,
+    ev: {
+      on: (event: string, handler: (...args: unknown[]) => void) => {
+        if (!eventHandlers[event]) eventHandlers[event] = [];
+        eventHandlers[event].push(handler);
+      },
+    },
+  });
+
+  return {
+    sendMessage,
+    groupFetchAllParticipating,
+    end,
+    eventHandlers,
+    createSocket,
+  };
+});
 
 vi.mock('@whiskeysockets/baileys', () => {
-  const makeWASocket = vi.fn().mockImplementation(() => ({
-    sendMessage: mocks.sendMessage,
-    groupFetchAllParticipating: mocks.groupFetchAllParticipating,
-    end: mocks.end,
-    ev: {
-      on: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
-        if (event === 'connection.update') {
-          connectionUpdateHandler = handler as (update: Record<string, unknown>) => void;
-        }
-      }),
-    },
-  }));
+  const makeWASocket = vi.fn().mockImplementation(() => mocks.createSocket());
 
-  // The source does `import baileys from '...'` then destructures named exports
-  // from `baileys as any`, so the default export needs to be callable AND have
-  // the named exports as properties.
   const baileysDefault = Object.assign(makeWASocket, {
     default: makeWASocket,
     makeWASocket,
@@ -38,7 +44,7 @@ vi.mock('@whiskeysockets/baileys', () => {
     initAuthCreds: vi.fn().mockReturnValue({ me: null }),
   });
 
-  return { default: baileysDefault, ...baileysDefault };
+  return { default: baileysDefault, ...Object.fromEntries(Object.entries(baileysDefault).filter(([k]) => k !== 'default')) };
 });
 
 vi.mock('@hapi/boom', () => ({
@@ -57,6 +63,15 @@ vi.mock('pino', () => ({
 
 import { WhatsAppAdapter } from '../whatsapp.js';
 
+/** Trigger a connection.update event on the most recently created socket */
+function emitConnectionUpdate(update: Record<string, unknown>) {
+  const handlers = mocks.eventHandlers['connection.update'];
+  if (handlers && handlers.length > 0) {
+    // Fire the last registered handler (the one from the most recent connect() call)
+    handlers[handlers.length - 1](update);
+  }
+}
+
 describe('WhatsAppAdapter', () => {
   let adapter: WhatsAppAdapter;
 
@@ -70,7 +85,10 @@ describe('WhatsAppAdapter', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    connectionUpdateHandler = null;
+    // Clear captured event handlers between tests
+    for (const key of Object.keys(mocks.eventHandlers)) {
+      delete mocks.eventHandlers[key];
+    }
     adapter = new WhatsAppAdapter(validCreds);
   });
 
@@ -79,8 +97,9 @@ describe('WhatsAppAdapter', () => {
   describe('connect', () => {
     it('should connect successfully when connection opens', async () => {
       const connectPromise = adapter.connect();
-      // Simulate connection opening
-      connectionUpdateHandler?.({ connection: 'open' });
+      // Allow microtask for socket creation, then fire event
+      await new Promise((r) => setTimeout(r, 10));
+      emitConnectionUpdate({ connection: 'open' });
       await connectPromise;
 
       expect(adapter.getStatus()).toBe('connected');
@@ -95,8 +114,8 @@ describe('WhatsAppAdapter', () => {
 
     it('should set session_expired on loggedOut disconnect', async () => {
       const connectPromise = adapter.connect();
-      // Simulate disconnect with loggedOut reason
-      connectionUpdateHandler?.({
+      await new Promise((r) => setTimeout(r, 10));
+      emitConnectionUpdate({
         connection: 'close',
         lastDisconnect: {
           error: { output: { statusCode: 401 } },
@@ -109,7 +128,8 @@ describe('WhatsAppAdapter', () => {
 
     it('should set disconnected on non-loggedOut close', async () => {
       const connectPromise = adapter.connect();
-      connectionUpdateHandler?.({
+      await new Promise((r) => setTimeout(r, 10));
+      emitConnectionUpdate({
         connection: 'close',
         lastDisconnect: {
           error: { output: { statusCode: 428 } },
@@ -130,7 +150,8 @@ describe('WhatsAppAdapter', () => {
 
     it('should return connected after open event', async () => {
       const p = adapter.connect();
-      connectionUpdateHandler?.({ connection: 'open' });
+      await new Promise((r) => setTimeout(r, 10));
+      emitConnectionUpdate({ connection: 'open' });
       await p;
 
       expect(adapter.getStatus()).toBe('connected');
@@ -138,7 +159,8 @@ describe('WhatsAppAdapter', () => {
 
     it('should return disconnected after disconnect', async () => {
       const p = adapter.connect();
-      connectionUpdateHandler?.({ connection: 'open' });
+      await new Promise((r) => setTimeout(r, 10));
+      emitConnectionUpdate({ connection: 'open' });
       await p;
 
       await adapter.disconnect();
@@ -147,13 +169,20 @@ describe('WhatsAppAdapter', () => {
     });
   });
 
+  // ─── Helper: connect adapter for method tests ───
+
+  async function connectAdapter() {
+    const p = adapter.connect();
+    await new Promise((r) => setTimeout(r, 10));
+    emitConnectionUpdate({ connection: 'open' });
+    await p;
+  }
+
   // ─── sendMessage ───
 
   describe('sendMessage', () => {
     beforeEach(async () => {
-      const p = adapter.connect();
-      connectionUpdateHandler?.({ connection: 'open' });
-      await p;
+      await connectAdapter();
     });
 
     it('should send message and return externalMessageId', async () => {
@@ -211,9 +240,7 @@ describe('WhatsAppAdapter', () => {
 
   describe('listChats', () => {
     beforeEach(async () => {
-      const p = adapter.connect();
-      connectionUpdateHandler?.({ connection: 'open' });
-      await p;
+      await connectAdapter();
     });
 
     it('should return normalized group chat objects', async () => {
@@ -251,9 +278,7 @@ describe('WhatsAppAdapter', () => {
 
   describe('disconnect', () => {
     it('should end socket and set status to disconnected', async () => {
-      const p = adapter.connect();
-      connectionUpdateHandler?.({ connection: 'open' });
-      await p;
+      await connectAdapter();
 
       await adapter.disconnect();
 
@@ -273,9 +298,7 @@ describe('WhatsAppAdapter', () => {
 
   describe('editMessage', () => {
     beforeEach(async () => {
-      const p = adapter.connect();
-      connectionUpdateHandler?.({ connection: 'open' });
-      await p;
+      await connectAdapter();
     });
 
     it('should send edit message via sendMessage', async () => {
@@ -292,9 +315,7 @@ describe('WhatsAppAdapter', () => {
 
   describe('deleteMessage', () => {
     beforeEach(async () => {
-      const p = adapter.connect();
-      connectionUpdateHandler?.({ connection: 'open' });
-      await p;
+      await connectAdapter();
     });
 
     it('should send delete via sendMessage', async () => {

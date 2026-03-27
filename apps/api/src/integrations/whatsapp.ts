@@ -397,24 +397,78 @@ export class WhatsAppAdapter implements MessengerAdapter {
   async sendMessage(
     externalChatId: string,
     text: string,
-    options?: { replyToExternalId?: string },
+    options?: {
+      replyToExternalId?: string;
+      attachments?: Array<{ url: string; filename: string; mimeType: string }>;
+    },
   ): Promise<{ externalMessageId: string }> {
     this.ensureConnected();
 
     try {
       const jid = this.normalizeJid(externalChatId);
 
-      const sendOptions: Record<string, unknown> = { text };
+      const quotedMsg = options?.replyToExternalId
+        ? { key: { remoteJid: jid, id: options.replyToExternalId }, message: {} }
+        : undefined;
 
-      if (options?.replyToExternalId) {
-        sendOptions.quoted = {
-          key: {
-            remoteJid: jid,
-            id: options.replyToExternalId,
-          },
-          message: {},
-        };
+      if (options?.attachments && options.attachments.length > 0) {
+        let firstMessageId: string | undefined;
+
+        for (let i = 0; i < options.attachments.length; i++) {
+          const attachment = options.attachments[i];
+          const isImage = attachment.mimeType.startsWith('image/');
+
+          try {
+            let msgContent: Parameters<WASocket['sendMessage']>[1];
+
+            if (isImage) {
+              msgContent = {
+                image: { url: attachment.url },
+                caption: i === 0 ? text : '',
+              } as Parameters<WASocket['sendMessage']>[1];
+            } else {
+              // For non-image attachments: send text first on the first iteration, then document
+              if (i === 0 && text) {
+                const textOptions: Record<string, unknown> = { text };
+                if (quotedMsg) textOptions.quoted = quotedMsg;
+                const textMsg = await this.sock!.sendMessage(jid, textOptions as Parameters<WASocket['sendMessage']>[1]);
+                firstMessageId = textMsg?.key?.id ?? `wa_${Date.now()}`;
+              }
+
+              msgContent = {
+                document: { url: attachment.url },
+                fileName: attachment.filename,
+                mimetype: attachment.mimeType,
+              } as Parameters<WASocket['sendMessage']>[1];
+            }
+
+            const sendOpts: Record<string, unknown> = { ...msgContent as object };
+            if (i === 0 && quotedMsg && isImage) sendOpts.quoted = quotedMsg;
+
+            const msg = await this.sock!.sendMessage(jid, sendOpts as Parameters<WASocket['sendMessage']>[1]);
+
+            if (i === 0 && !firstMessageId) {
+              firstMessageId = msg?.key?.id ?? `wa_${Date.now()}`;
+            }
+          } catch {
+            // If attachment send fails, continue with remaining attachments
+          }
+        }
+
+        // If all attachment sends failed, fall back to text-only
+        if (!firstMessageId) {
+          const textOptions: Record<string, unknown> = { text };
+          if (quotedMsg) textOptions.quoted = quotedMsg;
+          const msg = await this.sock!.sendMessage(jid, textOptions as Parameters<WASocket['sendMessage']>[1]);
+          return { externalMessageId: msg?.key?.id ?? `wa_${Date.now()}` };
+        }
+
+        return { externalMessageId: firstMessageId };
       }
+
+      // Text-only path (original behavior)
+      const sendOptions: Record<string, unknown> = { text };
+      if (quotedMsg) sendOptions.quoted = quotedMsg;
 
       const msg = await this.sock!.sendMessage(jid, sendOptions as Parameters<WASocket['sendMessage']>[1]);
       return { externalMessageId: msg?.key?.id ?? `wa_${Date.now()}` };

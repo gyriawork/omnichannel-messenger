@@ -8,6 +8,7 @@ import {
   useMemo,
   type FormEvent,
 } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   Send,
   Paperclip,
@@ -165,6 +166,14 @@ function MessageBubble({
   const { mutate: editMessage, isPending: isEditPending } = useEditMessage();
   const { mutate: deleteMessage, isPending: isDeletePending } = useDeleteMessage();
   const { mutate: pinMessage } = usePinMessage();
+  const { mutate: sendMessage, isPending: isRetrySending } = useSendMessage();
+
+  const handleRetry = useCallback(() => {
+    sendMessage(
+      { chatId: message.chatId, text: message.text },
+      { onError: () => toast.error('Retry failed') },
+    );
+  }, [message.chatId, message.text, sendMessage]);
 
   const handleEdit = useCallback(() => {
     setEditText(message.text);
@@ -423,6 +432,16 @@ function MessageBubble({
           )}
           <span>{formatMessageTime(message.createdAt)}</span>
           {isSelf && <DeliveryIcon status={message.deliveryStatus} />}
+          {isSelf && message.deliveryStatus === 'failed' && (
+            <button
+              onClick={handleRetry}
+              disabled={isRetrySending}
+              className="ml-0.5 flex items-center gap-0.5 rounded text-[10px] text-red-300 underline-offset-2 hover:text-red-100 disabled:opacity-50"
+              title="Retry sending"
+            >
+              ↺ Retry
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -895,11 +914,22 @@ function MessageFeed({ chatId }: { chatId: string }) {
 export function ChatArea() {
   const activeChat = useChatStore((s) => s.activeChat);
   const [searchOpen, setSearchOpen] = useState(false);
+  const queryClient = useQueryClient();
 
   // Close search when switching chats
   useEffect(() => {
     setSearchOpen(false);
   }, [activeChat?.id]);
+
+  // Mark chat as read when it is opened
+  useEffect(() => {
+    if (!activeChat?.id) return;
+    api.patch(`/api/chats/${activeChat.id}/read`).then(() => {
+      queryClient.invalidateQueries({ queryKey: ['chats'] });
+    }).catch(() => {
+      // fire-and-forget — silently ignore errors
+    });
+  }, [activeChat?.id, queryClient]);
 
   if (!activeChat) {
     return <EmptyState />;

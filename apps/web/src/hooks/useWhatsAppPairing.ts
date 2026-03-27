@@ -32,6 +32,25 @@ export function useWhatsAppPairing(): UseWhatsAppPairingReturn {
   const [error, setError] = useState<string | null>(null);
   const queryClient = useQueryClient();
   const listenersAttachedRef = useRef(false);
+  const qrTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Clear the 120s QR expiry timeout
+  const clearQrTimeout = useCallback(() => {
+    if (qrTimeoutRef.current !== null) {
+      clearTimeout(qrTimeoutRef.current);
+      qrTimeoutRef.current = null;
+    }
+  }, []);
+
+  // (Re)start the 120s QR expiry timeout
+  const resetQrTimeout = useCallback(() => {
+    clearQrTimeout();
+    qrTimeoutRef.current = setTimeout(() => {
+      setError('QR code expired. Click to try again.');
+      setStatus('error');
+      setQrDataUrl(null);
+    }, 120_000);
+  }, [clearQrTimeout]);
 
   // Clean up socket listeners
   const detachListeners = useCallback(() => {
@@ -56,6 +75,8 @@ export function useWhatsAppPairing(): UseWhatsAppPairingReturn {
     }
 
     socket.on('whatsapp:qr', async (data: { qr: string }) => {
+      // Reset the 120s expiry timer on every QR refresh (Baileys regenerates ~every 20s)
+      resetQrTimeout();
       try {
         // Convert the QR code string into a data URL image
         const dataUrl = await QRCode.toDataURL(data.qr, {
@@ -80,6 +101,7 @@ export function useWhatsAppPairing(): UseWhatsAppPairingReturn {
     });
 
     socket.on('whatsapp:connected', () => {
+      clearQrTimeout();
       setStatus('connected');
       setStatusMessage('WhatsApp connected successfully!');
       setQrDataUrl(null);
@@ -90,6 +112,7 @@ export function useWhatsAppPairing(): UseWhatsAppPairingReturn {
     });
 
     socket.on('whatsapp:error', (data: { message: string }) => {
+      clearQrTimeout();
       setError(data.message);
       setStatus('error');
       setQrDataUrl(null);
@@ -97,14 +120,15 @@ export function useWhatsAppPairing(): UseWhatsAppPairingReturn {
     });
 
     listenersAttachedRef.current = true;
-  }, [queryClient, detachListeners]);
+  }, [queryClient, detachListeners, resetQrTimeout, clearQrTimeout]);
 
   // Clean up on unmount
   useEffect(() => {
     return () => {
+      clearQrTimeout();
       detachListeners();
     };
-  }, [detachListeners]);
+  }, [detachListeners, clearQrTimeout]);
 
   const startPairing = useCallback(async () => {
     setStatus('starting');
@@ -113,22 +137,27 @@ export function useWhatsAppPairing(): UseWhatsAppPairingReturn {
     setStatusMessage('Starting WhatsApp pairing...');
 
     try {
-      // Attach WebSocket listeners before calling the API
+      // Attach WebSocket listeners before calling the API so no events are missed
       attachListeners();
 
       await api.post('/api/integrations/whatsapp/start-pairing', {});
 
       setStatus('waiting_for_qr');
       setStatusMessage('Generating QR code...');
+
+      // Start the 120s session-expiry guard; will be reset on each whatsapp:qr event
+      resetQrTimeout();
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to start WhatsApp pairing';
       setError(message);
       setStatus('error');
+      clearQrTimeout();
       detachListeners();
     }
-  }, [attachListeners, detachListeners]);
+  }, [attachListeners, detachListeners, resetQrTimeout, clearQrTimeout]);
 
   const cancelPairing = useCallback(() => {
+    clearQrTimeout();
     detachListeners();
     setStatus('idle');
     setQrDataUrl(null);
@@ -137,15 +166,16 @@ export function useWhatsAppPairing(): UseWhatsAppPairingReturn {
 
     // Fire and forget the cancel request
     api.post('/api/integrations/whatsapp/cancel-pairing', {}).catch(() => {});
-  }, [detachListeners]);
+  }, [detachListeners, clearQrTimeout]);
 
   const reset = useCallback(() => {
+    clearQrTimeout();
     detachListeners();
     setStatus('idle');
     setQrDataUrl(null);
     setStatusMessage('');
     setError(null);
-  }, [detachListeners]);
+  }, [detachListeners, clearQrTimeout]);
 
   return {
     status,

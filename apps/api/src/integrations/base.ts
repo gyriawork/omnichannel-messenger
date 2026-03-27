@@ -16,7 +16,10 @@ export interface MessengerAdapter {
   sendMessage(
     externalChatId: string,
     text: string,
-    options?: { replyToExternalId?: string },
+    options?: {
+      replyToExternalId?: string;
+      attachments?: Array<{ url: string; filename: string; mimeType: string }>;
+    },
   ): Promise<{ externalMessageId: string }>;
 
   /** Edit an existing message. */

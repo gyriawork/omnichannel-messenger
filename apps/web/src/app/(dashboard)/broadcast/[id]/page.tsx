@@ -1,11 +1,8 @@
-'use client';
-
 import { BroadcastDetail } from '@/components/broadcast/BroadcastDetail';
 
-interface BroadcastDetailPageProps {
-  params: { id: string };
-}
+interface Props { params: Promise<{ id: string }> }
 
-export default function BroadcastDetailPage({ params }: BroadcastDetailPageProps) {
-  return <BroadcastDetail id={params.id} />;
+export default async function BroadcastDetailPage({ params }: Props) {
+  const { id } = await params;
+  return <BroadcastDetail id={id} />;
 }

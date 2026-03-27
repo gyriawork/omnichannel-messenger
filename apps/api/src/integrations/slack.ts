@@ -98,11 +98,51 @@ export class SlackAdapter implements MessengerAdapter {
   async sendMessage(
     externalChatId: string,
     text: string,
-    options?: { replyToExternalId?: string },
+    options?: {
+      replyToExternalId?: string;
+      attachments?: Array<{ url: string; filename: string; mimeType: string }>;
+    },
   ): Promise<{ externalMessageId: string }> {
     this.ensureConnected();
 
     try {
+      if (options?.attachments && options.attachments.length > 0) {
+        // Post text message first if text is provided
+        let textMessageId: string | undefined;
+        if (text) {
+          const textResult = await this.client!.chat.postMessage({
+            channel: externalChatId,
+            text,
+            thread_ts: options?.replyToExternalId,
+          });
+          if (textResult.ok && textResult.ts) {
+            textMessageId = textResult.ts;
+          }
+        }
+
+        // Upload each attachment
+        for (const attachment of options.attachments) {
+          try {
+            const arrayBuffer = await fetch(attachment.url).then((r) => r.arrayBuffer());
+            const fileBuffer = Buffer.from(arrayBuffer);
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const filesUploadV2 = this.client!.filesUploadV2.bind(this.client!) as (args: any) => Promise<any>;
+            await filesUploadV2({
+              channel_id: externalChatId,
+              filename: attachment.filename,
+              file: fileBuffer,
+              ...(options?.replyToExternalId ? { thread_ts: options.replyToExternalId } : {}),
+            });
+          } catch {
+            // If attachment upload fails, continue with remaining attachments
+          }
+        }
+
+        // Return the text message ID if available, otherwise a fallback
+        return { externalMessageId: textMessageId ?? `slack_${Date.now()}` };
+      }
+
+      // Text-only path (original behavior)
       const result = await this.client!.chat.postMessage({
         channel: externalChatId,
         text,

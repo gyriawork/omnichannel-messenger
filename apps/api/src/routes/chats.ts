@@ -645,6 +645,40 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
     },
   );
 
+  // ─── PATCH /chats/:id/read ───
+
+  fastify.patch(
+    '/chats/:id/read',
+    { preHandler: authPreHandlers },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const paramsParsed = chatIdParamSchema.safeParse(request.params);
+      if (!paramsParsed.success) {
+        return sendError(reply, 'VALIDATION_ERROR', 'Invalid chat id', 422);
+      }
+
+      const { id } = paramsParsed.data;
+      const organizationId = getOrgId(request);
+      if (!organizationId) {
+        return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
+      }
+
+      const existing = await prisma.chat.findFirst({
+        where: { id, organizationId },
+      });
+      if (!existing) {
+        return sendError(reply, 'RESOURCE_NOT_FOUND', `Chat with id ${id} not found`, 404);
+      }
+
+      await prisma.chatPreference.upsert({
+        where: { userId_chatId: { chatId: id, userId: request.user.id } },
+        create: { chatId: id, userId: request.user.id, unread: false },
+        update: { unread: false },
+      });
+
+      return reply.send({ success: true });
+    },
+  );
+
   // ─── DELETE /chats/bulk ───
 
   fastify.delete(
