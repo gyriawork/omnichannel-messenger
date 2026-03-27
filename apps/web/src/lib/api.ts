@@ -74,6 +74,9 @@ async function request<T>(
 
   if (body !== undefined) {
     config.body = JSON.stringify(body);
+  } else if (rest.method === 'POST' || rest.method === 'PATCH') {
+    // Send empty object to avoid Fastify "Unexpected end of JSON input" on empty body
+    config.body = '{}';
   }
 
   let response = await fetch(`${BASE_URL}${endpoint}`, config);
