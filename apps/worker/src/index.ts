@@ -1,4 +1,4 @@
-import { Worker, type Job } from 'bullmq';
+import { Worker, Queue, type Job } from 'bullmq';
 import IORedis from 'ioredis';
 import prisma from './lib/prisma.js';
 import { decryptCredentials } from './lib/crypto.js';
@@ -550,6 +550,49 @@ worker.on('error', (err) => {
 });
 
 log.info('Broadcast worker ready, listening for jobs');
+
+// ─── Startup Recovery ───
+// On startup, find any overdue scheduled broadcasts and enqueue them.
+// This handles the case where the worker was down when a scheduled time arrived.
+
+async function recoverOverdueScheduledBroadcasts(): Promise<void> {
+  try {
+    const broadcastQueue = new Queue('broadcast', { connection });
+
+    const overdue = await prisma.broadcast.findMany({
+      where: {
+        status: 'scheduled',
+        scheduledAt: { lte: new Date() },
+      },
+      select: { id: true, organizationId: true },
+    });
+
+    if (overdue.length === 0) return;
+
+    log.info(`Recovering ${overdue.length} overdue scheduled broadcast(s)`);
+
+    for (const b of overdue) {
+      const jobId = `broadcast-recovery-${b.id}-${Date.now()}`;
+      await broadcastQueue.add(
+        'broadcast:send',
+        { broadcastId: b.id, organizationId: b.organizationId },
+        { jobId },
+      );
+      log.info(`Queued overdue broadcast ${b.id}`);
+    }
+
+    await broadcastQueue.close();
+  } catch (err) {
+    log.error('Failed to recover overdue broadcasts', { error: String(err) });
+  }
+}
+
+// Run recovery after a short delay to ensure worker is fully ready
+setTimeout(() => {
+  recoverOverdueScheduledBroadcasts().catch((err) => {
+    log.error('Startup recovery error', { error: String(err) });
+  });
+}, 5000);
 
 // ─── Graceful Shutdown ───
 

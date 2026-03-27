@@ -161,7 +161,19 @@ export async function startWhatsAppPairing(sessionKey: string): Promise<EventEmi
   let sock: WASocket;
 
   try {
-    const { version } = await fetchLatestBaileysVersion();
+    const FALLBACK_VERSION: [number, number, number] = [2, 3000, 1015901307];
+    let version: [number, number, number] = FALLBACK_VERSION;
+    try {
+      const result = await Promise.race([
+        fetchLatestBaileysVersion(),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('version fetch timeout')), 5000),
+        ),
+      ]);
+      version = result.version;
+    } catch {
+      // Use fallback version silently
+    }
 
     sock = makeWASocket({
       version,
@@ -272,7 +284,19 @@ export class WhatsAppAdapter implements MessengerAdapter {
 
     try {
       const { state, saveCreds, getSerializedState } = useMemoryAuthState(creds.authState);
-      const { version } = await fetchLatestBaileysVersion();
+      const FALLBACK_VERSION: [number, number, number] = [2, 3000, 1015901307];
+      let version: [number, number, number] = FALLBACK_VERSION;
+      try {
+        const result = await Promise.race([
+          fetchLatestBaileysVersion(),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('version fetch timeout')), 5000),
+          ),
+        ]);
+        version = result.version;
+      } catch {
+        // Use fallback version silently
+      }
 
       this.sock = makeWASocket({
         version,
