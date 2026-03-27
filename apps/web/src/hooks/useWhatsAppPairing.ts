@@ -116,7 +116,7 @@ export function useWhatsAppPairing(): UseWhatsAppPairingReturn {
       // Attach WebSocket listeners before calling the API
       attachListeners();
 
-      await api.post('/api/integrations/whatsapp/start-pairing');
+      await api.post('/api/integrations/whatsapp/start-pairing', {});
 
       setStatus('waiting_for_qr');
       setStatusMessage('Generating QR code...');
@@ -136,7 +136,7 @@ export function useWhatsAppPairing(): UseWhatsAppPairingReturn {
     setError(null);
 
     // Fire and forget the cancel request
-    api.post('/api/integrations/whatsapp/cancel-pairing').catch(() => {});
+    api.post('/api/integrations/whatsapp/cancel-pairing', {}).catch(() => {});
   }, [detachListeners]);
 
   const reset = useCallback(() => {

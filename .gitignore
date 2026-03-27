@@ -40,3 +40,5 @@ coverage/
 
 # Local Netlify folder
 .netlify
+apps/web/_deploy/
+apps/web/test-results/

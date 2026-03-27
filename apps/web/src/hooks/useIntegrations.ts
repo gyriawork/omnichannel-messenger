@@ -42,7 +42,7 @@ export function useDisconnectIntegration() {
 
   return useMutation({
     mutationFn: async (messenger: MessengerType) => {
-      return api.post<void>(`/api/integrations/${messenger}/disconnect`);
+      return api.post<void>(`/api/integrations/${messenger}/disconnect`, {});
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['integrations'] });
@@ -56,7 +56,7 @@ export function useReconnectIntegration() {
   return useMutation({
     mutationFn: async (messenger: MessengerType) => {
       return api.post<Integration>(
-        `/api/integrations/${messenger}/reconnect`,
+        `/api/integrations/${messenger}/reconnect`, {},
       );
     },
     onSuccess: () => {
