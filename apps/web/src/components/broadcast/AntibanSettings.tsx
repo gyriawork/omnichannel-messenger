@@ -16,7 +16,11 @@ import {
   useRiskScore,
 } from '@/hooks/useBroadcasts';
 import type { AntibanSettings as AntibanSettingsType } from '@/types/broadcast';
-import { ANTIBAN_DEFAULTS } from '@/types/broadcast';
+import {
+  ANTIBAN_DEFAULTS,
+  ANTIBAN_SAFE_PRESETS,
+  ANTIBAN_MODERATE_PRESETS,
+} from '@/types/broadcast';
 
 const messengerTabs = [
   { key: 'telegram', label: 'Telegram', bgClass: 'bg-messenger-tg-bg', textClass: 'text-messenger-tg-text' },
@@ -75,9 +79,18 @@ export function AntibanSettings() {
   function handleReset() {
     setLocalSettings((prev) => ({
       ...prev,
-      [activeMessenger]: ANTIBAN_DEFAULTS[activeMessenger],
+      [activeMessenger]: ANTIBAN_SAFE_PRESETS[activeMessenger],
     }));
-    toast.success('Reset to defaults');
+    toast.success('Reset to safe defaults');
+  }
+
+  function applyPreset(preset: Record<string, AntibanSettingsType>) {
+    const p = preset[activeMessenger];
+    if (!p) return;
+    setLocalSettings((prev) => ({
+      ...prev,
+      [activeMessenger]: { ...p, messenger: activeMessenger, id: prev[activeMessenger]?.id },
+    }));
   }
 
   // Compute local risk score if server score is not available
@@ -226,8 +239,39 @@ export function AntibanSettings() {
         </div>
       </div>
 
+      {/* Info banner */}
+      <div className="mt-5 flex items-start gap-2 rounded-lg bg-accent-bg px-3 py-2.5">
+        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
+        <p className="text-xs text-slate-600">
+          These settings are applied to every broadcast for this messenger. Save to activate.
+        </p>
+      </div>
+
+      {/* Presets */}
+      <div className="mt-4">
+        <p className="mb-2 text-xs font-medium text-slate-500 uppercase tracking-wide">Quick Presets</p>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => applyPreset(ANTIBAN_SAFE_PRESETS)}
+            className="flex items-center justify-center gap-1.5 rounded-lg border-[1.5px] border-emerald-200 bg-emerald-50 py-2 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-100"
+          >
+            <CheckCircle2 className="h-3.5 w-3.5" />
+            Safe (Recommended)
+          </button>
+          <button
+            type="button"
+            onClick={() => applyPreset(ANTIBAN_MODERATE_PRESETS)}
+            className="flex items-center justify-center gap-1.5 rounded-lg border-[1.5px] border-amber-200 bg-amber-50 py-2 text-xs font-medium text-amber-700 transition-colors hover:bg-amber-100"
+          >
+            <AlertTriangle className="h-3.5 w-3.5" />
+            Moderate
+          </button>
+        </div>
+      </div>
+
       {/* Actions */}
-      <div className="mt-6 flex gap-2">
+      <div className="mt-3 flex gap-2">
         <button
           onClick={handleReset}
           className="flex flex-1 items-center justify-center gap-1.5 rounded border-[1.5px] border-slate-200 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50"

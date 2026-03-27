@@ -131,8 +131,14 @@ export function useBroadcastAnalytics(period: '7d' | '30d' | '90d') {
 export function useAntibanSettings() {
   return useQuery({
     queryKey: ['antiban-settings'],
-    queryFn: () =>
-      api.get<{ settings: AntibanSettings[] }>('/api/settings/antiban'),
+    queryFn: async () => {
+      // API returns an object keyed by messenger; transform to array
+      const data = await api.get<Record<string, AntibanSettings>>('/api/settings/antiban');
+      const settings = Object.values(data).filter(
+        (v) => v && typeof v === 'object' && 'messenger' in v,
+      ) as AntibanSettings[];
+      return { settings };
+    },
   });
 }
 
