@@ -28,25 +28,38 @@ function clearTokens() {
   localStorage.removeItem('accessToken');
 }
 
+// Prevent multiple concurrent refresh calls
+let refreshPromise: Promise<string | null> | null = null;
+
 async function refreshAccessToken(): Promise<string | null> {
-  try {
-    const response = await fetch(`${BASE_URL}/api/auth/refresh`, {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-    });
+  // If a refresh is already in progress, wait for it
+  if (refreshPromise) return refreshPromise;
 
-    if (!response.ok) return null;
+  refreshPromise = (async () => {
+    try {
+      const response = await fetch(`${BASE_URL}/api/auth/refresh`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      });
 
-    const data = await response.json();
-    if (data.accessToken) {
-      setAccessToken(data.accessToken);
-      return data.accessToken;
+      if (!response.ok) return null;
+
+      const data = await response.json();
+      if (data.accessToken) {
+        setAccessToken(data.accessToken);
+        return data.accessToken;
+      }
+      return null;
+    } catch {
+      return null;
+    } finally {
+      refreshPromise = null;
     }
-    return null;
-  } catch {
-    return null;
-  }
+  })();
+
+  return refreshPromise;
 }
 
 async function request<T>(

@@ -3,6 +3,8 @@ import { z } from 'zod';
 import prisma from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
 import { getIO } from '../websocket/index.js';
+import { decryptCredentials } from '../lib/crypto.js';
+import { createAdapter } from '../integrations/factory.js';
 
 // ─── Zod Schemas ───
 
@@ -56,7 +58,7 @@ async function verifyChat(
   chatId: string,
   organizationId: string | null,
   reply: FastifyReply,
-): Promise<{ id: string; organizationId: string } | null> {
+): Promise<{ id: string; organizationId: string; messenger: string; externalChatId: string } | null> {
   if (!organizationId) {
     sendError(reply, 'VALIDATION_ERROR', 'User is not associated with an organization', 400);
     return null;
@@ -64,7 +66,7 @@ async function verifyChat(
 
   const chat = await prisma.chat.findUnique({
     where: { id: chatId },
-    select: { id: true, organizationId: true },
+    select: { id: true, organizationId: true, messenger: true, externalChatId: true },
   });
 
   if (!chat) {
@@ -214,6 +216,61 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
         }),
       ]);
 
+      // ── Send message to real messenger ──
+      let deliveryStatus = 'sent';
+      let externalMessageId: string | null = null;
+      try {
+        const integration = await prisma.integration.findFirst({
+          where: {
+            messenger: chat.messenger,
+            organizationId: request.user.organizationId!,
+            status: 'connected',
+          },
+        });
+
+        if (integration && integration.credentials) {
+          const creds = decryptCredentials(integration.credentials as string);
+          const adapter = await createAdapter(chat.messenger, creds);
+          await adapter.connect();
+
+          // Find reply-to external ID if replying
+          let replyToExternalId: string | undefined;
+          if (replyToMessageId) {
+            const replyMsg = await prisma.message.findUnique({
+              where: { id: replyToMessageId },
+              select: { externalMessageId: true },
+            });
+            replyToExternalId = replyMsg?.externalMessageId ?? undefined;
+          }
+
+          const result = await adapter.sendMessage(
+            chat.externalChatId,
+            text,
+            replyToExternalId ? { replyToExternalId } : undefined,
+          );
+          externalMessageId = result.externalMessageId;
+          deliveryStatus = 'delivered';
+        }
+      } catch (err) {
+        console.error(`Failed to send message to ${chat.messenger}:`, err);
+        deliveryStatus = 'failed';
+      }
+
+      // Update message with delivery result
+      if (deliveryStatus !== 'sent' || externalMessageId) {
+        await prisma.message.update({
+          where: { id: message.id },
+          data: {
+            deliveryStatus,
+            ...(externalMessageId ? { externalMessageId } : {}),
+          },
+        });
+        (message as Record<string, unknown>).deliveryStatus = deliveryStatus;
+        if (externalMessageId) {
+          (message as Record<string, unknown>).externalMessageId = externalMessageId;
+        }
+      }
+
       // Emit WebSocket event
       try {
         getIO().to(`chat:${chatId}`).emit('new_message', { chatId, message });
@@ -264,6 +321,27 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
         data: { text, editedAt: new Date() },
       });
 
+      // Edit message in real messenger (best-effort)
+      if (message.externalMessageId) {
+        try {
+          const chat = await prisma.chat.findUnique({
+            where: { id: message.chatId },
+            select: { messenger: true, externalChatId: true, organizationId: true },
+          });
+          if (chat) {
+            const integration = await prisma.integration.findFirst({
+              where: { messenger: chat.messenger, organizationId: chat.organizationId, status: 'connected' },
+            });
+            if (integration?.credentials) {
+              const creds = decryptCredentials(integration.credentials as string);
+              const adapter = await createAdapter(chat.messenger, creds);
+              await adapter.connect();
+              await adapter.editMessage(chat.externalChatId, message.externalMessageId, text).catch(() => {});
+            }
+          }
+        } catch { /* best-effort */ }
+      }
+
       // Emit WebSocket event
       try {
         getIO().to(`chat:${message.chatId}`).emit('message_updated', {
@@ -305,6 +383,27 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
       // Only own messages can be deleted
       if (!message.isSelf || (message.senderExternalId !== request.user.id && message.senderName !== request.user.name)) {
         return sendError(reply, 'AUTH_INSUFFICIENT_PERMISSIONS', 'You can only delete your own messages', 403);
+      }
+
+      // Delete message in real messenger (best-effort)
+      if (message.externalMessageId) {
+        try {
+          const chat = await prisma.chat.findUnique({
+            where: { id: message.chatId },
+            select: { messenger: true, externalChatId: true, organizationId: true },
+          });
+          if (chat) {
+            const integration = await prisma.integration.findFirst({
+              where: { messenger: chat.messenger, organizationId: chat.organizationId, status: 'connected' },
+            });
+            if (integration?.credentials) {
+              const creds = decryptCredentials(integration.credentials as string);
+              const adapter = await createAdapter(chat.messenger, creds);
+              await adapter.connect();
+              await adapter.deleteMessage(chat.externalChatId, message.externalMessageId).catch(() => {});
+            }
+          }
+        } catch { /* best-effort */ }
       }
 
       await prisma.message.delete({ where: { id } });

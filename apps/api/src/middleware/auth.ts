@@ -33,7 +33,7 @@ export async function authenticate(
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return reply.status(401).send({
       error: {
-        code: 'AUTH_TOKEN_EXPIRED',
+        code: 'AUTH_INVALID_CREDENTIALS',
         message: 'Missing or malformed Authorization header',
         statusCode: 401,
       },

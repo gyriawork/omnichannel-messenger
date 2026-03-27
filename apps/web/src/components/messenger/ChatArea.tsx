@@ -25,6 +25,8 @@ import {
   CheckCheck,
   Pencil,
   Trash2,
+  Clock,
+  AlertCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -130,12 +132,16 @@ function formatDateSeparator(dateStr: string): string {
 
 function DeliveryIcon({ status }: { status?: string }) {
   switch (status) {
+    case 'sending':
+      return <Clock className="h-3 w-3 text-white/40" />;
     case 'sent':
       return <Check className="h-3 w-3 text-white/60" />;
     case 'delivered':
       return <CheckCheck className="h-3 w-3 text-white/60" />;
     case 'read':
       return <CheckCheck className="h-3 w-3 text-white" />;
+    case 'failed':
+      return <AlertCircle className="h-3 w-3 text-red-300" />;
     default:
       return null;
   }

@@ -29,7 +29,12 @@ export function useSocket() {
       return;
     }
 
-    if (socket?.connected) return;
+    // Disconnect existing socket if token changed
+    if (socket) {
+      socket.disconnect();
+      socket = null;
+      connectedRef.current = false;
+    }
 
     socket = io(SOCKET_URL, {
       path: '/socket.io',

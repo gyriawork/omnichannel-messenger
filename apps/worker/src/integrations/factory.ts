@@ -1,11 +1,7 @@
 /**
  * Adapter factory for the worker process.
- * Dynamically imports adapters from the API package since they share the
- * same messenger dependencies. Falls back to a stub if imports fail.
- *
- * In production, the API's adapter implementations (telegram.ts, slack.ts, etc.)
- * should be extracted into a shared package. For now, we create lightweight
- * wrappers that use the same underlying SDKs.
+ * Imports real adapters from the API package via relative paths.
+ * Falls back gracefully if adapters can't be loaded.
  */
 
 import type { MessengerAdapter } from './base.js';
@@ -14,64 +10,49 @@ import { MessengerError } from './base.js';
 const SUPPORTED_MESSENGERS = ['telegram', 'slack', 'whatsapp', 'gmail'] as const;
 type SupportedMessenger = (typeof SUPPORTED_MESSENGERS)[number];
 
-/**
- * Stub adapter used when real messenger integration is not yet implemented.
- * Simulates sending with a small delay and always succeeds.
- */
-class StubAdapter implements MessengerAdapter {
-  private messenger: string;
-  private _status: 'connected' | 'disconnected' | 'token_expired' | 'session_expired' = 'disconnected';
-
-  constructor(messenger: string, _credentials: Record<string, unknown>) {
-    this.messenger = messenger;
-  }
-
-  async connect(): Promise<void> {
-    this._status = 'connected';
-  }
-
-  async disconnect(): Promise<void> {
-    this._status = 'disconnected';
-  }
-
-  async sendMessage(
-    externalChatId: string,
-    _text: string,
-  ): Promise<{ externalMessageId: string }> {
-    if (this._status !== 'connected') {
-      throw new MessengerError(this.messenger, null, 'Adapter is not connected');
-    }
-    // Simulate network latency
-    await new Promise((resolve) => setTimeout(resolve, 50 + Math.random() * 100));
-    return { externalMessageId: `${this.messenger}_msg_${Date.now()}_${externalChatId}` };
-  }
-
-  getStatus() {
-    return this._status;
-  }
-}
+// Path to API integrations (relative from worker/dist/integrations/)
+const API_INTEGRATIONS = '../../../api/dist/integrations';
 
 /**
  * Create a messenger adapter for the given type.
- * Currently uses stub adapters; swap in real implementations as they become available.
+ * Dynamically imports from the API's compiled adapter files.
  */
-export function createAdapter(
+export async function createAdapter(
   messenger: string,
   credentials: Record<string, unknown>,
-): MessengerAdapter {
-  if (!(SUPPORTED_MESSENGERS as readonly string[]).includes(messenger)) {
+): Promise<MessengerAdapter> {
+  try {
+    switch (messenger as SupportedMessenger) {
+      case 'telegram': {
+        const mod = await import(`${API_INTEGRATIONS}/telegram.js`);
+        return new mod.TelegramAdapter(credentials);
+      }
+      case 'slack': {
+        const mod = await import(`${API_INTEGRATIONS}/slack.js`);
+        return new mod.SlackAdapter(credentials);
+      }
+      case 'whatsapp': {
+        const mod = await import(`${API_INTEGRATIONS}/whatsapp.js`);
+        return new mod.WhatsAppAdapter(credentials);
+      }
+      case 'gmail': {
+        const mod = await import(`${API_INTEGRATIONS}/gmail.js`);
+        return new mod.GmailAdapter(credentials);
+      }
+      default:
+        throw new MessengerError(
+          messenger,
+          null,
+          `Unsupported messenger: ${messenger}`,
+        );
+    }
+  } catch (err) {
     throw new MessengerError(
       messenger,
       null,
-      `Unsupported messenger type: ${messenger}. Supported: ${SUPPORTED_MESSENGERS.join(', ')}`,
+      `Failed to load ${messenger} adapter: ${(err as Error).message}`,
     );
   }
-
-  // TODO: Replace with real adapter imports once the adapters are in a shared package:
-  //   case 'telegram': return new TelegramAdapter(credentials);
-  //   case 'slack':    return new SlackAdapter(credentials);
-  //   etc.
-  return new StubAdapter(messenger, credentials);
 }
 
 export { SUPPORTED_MESSENGERS };

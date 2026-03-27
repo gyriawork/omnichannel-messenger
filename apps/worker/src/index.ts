@@ -158,10 +158,9 @@ async function sendMessengerBatch(
       const credentials = decryptCredentials<Record<string, unknown>>(
         integration.credentials as string,
       );
-      adapter = createAdapter(messenger, credentials);
+      adapter = await createAdapter(messenger, credentials);
     } else {
-      // No integration found; use stub adapter for development/testing
-      adapter = createAdapter(messenger, {});
+      throw new Error(`No connected integration found for ${messenger}`);
     }
     await adapter.connect();
   } catch (err) {
