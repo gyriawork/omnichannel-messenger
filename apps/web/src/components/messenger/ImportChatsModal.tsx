@@ -136,8 +136,16 @@ export function ImportChatsModal({ open, onClose }: ImportChatsModalProps) {
   const handleImport = useCallback(() => {
     if (!selectedMessenger || selectedChats.size === 0) return;
 
+    const chatsToImport = Array.from(selectedChats).map((id) => {
+      const chat = availableChats.find((c) => c.externalId === id);
+      return {
+        externalChatId: id,
+        name: chat?.name || 'Unknown',
+        chatType: chat?.chatType || 'direct',
+      };
+    });
     importChats(
-      { messenger: selectedMessenger, chatIds: Array.from(selectedChats) },
+      { messenger: selectedMessenger, chats: chatsToImport },
       {
         onSuccess: (data) => {
           toast.success(
@@ -181,7 +189,7 @@ export function ImportChatsModal({ open, onClose }: ImportChatsModalProps) {
       />
 
       {/* Modal */}
-      <div className="relative z-10 w-full max-w-xl rounded-xl bg-white shadow-lg">
+      <div className="relative z-10 w-full max-w-2xl rounded-xl bg-white shadow-lg">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
           <div className="flex items-center gap-3">

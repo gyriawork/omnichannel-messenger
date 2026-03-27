@@ -111,14 +111,14 @@ export function useImportChats() {
   return useMutation({
     mutationFn: async ({
       messenger,
-      chatIds,
+      chats,
     }: {
       messenger: MessengerType;
-      chatIds: string[];
+      chats: { externalChatId: string; name: string; chatType: string }[];
     }) => {
       return api.post<{ imported: number }>('/api/chats/import', {
         messenger,
-        chatIds,
+        chats,
       });
     },
     onSuccess: () => {

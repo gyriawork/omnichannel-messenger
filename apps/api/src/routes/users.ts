@@ -85,7 +85,7 @@ export default async function userRoutes(fastify: FastifyInstance): Promise<void
   // ─── GET /api/users/me ───
 
   fastify.get(
-    '/users/me',
+    '/me',
     { preHandler: [authenticate] },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const user = await prisma.user.findUnique({
@@ -103,7 +103,7 @@ export default async function userRoutes(fastify: FastifyInstance): Promise<void
   // ─── PATCH /api/users/me ───
 
   fastify.patch(
-    '/users/me',
+    '/me',
     { preHandler: [authenticate] },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const parsed = updateProfileBodySchema.safeParse(request.body);
@@ -129,7 +129,7 @@ export default async function userRoutes(fastify: FastifyInstance): Promise<void
   // ─── PATCH /api/users/me/password ───
 
   fastify.patch(
-    '/users/me/password',
+    '/me/password',
     { preHandler: [authenticate] },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const parsed = changePasswordBodySchema.safeParse(request.body);
@@ -166,7 +166,7 @@ export default async function userRoutes(fastify: FastifyInstance): Promise<void
   // ─── GET /api/users ───
 
   fastify.get(
-    '/users',
+    '/',
     { preHandler: [authenticate] },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const parsed = listUsersQuerySchema.safeParse(request.query);
@@ -220,7 +220,7 @@ export default async function userRoutes(fastify: FastifyInstance): Promise<void
   // ─── POST /api/users/invite ───
 
   fastify.post(
-    '/users/invite',
+    '/invite',
     { preHandler: [authenticate, requireMinRole('admin')] },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const parsed = inviteUserBodySchema.safeParse(request.body);
@@ -269,7 +269,7 @@ export default async function userRoutes(fastify: FastifyInstance): Promise<void
   // ─── PATCH /api/users/:id ───
 
   fastify.patch(
-    '/users/:id',
+    '/:id',
     { preHandler: [authenticate, requireMinRole('admin')] },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const paramsParsed = userIdParamSchema.safeParse(request.params);
