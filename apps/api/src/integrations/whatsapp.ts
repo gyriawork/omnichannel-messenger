@@ -1,7 +1,8 @@
 // ─── WhatsApp Adapter (Baileys) ───
 // Real implementation using @whiskeysockets/baileys with QR code auth flow.
 
-import makeWASocket, {
+import {
+  makeWASocket,
   DisconnectReason,
   fetchLatestBaileysVersion,
   makeCacheableSignalKeyStore,

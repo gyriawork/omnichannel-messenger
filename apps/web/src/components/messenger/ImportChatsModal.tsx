@@ -181,7 +181,7 @@ export function ImportChatsModal({ open, onClose }: ImportChatsModalProps) {
       />
 
       {/* Modal */}
-      <div className="relative z-10 w-full max-w-lg rounded-xl bg-white shadow-lg">
+      <div className="relative z-10 w-full max-w-xl rounded-xl bg-white shadow-lg">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
           <div className="flex items-center gap-3">
@@ -292,7 +292,7 @@ export function ImportChatsModal({ open, onClose }: ImportChatsModalProps) {
                   </div>
 
                   {/* Chat list */}
-                  <div className="max-h-[300px] space-y-1.5 overflow-y-auto">
+                  <div className="max-h-[50vh] space-y-1.5 overflow-y-auto">
                     {availableChats.map((chat) => {
                       const isSelected = selectedChats.has(chat.externalId);
                       return (
@@ -300,10 +300,10 @@ export function ImportChatsModal({ open, onClose }: ImportChatsModalProps) {
                           key={chat.externalId}
                           onClick={() => toggleChat(chat.externalId)}
                           className={cn(
-                            'flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors',
+                            'flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors',
                             isSelected
-                              ? 'bg-accent-bg'
-                              : 'bg-slate-50 hover:bg-slate-100',
+                              ? 'border-accent/30 bg-accent-bg'
+                              : 'border-slate-200 bg-white hover:bg-slate-50',
                           )}
                         >
                           <div
