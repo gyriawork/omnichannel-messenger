@@ -1,11 +1,10 @@
 [build]
   base = "apps/web"
-  command = "npm run build"
+  command = "npm install && NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL NEXT_PUBLIC_WS_URL=$NEXT_PUBLIC_WS_URL npm run build"
   publish = ".next"
 
 [build.environment]
-  NEXT_PUBLIC_API_URL = "https://api-production-9c43.up.railway.app"
-  NEXT_PUBLIC_WS_URL = "wss://api-production-9c43.up.railway.app"
+  NODE_VERSION = "20"
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
