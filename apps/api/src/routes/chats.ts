@@ -6,6 +6,7 @@ import { requireMinRole } from '../middleware/rbac.js';
 import { decryptCredentials } from '../lib/crypto.js';
 import { createAdapter } from '../integrations/factory.js';
 import { MessengerError } from '../integrations/base.js';
+import { messageSyncQueue } from '../lib/queue.js';
 
 // ─── Zod Schemas ───
 
@@ -527,6 +528,25 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
             externalChatId: { in: newChats.map((c) => c.externalChatId) },
           },
         });
+      }
+
+      // Queue background history sync for imported chats
+      if (imported.length > 0) {
+        const integration = await prisma.integration.findFirst({
+          where: { messenger, organizationId, status: 'connected' },
+          select: { id: true },
+        });
+
+        if (integration) {
+          messageSyncQueue.add('sync:chat-history', {
+            chatIds: imported.map((c) => c.id),
+            integrationId: integration.id,
+            organizationId,
+            messenger,
+          }).catch((err) => {
+            fastify.log.warn({ err }, 'Failed to queue chat history sync');
+          });
+        }
       }
 
       return reply.status(201).send({

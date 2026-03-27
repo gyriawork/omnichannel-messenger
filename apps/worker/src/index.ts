@@ -42,6 +42,13 @@ interface BroadcastSendPayload {
   organizationId: string;
 }
 
+interface MessageSyncPayload {
+  chatIds: string[];
+  integrationId: string;
+  organizationId: string;
+  messenger: string;
+}
+
 interface AntibanConfig {
   messagesPerBatch: number;
   delayBetweenMessages: number;
@@ -484,6 +491,157 @@ async function processBroadcastRetry(job: Job<BroadcastSendPayload>): Promise<vo
   await finalizeBroadcast(broadcastId, organizationId);
 }
 
+// ─── Chat History Sync Processor ───
+
+async function processChatHistorySync(job: Job<MessageSyncPayload>): Promise<void> {
+  const { chatIds, integrationId, organizationId, messenger } = job.data;
+  log.info('Processing sync:chat-history', { integrationId, chatCount: chatIds.length });
+
+  // Load integration credentials
+  const integration = await prisma.integration.findUnique({
+    where: { id: integrationId },
+    select: { credentials: true, messenger: true },
+  });
+
+  if (!integration) {
+    log.warn('Integration not found, skipping history sync', { integrationId });
+    return;
+  }
+
+  const credentials = decryptCredentials<Record<string, unknown>>(integration.credentials as string);
+  const adapter = await createAdapter(messenger, credentials);
+
+  try {
+    await adapter.connect();
+  } catch (err) {
+    log.error('Failed to connect adapter for history sync', { error: String(err) });
+    return;
+  }
+
+  // Only Telegram supports getMessages for now
+  const hasFetchHistory = 'getMessages' in adapter && typeof (adapter as { getMessages: unknown }).getMessages === 'function';
+
+  if (!hasFetchHistory) {
+    log.info(`Adapter for ${messenger} does not support history fetch, skipping`);
+    try { await adapter.disconnect(); } catch {}
+    return;
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const tgAdapter = adapter as any as { getMessages: (id: string, limit: number) => Promise<Array<{ id: string; text: string; senderId: string; date: Date; out: boolean }>>; getSenderName: (id: string) => Promise<string>; disconnect: () => Promise<void> };
+
+  for (const chatId of chatIds) {
+    try {
+      const chat = await prisma.chat.findUnique({
+        where: { id: chatId },
+        select: { id: true, externalChatId: true },
+      });
+
+      if (!chat) continue;
+
+      log.info(`Syncing history for chat ${chat.externalChatId}`, { chatId });
+
+      let messages: Array<{ id: string; text: string; senderId: string; date: Date; out: boolean }>;
+      try {
+        messages = await tgAdapter.getMessages(chat.externalChatId, 100);
+      } catch (err) {
+        const errMsg = String(err);
+        if (errMsg.includes('FloodWait') || errMsg.includes('FLOOD_WAIT')) {
+          // Extract wait time from error and pause
+          const waitMatch = errMsg.match(/(\d+)/);
+          const waitSeconds = waitMatch ? parseInt(waitMatch[1]!, 10) : 30;
+          log.warn(`FloodWait: waiting ${waitSeconds}s before continuing`, { chatId });
+          await sleep(waitSeconds);
+          continue; // skip this chat, job retry will pick it up
+        }
+        log.error(`Failed to fetch messages for chat ${chatId}`, { error: errMsg });
+        continue;
+      }
+
+      if (messages.length === 0) continue;
+
+      // Check existing messages to avoid duplicates
+      const existingMsgIds = new Set(
+        (await prisma.message.findMany({
+          where: {
+            chatId: chat.id,
+            externalMessageId: { in: messages.map((m) => m.id) },
+          },
+          select: { externalMessageId: true },
+        })).map((m) => m.externalMessageId),
+      );
+
+      const newMessages = messages.filter((m) => !existingMsgIds.has(m.id));
+
+      if (newMessages.length === 0) {
+        log.info(`No new messages to sync for chat ${chatId}`);
+        continue;
+      }
+
+      // Resolve sender names (batch, with caching via gramjs entity cache)
+      const senderNameCache = new Map<string, string>();
+      for (const msg of newMessages) {
+        if (msg.senderId && !senderNameCache.has(msg.senderId)) {
+          try {
+            const name = await tgAdapter.getSenderName(msg.senderId);
+            senderNameCache.set(msg.senderId, name);
+          } catch {
+            senderNameCache.set(msg.senderId, 'Unknown');
+          }
+        }
+      }
+
+      // Bulk insert messages
+      await prisma.message.createMany({
+        data: newMessages.map((m) => ({
+          chatId: chat.id,
+          externalMessageId: m.id,
+          senderName: senderNameCache.get(m.senderId) ?? 'Unknown',
+          senderExternalId: m.senderId,
+          isSelf: m.out,
+          text: m.text,
+          createdAt: m.date,
+        })),
+        skipDuplicates: true,
+      });
+
+      // Update chat counts
+      const totalMessages = await prisma.message.count({ where: { chatId: chat.id } });
+      const latestMessage = await prisma.message.findFirst({
+        where: { chatId: chat.id },
+        orderBy: { createdAt: 'desc' },
+        select: { createdAt: true },
+      });
+
+      await prisma.chat.update({
+        where: { id: chat.id },
+        data: {
+          messageCount: totalMessages,
+          lastActivityAt: latestMessage?.createdAt ?? new Date(),
+        },
+      });
+
+      // Notify frontend via Redis pub/sub
+      pubClient.publish('ws:events', JSON.stringify({
+        event: 'chat_updated',
+        room: `org:${organizationId}`,
+        data: { chatId: chat.id },
+      })).catch(() => {});
+
+      log.info(`Synced ${newMessages.length} messages for chat ${chatId}`);
+    } catch (err) {
+      log.error(`Error syncing chat ${chatId}`, { error: String(err) });
+    }
+  }
+
+  // Disconnect adapter
+  try {
+    await tgAdapter.disconnect();
+  } catch {}
+
+  log.info('Chat history sync complete', { chatCount: chatIds.length });
+}
+
 // ─── Worker Setup ───
 
 log.info('Worker service starting...');
@@ -511,6 +669,37 @@ const worker = new Worker<BroadcastSendPayload>(
     },
   },
 );
+
+// ─── Message Sync Worker ───
+
+const messageSyncWorker = new Worker<MessageSyncPayload>(
+  'message-sync',
+  async (job) => {
+    if (job.name === 'sync:chat-history') {
+      await processChatHistorySync(job);
+    } else {
+      log.warn(`Unknown message-sync job name: ${job.name}`, { jobId: job.id });
+    }
+  },
+  {
+    connection,
+    concurrency: 2,
+  },
+);
+
+messageSyncWorker.on('completed', (job) => {
+  log.info(`Message sync job ${job.id} completed`);
+});
+
+messageSyncWorker.on('failed', (job, err) => {
+  log.error(`Message sync job ${job?.id} failed`, { error: err.message });
+});
+
+messageSyncWorker.on('error', (err) => {
+  log.error('Message sync worker error', { error: err.message });
+});
+
+log.info('Message sync worker ready, listening for jobs');
 
 // ─── Worker Events ───
 
@@ -599,9 +788,9 @@ setTimeout(() => {
 async function shutdown(signal: string) {
   log.info(`Received ${signal}, shutting down gracefully`);
 
-  // Close worker first (waits for active jobs to finish, up to 30s)
-  await worker.close();
-  log.info('Worker closed');
+  // Close workers first (waits for active jobs to finish, up to 30s)
+  await Promise.allSettled([worker.close(), messageSyncWorker.close()]);
+  log.info('Workers closed');
 
   // Disconnect from databases
   await prisma.$disconnect();

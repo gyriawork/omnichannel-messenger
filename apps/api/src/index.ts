@@ -23,6 +23,8 @@ import webhookRoutes from './routes/webhooks.js';
 import oauthRoutes from './routes/oauth.js';
 import { createWebSocketServer } from './websocket/index.js';
 import { validateEnv } from './lib/env.js';
+import { startRedisSubscriber, stopRedisSubscriber } from './services/redis-subscriber.js';
+import { getTelegramManager } from './services/telegram-connection-manager.js';
 
 const env = validateEnv();
 
@@ -158,6 +160,14 @@ try {
   const httpServer = fastify.server;
   const io = createWebSocketServer(httpServer);
   fastify.log.info('WebSocket server attached');
+
+  // Start Redis subscriber to relay worker events to WebSocket
+  startRedisSubscriber();
+
+  // Start persistent Telegram connections for incoming messages
+  getTelegramManager().startAll().catch((err) => {
+    fastify.log.error(err, 'Failed to start Telegram connection manager');
+  });
 } catch (err) {
   fastify.log.fatal(err);
   process.exit(1);
@@ -167,6 +177,8 @@ try {
 
 async function shutdown(signal: string) {
   fastify.log.info(`Received ${signal}, shutting down gracefully`);
+  await getTelegramManager().shutdown();
+  stopRedisSubscriber();
   await fastify.close();
   await prisma.$disconnect();
   process.exit(0);

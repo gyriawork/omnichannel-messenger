@@ -15,6 +15,7 @@ let StringSession: any, Api: any, computeCheck: any;
 let startWhatsAppPairing: any, cancelPairing: any;
 
 import { getIO } from '../websocket/index.js';
+import { getTelegramManager } from '../services/telegram-connection-manager.js';
 
 // ─── Zod Schemas ───
 
@@ -256,6 +257,13 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
         });
       }
 
+      // Start persistent listener for Telegram
+      if (messenger === 'telegram') {
+        getTelegramManager().startListening(integration.id).catch((err) => {
+          fastify.log.warn({ err }, 'Failed to start Telegram listener after connect');
+        });
+      }
+
       return reply.status(201).send({
         integration: sanitizeIntegration(integration),
       });
@@ -300,6 +308,11 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
         await adapter.disconnect().catch(() => {});
       } catch {
         // Disconnect failures are not critical — we still mark as disconnected
+      }
+
+      // Stop persistent listener for Telegram
+      if (messenger === 'telegram') {
+        getTelegramManager().stopListening(integration.id).catch(() => {});
       }
 
       const updated = await prisma.integration.update({
@@ -384,6 +397,13 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
           connectedAt: new Date(),
         },
       });
+
+      // Start persistent listener for Telegram
+      if (messenger === 'telegram') {
+        getTelegramManager().startListening(updated.id).catch((err) => {
+          fastify.log.warn({ err }, 'Failed to start Telegram listener after reconnect');
+        });
+      }
 
       return reply.send({
         integration: sanitizeIntegration(updated),
@@ -568,6 +588,11 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
 
         // Disconnect the auth client (a new one will be created when needed)
         await client.disconnect().catch(() => {});
+
+        // Start persistent listener for incoming messages
+        getTelegramManager().startListening(integration.id).catch((err) => {
+          fastify.log.warn({ err }, 'Failed to start Telegram listener after verify-code');
+        });
 
         return reply.status(201).send({
           integration: sanitizeIntegration(integration),

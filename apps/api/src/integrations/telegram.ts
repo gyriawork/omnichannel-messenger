@@ -219,6 +219,74 @@ export class TelegramAdapter implements MessengerAdapter {
     }
   }
 
+  /**
+   * Fetch message history from a chat. Returns messages oldest-first.
+   */
+  async getMessages(
+    externalChatId: string,
+    limit = 100,
+  ): Promise<Array<{
+    id: string;
+    text: string;
+    senderId: string;
+    date: Date;
+    out: boolean;
+  }>> {
+    this.ensureConnected();
+
+    try {
+      const peer = await this.resolvePeer(externalChatId);
+      const messages = await this.client!.getMessages(peer, { limit });
+
+      return messages
+        .filter((m) => m.id !== undefined)
+        .map((m) => ({
+          id: m.id.toString(),
+          text: m.text || '',
+          senderId: m.senderId ? m.senderId.toString() : '',
+          date: new Date((m.date ?? 0) * 1000),
+          out: m.out ?? false,
+        }))
+        .reverse(); // oldest first
+    } catch (err) {
+      throw new MessengerError('telegram', err, 'Failed to get Telegram messages');
+    }
+  }
+
+  /**
+   * Get the currently authenticated user's info.
+   */
+  async getMe(): Promise<{ id: string; firstName: string; lastName: string }> {
+    this.ensureConnected();
+    const me = await this.client!.getMe() as Api.User;
+    return {
+      id: me.id.toString(),
+      firstName: me.firstName ?? '',
+      lastName: me.lastName ?? '',
+    };
+  }
+
+  /**
+   * Resolve a sender ID to a display name.
+   */
+  async getSenderName(senderId: string): Promise<string> {
+    this.ensureConnected();
+    try {
+      const numId = parseInt(senderId, 10);
+      if (isNaN(numId)) return 'Unknown';
+      const entity = await this.client!.getEntity(numId);
+      if (entity instanceof Api.User) {
+        return [entity.firstName, entity.lastName].filter(Boolean).join(' ') || 'Unknown';
+      }
+      if ('title' in entity) {
+        return (entity as { title: string }).title || 'Unknown';
+      }
+      return 'Unknown';
+    } catch {
+      return 'Unknown';
+    }
+  }
+
   getStatus(): 'connected' | 'disconnected' | 'token_expired' | 'session_expired' {
     return this.status;
   }
