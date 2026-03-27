@@ -82,7 +82,7 @@ export default async function templateRoutes(fastify: FastifyInstance): Promise<
       ]);
 
       return reply.send({
-        data: templates,
+        templates,
         pagination: {
           page,
           limit,

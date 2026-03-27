@@ -210,7 +210,13 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
           const credentials = decryptCredentials(integration.credentials as string);
           const adapter = await createAdapter(messenger, credentials);
           await adapter.connect();
-          const chats = await adapter.listChats();
+          const rawChats = await adapter.listChats();
+          const chats = rawChats.map((c: Record<string, unknown>) => ({
+            externalId: c.externalChatId ?? c.externalId,
+            name: c.name,
+            chatType: c.chatType ?? 'direct',
+            memberCount: c.memberCount,
+          }));
           return reply.send({ chats });
         } catch (err) {
           // If adapter fails, log and fall through to mock data

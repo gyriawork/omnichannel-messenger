@@ -71,7 +71,7 @@ export default async function tagRoutes(fastify: FastifyInstance): Promise<void>
         chatCount: tag._count.chats,
       }));
 
-      return reply.send(result);
+      return reply.send({ tags: result });
     },
   );
 

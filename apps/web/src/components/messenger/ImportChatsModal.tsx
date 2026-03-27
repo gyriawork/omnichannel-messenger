@@ -381,7 +381,7 @@ export function ImportChatsModal({ open, onClose }: ImportChatsModalProps) {
                   </div>
                 </div>
 
-                <div className="mt-3 space-y-1">
+                <div className="mt-3 max-h-[50vh] space-y-1 overflow-y-auto">
                   {availableChats
                     .filter((c) => selectedChats.has(c.externalId))
                     .map((chat) => (
