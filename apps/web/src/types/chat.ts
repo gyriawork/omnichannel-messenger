@@ -54,7 +54,7 @@ export interface Message {
 }
 
 export interface AvailableChat {
-  externalId: string;
+  externalChatId: string;
   name: string;
   chatType: ChatType;
   memberCount?: number;

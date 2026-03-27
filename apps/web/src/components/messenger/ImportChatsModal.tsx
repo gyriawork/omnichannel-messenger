@@ -69,27 +69,27 @@ const MESSENGERS: Array<{
 // Mock data for development
 const MOCK_CHATS: Record<MessengerType, AvailableChat[]> = {
   telegram: [
-    { externalId: 'tg-1', name: 'Product Team', chatType: 'group', memberCount: 12 },
-    { externalId: 'tg-2', name: 'Anna M.', chatType: 'direct' },
-    { externalId: 'tg-3', name: 'Dev Channel', chatType: 'channel', memberCount: 154 },
-    { externalId: 'tg-4', name: 'Alex K.', chatType: 'direct' },
-    { externalId: 'tg-5', name: 'Marketing Updates', chatType: 'channel', memberCount: 87 },
+    { externalChatId: 'tg-1', name: 'Product Team', chatType: 'group', memberCount: 12 },
+    { externalChatId: 'tg-2', name: 'Anna M.', chatType: 'direct' },
+    { externalChatId: 'tg-3', name: 'Dev Channel', chatType: 'channel', memberCount: 154 },
+    { externalChatId: 'tg-4', name: 'Alex K.', chatType: 'direct' },
+    { externalChatId: 'tg-5', name: 'Marketing Updates', chatType: 'channel', memberCount: 87 },
   ],
   slack: [
-    { externalId: 'sl-1', name: '#general', chatType: 'channel', memberCount: 45 },
-    { externalId: 'sl-2', name: '#engineering', chatType: 'channel', memberCount: 20 },
-    { externalId: 'sl-3', name: 'Sarah C.', chatType: 'direct' },
-    { externalId: 'sl-4', name: '#design', chatType: 'channel', memberCount: 15 },
+    { externalChatId: 'sl-1', name: '#general', chatType: 'channel', memberCount: 45 },
+    { externalChatId: 'sl-2', name: '#engineering', chatType: 'channel', memberCount: 20 },
+    { externalChatId: 'sl-3', name: 'Sarah C.', chatType: 'direct' },
+    { externalChatId: 'sl-4', name: '#design', chatType: 'channel', memberCount: 15 },
   ],
   whatsapp: [
-    { externalId: 'wa-1', name: 'Family Group', chatType: 'group', memberCount: 8 },
-    { externalId: 'wa-2', name: 'Mike T.', chatType: 'direct' },
-    { externalId: 'wa-3', name: 'Project Alpha', chatType: 'group', memberCount: 5 },
+    { externalChatId: 'wa-1', name: 'Family Group', chatType: 'group', memberCount: 8 },
+    { externalChatId: 'wa-2', name: 'Mike T.', chatType: 'direct' },
+    { externalChatId: 'wa-3', name: 'Project Alpha', chatType: 'group', memberCount: 5 },
   ],
   gmail: [
-    { externalId: 'gm-1', name: 'support@company.com', chatType: 'direct' },
-    { externalId: 'gm-2', name: 'Newsletter Thread', chatType: 'group' },
-    { externalId: 'gm-3', name: 'john@client.com', chatType: 'direct' },
+    { externalChatId: 'gm-1', name: 'support@company.com', chatType: 'direct' },
+    { externalChatId: 'gm-2', name: 'Newsletter Thread', chatType: 'group' },
+    { externalChatId: 'gm-3', name: 'john@client.com', chatType: 'direct' },
   ],
 };
 
@@ -129,7 +129,7 @@ export function ImportChatsModal({ open, onClose }: ImportChatsModalProps) {
     if (selectedChats.size === availableChats.length) {
       setSelectedChats(new Set());
     } else {
-      setSelectedChats(new Set(availableChats.map((c) => c.externalId)));
+      setSelectedChats(new Set(availableChats.map((c) => c.externalChatId)));
     }
   };
 
@@ -137,7 +137,7 @@ export function ImportChatsModal({ open, onClose }: ImportChatsModalProps) {
     if (!selectedMessenger || selectedChats.size === 0) return;
 
     const chatsToImport = Array.from(selectedChats).map((id) => {
-      const chat = availableChats.find((c) => c.externalId === id);
+      const chat = availableChats.find((c) => c.externalChatId === id);
       return {
         externalChatId: id,
         name: chat?.name || 'Unknown',
@@ -189,7 +189,7 @@ export function ImportChatsModal({ open, onClose }: ImportChatsModalProps) {
       />
 
       {/* Modal */}
-      <div className="relative z-10 w-full max-w-2xl rounded-xl bg-white shadow-lg">
+      <div className="relative z-10 w-full max-w-3xl max-h-[90vh] flex flex-col rounded-xl bg-white shadow-lg">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
           <div className="flex items-center gap-3">
@@ -300,13 +300,13 @@ export function ImportChatsModal({ open, onClose }: ImportChatsModalProps) {
                   </div>
 
                   {/* Chat list */}
-                  <div className="max-h-[50vh] space-y-1.5 overflow-y-auto">
+                  <div className="max-h-[60vh] space-y-1.5 overflow-y-auto">
                     {availableChats.map((chat) => {
-                      const isSelected = selectedChats.has(chat.externalId);
+                      const isSelected = selectedChats.has(chat.externalChatId);
                       return (
                         <button
-                          key={chat.externalId}
-                          onClick={() => toggleChat(chat.externalId)}
+                          key={chat.externalChatId}
+                          onClick={() => toggleChat(chat.externalChatId)}
                           className={cn(
                             'flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors',
                             isSelected
@@ -391,10 +391,10 @@ export function ImportChatsModal({ open, onClose }: ImportChatsModalProps) {
 
                 <div className="mt-3 max-h-[50vh] space-y-1 overflow-y-auto">
                   {availableChats
-                    .filter((c) => selectedChats.has(c.externalId))
+                    .filter((c) => selectedChats.has(c.externalChatId))
                     .map((chat) => (
                       <div
-                        key={chat.externalId}
+                        key={chat.externalChatId}
                         className="flex items-center gap-2 rounded-md bg-white px-3 py-2 text-xs text-slate-600"
                       >
                         <Check className="h-3.5 w-3.5 text-green-500" />
