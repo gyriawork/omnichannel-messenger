@@ -24,22 +24,7 @@ interface AuthState {
   fetchMe: () => Promise<void>;
 }
 
-// Forward-declared so we can reference it inside the store factory before
-// `useAuthStore` is assigned.
-let _setStoreToken: ((token: string) => void) | null = null;
-
-// Tell api.ts to call us whenever it silently refreshes the access token so
-// the Zustand state (and therefore useSocket) always holds a fresh token.
-registerTokenRefreshCallback((token) => {
-  _setStoreToken?.(token);
-});
-
-export const useAuthStore = create<AuthState>((set, get) => {
-  // Expose the setter so the callback above can use it once the store exists.
-  _setStoreToken = (token: string) =>
-    set({ accessToken: token, isAuthenticated: true });
-
-  return {
+export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   accessToken: null,
   isAuthenticated: false,
@@ -157,5 +142,11 @@ export const useAuthStore = create<AuthState>((set, get) => {
       set({ isLoading: false });
     }
   },
-  };
+}));
+
+// Tell api.ts to call us whenever it silently refreshes the access token so
+// the Zustand state (and therefore useSocket) always holds a fresh token.
+// Uses Zustand's static setState to avoid changing the factory signature.
+registerTokenRefreshCallback((token) => {
+  useAuthStore.setState({ accessToken: token, isAuthenticated: true });
 });
