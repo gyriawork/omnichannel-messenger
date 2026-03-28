@@ -38,6 +38,9 @@ coverage/
 # Misc
 *.tgz
 
+# Git worktrees
+.worktrees/
+
 # Local Netlify folder
 .netlify
 apps/web/_deploy/
