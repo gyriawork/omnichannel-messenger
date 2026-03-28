@@ -13,16 +13,30 @@ export type WhatsAppPairingStatus =
   | 'qr_ready'
   | 'connecting'
   | 'connected'
+  | 'fetching_chats'
+  | 'chats_ready'
+  | 'importing'
   | 'error';
+
+export interface WhatsAppChat {
+  externalChatId: string;
+  name: string;
+  chatType: string; // 'group' or 'individual'
+}
 
 interface UseWhatsAppPairingReturn {
   status: WhatsAppPairingStatus;
   qrDataUrl: string | null;
   statusMessage: string;
   error: string | null;
+  availableChats: WhatsAppChat[];
+  selectedChatIds: Set<string>;
   startPairing: () => Promise<void>;
   cancelPairing: () => void;
   reset: () => void;
+  listChats: () => Promise<void>;
+  toggleChatSelection: (chatId: string) => void;
+  importSelectedChats: () => Promise<void>;
 }
 
 export function useWhatsAppPairing(): UseWhatsAppPairingReturn {
@@ -30,6 +44,8 @@ export function useWhatsAppPairing(): UseWhatsAppPairingReturn {
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [availableChats, setAvailableChats] = useState<WhatsAppChat[]>([]);
+  const [selectedChatIds, setSelectedChatIds] = useState<Set<string>>(new Set());
   const queryClient = useQueryClient();
   const listenersAttachedRef = useRef(false);
   const qrTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -119,6 +135,12 @@ export function useWhatsAppPairing(): UseWhatsAppPairingReturn {
       detachListeners();
     });
 
+    socket.on('whatsapp:chats-available', (data: { chats: WhatsAppChat[] }) => {
+      setAvailableChats(data.chats);
+      setStatus('chats_ready');
+      setStatusMessage(`Found ${data.chats.length} chats. Select chats to import.`);
+    });
+
     listenersAttachedRef.current = true;
   }, [queryClient, detachListeners, resetQrTimeout, clearQrTimeout]);
 
@@ -175,15 +197,81 @@ export function useWhatsAppPairing(): UseWhatsAppPairingReturn {
     setQrDataUrl(null);
     setStatusMessage('');
     setError(null);
+    setAvailableChats([]);
+    setSelectedChatIds(new Set());
   }, [detachListeners, clearQrTimeout]);
+
+  const listChats = useCallback(async () => {
+    if (status !== 'connected') {
+      setError('Not connected to WhatsApp');
+      return;
+    }
+
+    setStatus('fetching_chats');
+    setStatusMessage('Fetching available chats...');
+
+    try {
+      await api.post('/api/integrations/whatsapp/list-chats', {});
+      // The 'whatsapp:chats-available' event will be emitted via WebSocket
+      // and handled by the attachListeners socket.on('whatsapp:chats-available')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to fetch chats';
+      setError(message);
+      setStatus('error');
+    }
+  }, [status]);
+
+  const toggleChatSelection = useCallback((chatId: string) => {
+    setSelectedChatIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(chatId)) {
+        next.delete(chatId);
+      } else {
+        next.add(chatId);
+      }
+      return next;
+    });
+  }, []);
+
+  const importSelectedChats = useCallback(async () => {
+    if (selectedChatIds.size === 0) {
+      setError('Please select at least one chat');
+      return;
+    }
+
+    setStatus('importing');
+    setStatusMessage(`Importing ${selectedChatIds.size} chat(s)...`);
+
+    try {
+      await api.post('/api/chats/import', {
+        messenger: 'whatsapp',
+        externalChatIds: Array.from(selectedChatIds),
+      });
+
+      setStatusMessage('Chats imported successfully!');
+      setStatus('idle');
+      setAvailableChats([]);
+      setSelectedChatIds(new Set());
+      queryClient.invalidateQueries({ queryKey: ['chats'] });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to import chats';
+      setError(message);
+      setStatus('error');
+    }
+  }, [selectedChatIds, queryClient]);
 
   return {
     status,
     qrDataUrl,
     statusMessage,
     error,
+    availableChats,
+    selectedChatIds,
     startPairing,
     cancelPairing,
     reset,
+    listChats,
+    toggleChatSelection,
+    importSelectedChats,
   };
 }
