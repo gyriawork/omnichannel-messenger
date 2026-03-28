@@ -153,12 +153,14 @@ export async function startWhatsAppPairing(sessionKey: string): Promise<EventEmi
     activePairingSessions.delete(sessionKey);
   }
 
+  console.log(`[WhatsApp] Starting pairing session: ${sessionKey}`);
   const emitter = new EventEmitter();
   const logger = pino({ level: 'silent' });
 
   const { state, saveCreds, getSerializedState } = useMemoryAuthState();
 
   let sock: WASocket;
+  let qrTimeout: ReturnType<typeof setTimeout> | null = null;
 
   try {
     // Fetch latest Baileys version with a 5-second timeout; fall back to a
@@ -189,14 +191,17 @@ export async function startWhatsAppPairing(sessionKey: string): Promise<EventEmi
       generateHighQualityLinkPreview: false,
       syncFullHistory: false,
     });
+    console.log(`[WhatsApp] Socket created for session: ${sessionKey}`);
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
+    console.error(`[WhatsApp] Socket creation failed for session ${sessionKey}:`, error.message);
     emitter.emit('error', error);
     return emitter;
   }
 
   // Auto-timeout after 2 minutes
   const timeout = setTimeout(() => {
+    console.log(`[WhatsApp] Session timed out after 120 seconds: ${sessionKey}`);
     emitter.emit('error', new Error('QR code pairing timed out after 120 seconds'));
     try { sock.end(undefined); } catch { /* ignore */ }
     activePairingSessions.delete(sessionKey);
@@ -206,17 +211,43 @@ export async function startWhatsAppPairing(sessionKey: string): Promise<EventEmi
 
   // Handle credential updates
   sock.ev.on('creds.update', saveCreds);
+  console.log(`[WhatsApp] Registered creds.update listener for session: ${sessionKey}`);
 
   // Handle connection updates (QR code, connected, disconnected)
   sock.ev.on('connection.update', (update: Partial<ConnectionState>) => {
     const { connection, lastDisconnect, qr } = update;
+    console.log(`[WhatsApp] Connection update for session ${sessionKey}:`, {
+      connection,
+      hasQr: !!qr,
+      hasLastDisconnect: !!lastDisconnect,
+    });
 
     if (qr) {
+      console.log(`[WhatsApp] QR code generated for session: ${sessionKey}`);
+      // Clear QR timeout on new QR (Baileys regenerates ~every 20s)
+      if (qrTimeout !== null) {
+        clearTimeout(qrTimeout);
+      }
+      // Reset QR timeout: if no 'open' event within 30s, fail the session
+      qrTimeout = setTimeout(() => {
+        console.error(`[WhatsApp] QR code not scanned within 30 seconds for session: ${sessionKey}`);
+        emitter.emit('error', new Error('QR code was not scanned within 30 seconds'));
+        try { sock.end(undefined); } catch { /* ignore */ }
+        activePairingSessions.delete(sessionKey);
+        clearTimeout(timeout);
+      }, 30_000);
+
       emitter.emit('qr', qr);
       emitter.emit('status', 'Scan the QR code with WhatsApp on your phone');
     }
 
     if (connection === 'open') {
+      console.log(`[WhatsApp] Connected to WhatsApp for session: ${sessionKey}`);
+      // Clear QR timeout on successful connection
+      if (qrTimeout !== null) {
+        clearTimeout(qrTimeout);
+        qrTimeout = null;
+      }
       emitter.emit('status', 'Connected to WhatsApp');
 
       // Build credential payload for storage
@@ -236,11 +267,19 @@ export async function startWhatsAppPairing(sessionKey: string): Promise<EventEmi
     }
 
     if (connection === 'close') {
+      console.log(`[WhatsApp] Connection closed for session ${sessionKey}:`, {
+        lastDisconnect: lastDisconnect?.error?.message,
+      });
       const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode;
       const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
 
       if (!shouldReconnect) {
+        console.log(`[WhatsApp] Session logged out for session: ${sessionKey}`);
         emitter.emit('error', new Error('WhatsApp session logged out'));
+        if (qrTimeout !== null) {
+          clearTimeout(qrTimeout);
+          qrTimeout = null;
+        }
         clearTimeout(timeout);
         activePairingSessions.delete(sessionKey);
       }

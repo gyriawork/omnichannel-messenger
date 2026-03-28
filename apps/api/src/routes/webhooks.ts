@@ -84,6 +84,7 @@ export default async function webhookRoutes(fastify: FastifyInstance): Promise<v
       });
 
       for (const ic of importedChats) {
+        console.log(`[Telegram webhook] Saving message: chatId=${chatId}, sender=${senderName}, text=${text.slice(0, 50)}`);
         await saveIncomingMessage({
           externalChatId: chatId,
           messenger: 'telegram',
@@ -93,6 +94,10 @@ export default async function webhookRoutes(fastify: FastifyInstance): Promise<v
           text,
           externalMessageId: String(message.message_id),
         });
+      }
+
+      if (importedChats.length === 0) {
+        console.log(`[Telegram webhook] No imported chats found for externalChatId=${chatId}`);
       }
 
       return reply.send({ ok: true });
