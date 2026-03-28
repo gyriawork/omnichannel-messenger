@@ -838,4 +838,86 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
       return reply.send({ message: 'WhatsApp pairing cancelled' });
     },
   );
+
+  // ─── POST /integrations/whatsapp/list-chats ───
+  // Fetch available WhatsApp chats (groups + contacts) after pairing.
+  // Returns a list of chats via WebSocket event 'whatsapp:chats-available'.
+
+  fastify.post(
+    '/integrations/whatsapp/list-chats',
+    { preHandler: authPreHandlers },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const organizationId = getOrgId(request);
+      if (!organizationId) {
+        return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
+      }
+
+      const userId = request.user.id;
+
+      try {
+        // Get user's WhatsApp integration
+        const integration = await prisma.integration.findUnique({
+          where: {
+            messenger_organizationId_userId: {
+              messenger: 'whatsapp',
+              organizationId,
+              userId,
+            },
+          },
+        });
+
+        if (!integration) {
+          return sendError(
+            reply,
+            'RESOURCE_NOT_FOUND',
+            'No WhatsApp integration found. Please pair via QR code first.',
+            404,
+          );
+        }
+
+        if (integration.status !== 'connected') {
+          return sendError(
+            reply,
+            'VALIDATION_ERROR',
+            'WhatsApp integration is not connected',
+            400,
+          );
+        }
+
+        // Decrypt credentials
+        const decrypted = decryptCredentials<Record<string, unknown>>(integration.credentials as string);
+
+        // Create adapter and connect
+        const adapter = await createAdapter('whatsapp', decrypted);
+        await adapter.connect(decrypted);
+
+        // List available chats
+        const chats = await adapter.listChats();
+        console.log(`[WhatsApp] Listed ${chats.length} chats for user ${userId}`);
+
+        // Emit chats via WebSocket
+        const io = getIO();
+        io.to(`user:${userId}`).emit('whatsapp:chats-available', { chats });
+
+        // Disconnect adapter
+        await adapter.disconnect();
+
+        return reply.send({
+          message: `Found ${chats.length} available chats. Check WebSocket for whatsapp:chats-available event.`,
+        });
+      } catch (err) {
+        console.error(`[WhatsApp] Failed to list chats for user ${userId}:`, err);
+        return sendError(
+          reply,
+          'MESSENGER_API_ERROR',
+          err instanceof MessengerError
+            ? err.message
+            : err instanceof Error
+              ? err.message
+              : 'Failed to list WhatsApp chats',
+          502,
+        );
+      }
+    },
+  );
 }
