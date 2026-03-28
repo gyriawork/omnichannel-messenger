@@ -275,8 +275,22 @@ export function ChatList() {
   const chats = data?.chats ?? [];
 
   const sortedChats = useMemo(() => {
-    const pinned = chats.filter((c) => c.preferences?.pinned);
-    const unpinned = chats.filter((c) => !c.preferences?.pinned);
+    const pinned = chats
+      .filter((c) => c.preferences?.pinned)
+      .sort((a, b) => {
+        const aTime = new Date(a.lastActivityAt || a.lastMessage?.createdAt || 0).getTime();
+        const bTime = new Date(b.lastActivityAt || b.lastMessage?.createdAt || 0).getTime();
+        return bTime - aTime; // DESC (most recent first)
+      });
+
+    const unpinned = chats
+      .filter((c) => !c.preferences?.pinned)
+      .sort((a, b) => {
+        const aTime = new Date(a.lastActivityAt || a.lastMessage?.createdAt || 0).getTime();
+        const bTime = new Date(b.lastActivityAt || b.lastMessage?.createdAt || 0).getTime();
+        return bTime - aTime; // DESC (most recent first)
+      });
+
     return [...pinned, ...unpinned];
   }, [chats]);
 
