@@ -8,9 +8,12 @@ import {
   Check,
   Loader2,
   MessageSquare,
+  QrCode,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAvailableChats, useImportChats } from '@/hooks/useChats';
+import { useWhatsAppPairing } from '@/hooks/useWhatsAppPairing';
+import { WhatsAppChatSelection } from './WhatsAppChatSelection';
 import { toast } from 'sonner';
 import type { MessengerType, AvailableChat } from '@/types/chat';
 
@@ -103,14 +106,34 @@ export function ImportChatsModal({ open, onClose }: ImportChatsModalProps) {
     useAvailableChats(selectedMessenger);
   const { mutate: importChats, isPending: isImporting } = useImportChats();
 
+  // WhatsApp-specific pairing hook
+  const whatsappPairing = useWhatsAppPairing();
+
   // Use real data if available, fall back to mock
   const availableChats =
     availableData?.chats ?? (selectedMessenger ? MOCK_CHATS[selectedMessenger] : []);
+
+  const handleClose = () => {
+    setStep(1);
+    setSelectedMessenger(null);
+    setSelectedChats(new Set());
+    // Cancel WhatsApp pairing if modal is closed
+    if (selectedMessenger === 'whatsapp') {
+      whatsappPairing.cancelPairing();
+    }
+    onClose();
+  };
 
   const handleSelectMessenger = (messenger: MessengerType) => {
     setSelectedMessenger(messenger);
     setSelectedChats(new Set());
     setStep(2);
+
+    // Start WhatsApp pairing if WhatsApp is selected
+    if (messenger === 'whatsapp') {
+      whatsappPairing.reset();
+      whatsappPairing.startPairing();
+    }
   };
 
   const toggleChat = (id: string) => {
@@ -133,9 +156,24 @@ export function ImportChatsModal({ open, onClose }: ImportChatsModalProps) {
     }
   };
 
-  const handleImport = useCallback(() => {
+  const handleImport = useCallback(async () => {
     if (!selectedMessenger || selectedChats.size === 0) return;
 
+    // For WhatsApp, use the hook's import function
+    if (selectedMessenger === 'whatsapp') {
+      try {
+        await whatsappPairing.importSelectedChats();
+        toast.success(
+          `Successfully imported ${selectedChats.size} chat${selectedChats.size !== 1 ? 's' : ''}`,
+        );
+        handleClose();
+      } catch {
+        toast.error('Failed to import chats. Please try again.');
+      }
+      return;
+    }
+
+    // For other messengers, use the generic import function
     const chatsToImport = Array.from(selectedChats).map((id) => {
       const chat = availableChats.find((c) => c.externalChatId === id);
       return {
@@ -158,14 +196,7 @@ export function ImportChatsModal({ open, onClose }: ImportChatsModalProps) {
         },
       },
     );
-  }, [selectedMessenger, selectedChats, importChats]);
-
-  const handleClose = () => {
-    setStep(1);
-    setSelectedMessenger(null);
-    setSelectedChats(new Set());
-    onClose();
-  };
+  }, [selectedMessenger, selectedChats, importChats, whatsappPairing, handleClose]);
 
   const handleBack = () => {
     if (step === 3) setStep(2);
@@ -173,6 +204,10 @@ export function ImportChatsModal({ open, onClose }: ImportChatsModalProps) {
       setStep(1);
       setSelectedMessenger(null);
       setSelectedChats(new Set());
+      // Cancel WhatsApp pairing if going back from WhatsApp step
+      if (selectedMessenger === 'whatsapp') {
+        whatsappPairing.cancelPairing();
+      }
     }
   };
 
@@ -268,95 +303,212 @@ export function ImportChatsModal({ open, onClose }: ImportChatsModalProps) {
           {/* Step 2: Select chats */}
           {step === 2 && (
             <div>
-              {isLoadingAvailable ? (
-                <div className="flex flex-col items-center justify-center py-12">
-                  <Loader2 className="h-6 w-6 animate-spin text-accent" />
-                  <p className="mt-2 text-sm text-slate-500">
-                    Loading available chats...
-                  </p>
-                </div>
-              ) : availableChats.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12">
-                  <MessageSquare className="h-8 w-8 text-slate-300" />
-                  <p className="mt-2 text-sm text-slate-500">
-                    No chats available to import
-                  </p>
+              {/* WhatsApp-specific pairing flow */}
+              {selectedMessenger === 'whatsapp' ? (
+                <div className="space-y-4">
+                  {/* QR Code Display */}
+                  {['starting', 'waiting_for_qr', 'qr_ready'].includes(whatsappPairing.status) && (
+                    <div className="flex flex-col items-center justify-center py-8">
+                      {whatsappPairing.status === 'qr_ready' && whatsappPairing.qrDataUrl ? (
+                        <>
+                          <QrCode className="mb-3 h-8 w-8 text-accent" />
+                          <div className="mb-4 rounded-xl border border-slate-200 bg-white p-4">
+                            <img
+                              src={whatsappPairing.qrDataUrl}
+                              alt="WhatsApp QR Code"
+                              className="h-64 w-64"
+                            />
+                          </div>
+                          <p className="text-center text-sm text-slate-600">
+                            {whatsappPairing.statusMessage}
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <Loader2 className="h-6 w-6 animate-spin text-accent" />
+                          <p className="mt-2 text-sm text-slate-500">
+                            {whatsappPairing.statusMessage}
+                          </p>
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Connection Status */}
+                  {['connecting', 'connected'].includes(whatsappPairing.status) && (
+                    <div className="flex flex-col items-center justify-center py-8">
+                      <Loader2 className="h-6 w-6 animate-spin text-accent" />
+                      <p className="mt-2 text-sm text-slate-500">
+                        {whatsappPairing.statusMessage}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Fetch Chats Button */}
+                  {whatsappPairing.status === 'connected' && whatsappPairing.availableChats.length === 0 && (
+                    <div className="flex flex-col items-center justify-center py-8">
+                      <p className="mb-4 text-center text-sm text-slate-600">
+                        WhatsApp connected successfully! Click below to fetch available chats.
+                      </p>
+                      <button
+                        onClick={() => whatsappPairing.listChats()}
+                        disabled={whatsappPairing.status !== 'connected'}
+                        className="rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-accent-hover disabled:opacity-60"
+                      >
+                        Fetch Available Chats
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Chat Selection */}
+                  {whatsappPairing.status === 'fetching_chats' && (
+                    <div className="flex flex-col items-center justify-center py-8">
+                      <Loader2 className="h-6 w-6 animate-spin text-accent" />
+                      <p className="mt-2 text-sm text-slate-500">
+                        {whatsappPairing.statusMessage}
+                      </p>
+                    </div>
+                  )}
+
+                  {whatsappPairing.status === 'chats_ready' && (
+                    <>
+                      <p className="mb-3 text-sm text-slate-600">
+                        {whatsappPairing.statusMessage}
+                      </p>
+                      <WhatsAppChatSelection
+                        chats={whatsappPairing.availableChats}
+                        selectedChatIds={whatsappPairing.selectedChatIds}
+                        onToggleChat={whatsappPairing.toggleChatSelection}
+                        onImport={whatsappPairing.importSelectedChats}
+                        isImporting={false}
+                      />
+                      {/* Continue to Review Step */}
+                      <button
+                        onClick={() => setStep(3)}
+                        disabled={whatsappPairing.selectedChatIds.size === 0}
+                        className={cn(
+                          'mt-4 flex w-full items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-medium transition-colors',
+                          whatsappPairing.selectedChatIds.size > 0
+                            ? 'bg-accent text-white shadow-accent-sm hover:bg-accent-hover'
+                            : 'bg-slate-100 text-slate-400',
+                        )}
+                      >
+                        Continue
+                        <ChevronRight className="h-4 w-4" />
+                      </button>
+                    </>
+                  )}
+
+                  {/* Error State */}
+                  {whatsappPairing.status === 'error' && (
+                    <div className="flex flex-col items-center justify-center py-8">
+                      <MessageSquare className="mb-3 h-8 w-8 text-red-500" />
+                      <p className="mb-4 text-center text-sm text-red-600">
+                        {whatsappPairing.error || 'An error occurred during pairing'}
+                      </p>
+                      <button
+                        onClick={() => whatsappPairing.startPairing()}
+                        className="rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-accent-hover"
+                      >
+                        Try Again
+                      </button>
+                    </div>
+                  )}
                 </div>
               ) : (
+                /* Generic chat selection for other messengers */
                 <>
-                  {/* Select all */}
-                  <div className="mb-3 flex items-center justify-between">
-                    <button
-                      onClick={toggleAll}
-                      className="text-xs font-medium text-accent hover:text-accent-hover"
-                    >
-                      {selectedChats.size === availableChats.length
-                        ? 'Deselect all'
-                        : 'Select all'}
-                    </button>
-                    <span className="text-xs text-slate-400">
-                      {selectedChats.size} of {availableChats.length} selected
-                    </span>
-                  </div>
-
-                  {/* Chat list */}
-                  <div className="max-h-[60vh] space-y-1.5 overflow-y-auto">
-                    {availableChats.map((chat) => {
-                      const isSelected = selectedChats.has(chat.externalChatId);
-                      return (
+                  {isLoadingAvailable ? (
+                    <div className="flex flex-col items-center justify-center py-12">
+                      <Loader2 className="h-6 w-6 animate-spin text-accent" />
+                      <p className="mt-2 text-sm text-slate-500">
+                        Loading available chats...
+                      </p>
+                    </div>
+                  ) : availableChats.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-12">
+                      <MessageSquare className="h-8 w-8 text-slate-300" />
+                      <p className="mt-2 text-sm text-slate-500">
+                        No chats available to import
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      {/* Select all */}
+                      <div className="mb-3 flex items-center justify-between">
                         <button
-                          key={chat.externalChatId}
-                          onClick={() => toggleChat(chat.externalChatId)}
-                          className={cn(
-                            'flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors',
-                            isSelected
-                              ? 'border-accent/30 bg-accent-bg'
-                              : 'border-slate-200 bg-white hover:bg-slate-50',
-                          )}
+                          onClick={toggleAll}
+                          className="text-xs font-medium text-accent hover:text-accent-hover"
                         >
-                          <div
-                            className={cn(
-                              'flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-md border-2 transition-colors',
-                              isSelected
-                                ? 'border-accent bg-accent'
-                                : 'border-slate-300 bg-white',
-                            )}
-                          >
-                            {isSelected && (
-                              <Check className="h-3 w-3 text-white" />
-                            )}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-medium text-slate-700">
-                              {chat.name}
-                            </p>
-                            <p className="text-[11px] text-slate-400">
-                              {chat.chatType === 'direct'
-                                ? 'Direct message'
-                                : chat.chatType === 'channel'
-                                  ? `Channel${chat.memberCount ? ` · ${chat.memberCount} members` : ''}`
-                                  : `Group${chat.memberCount ? ` · ${chat.memberCount} members` : ''}`}
-                            </p>
-                          </div>
+                          {selectedChats.size === availableChats.length
+                            ? 'Deselect all'
+                            : 'Select all'}
                         </button>
-                      );
-                    })}
-                  </div>
+                        <span className="text-xs text-slate-400">
+                          {selectedChats.size} of {availableChats.length} selected
+                        </span>
+                      </div>
 
-                  {/* Continue button */}
-                  <button
-                    onClick={() => setStep(3)}
-                    disabled={selectedChats.size === 0}
-                    className={cn(
-                      'mt-4 flex w-full items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-medium transition-colors',
-                      selectedChats.size > 0
-                        ? 'bg-accent text-white shadow-accent-sm hover:bg-accent-hover'
-                        : 'bg-slate-100 text-slate-400',
-                    )}
-                  >
-                    Continue
-                    <ChevronRight className="h-4 w-4" />
-                  </button>
+                      {/* Chat list */}
+                      <div className="max-h-[60vh] space-y-1.5 overflow-y-auto">
+                        {availableChats.map((chat) => {
+                          const isSelected = selectedChats.has(chat.externalChatId);
+                          return (
+                            <button
+                              key={chat.externalChatId}
+                              onClick={() => toggleChat(chat.externalChatId)}
+                              className={cn(
+                                'flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors',
+                                isSelected
+                                  ? 'border-accent/30 bg-accent-bg'
+                                  : 'border-slate-200 bg-white hover:bg-slate-50',
+                              )}
+                            >
+                              <div
+                                className={cn(
+                                  'flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-md border-2 transition-colors',
+                                  isSelected
+                                    ? 'border-accent bg-accent'
+                                    : 'border-slate-300 bg-white',
+                                )}
+                              >
+                                {isSelected && (
+                                  <Check className="h-3 w-3 text-white" />
+                                )}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm font-medium text-slate-700">
+                                  {chat.name}
+                                </p>
+                                <p className="text-[11px] text-slate-400">
+                                  {chat.chatType === 'direct'
+                                    ? 'Direct message'
+                                    : chat.chatType === 'channel'
+                                      ? `Channel${chat.memberCount ? ` · ${chat.memberCount} members` : ''}`
+                                      : `Group${chat.memberCount ? ` · ${chat.memberCount} members` : ''}`}
+                                </p>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Continue button */}
+                      <button
+                        onClick={() => setStep(3)}
+                        disabled={selectedChats.size === 0}
+                        className={cn(
+                          'mt-4 flex w-full items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-medium transition-colors',
+                          selectedChats.size > 0
+                            ? 'bg-accent text-white shadow-accent-sm hover:bg-accent-hover'
+                            : 'bg-slate-100 text-slate-400',
+                        )}
+                      >
+                        Continue
+                        <ChevronRight className="h-4 w-4" />
+                      </button>
+                    </>
+                  )}
                 </>
               )}
             </div>
@@ -383,24 +535,44 @@ export function ImportChatsModal({ open, onClose }: ImportChatsModalProps) {
                       {messengerInfo?.name}
                     </p>
                     <p className="text-xs text-slate-500">
-                      {selectedChats.size} chat
-                      {selectedChats.size !== 1 ? 's' : ''} will be imported
+                      {selectedMessenger === 'whatsapp'
+                        ? whatsappPairing.selectedChatIds.size
+                        : selectedChats.size}{' '}
+                      chat
+                      {(selectedMessenger === 'whatsapp'
+                        ? whatsappPairing.selectedChatIds.size
+                        : selectedChats.size) !== 1
+                        ? 's'
+                        : ''}{' '}
+                      will be imported
                     </p>
                   </div>
                 </div>
 
                 <div className="mt-3 max-h-[50vh] space-y-1 overflow-y-auto">
-                  {availableChats
-                    .filter((c) => selectedChats.has(c.externalChatId))
-                    .map((chat) => (
-                      <div
-                        key={chat.externalChatId}
-                        className="flex items-center gap-2 rounded-md bg-white px-3 py-2 text-xs text-slate-600"
-                      >
-                        <Check className="h-3.5 w-3.5 text-green-500" />
-                        {chat.name}
-                      </div>
-                    ))}
+                  {selectedMessenger === 'whatsapp'
+                    ? whatsappPairing.availableChats
+                        .filter((c) => whatsappPairing.selectedChatIds.has(c.externalChatId))
+                        .map((chat) => (
+                          <div
+                            key={chat.externalChatId}
+                            className="flex items-center gap-2 rounded-md bg-white px-3 py-2 text-xs text-slate-600"
+                          >
+                            <Check className="h-3.5 w-3.5 text-green-500" />
+                            {chat.name}
+                          </div>
+                        ))
+                    : availableChats
+                        .filter((c) => selectedChats.has(c.externalChatId))
+                        .map((chat) => (
+                          <div
+                            key={chat.externalChatId}
+                            className="flex items-center gap-2 rounded-md bg-white px-3 py-2 text-xs text-slate-600"
+                          >
+                            <Check className="h-3.5 w-3.5 text-green-500" />
+                            {chat.name}
+                          </div>
+                        ))}
                 </div>
               </div>
 
@@ -410,18 +582,26 @@ export function ImportChatsModal({ open, onClose }: ImportChatsModalProps) {
 
               <button
                 onClick={handleImport}
-                disabled={isImporting}
+                disabled={selectedMessenger === 'whatsapp' ? whatsappPairing.status === 'importing' : isImporting}
                 className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-accent py-2.5 text-sm font-medium text-white shadow-accent-sm transition-colors hover:bg-accent-hover disabled:opacity-60"
               >
-                {isImporting ? (
+                {(selectedMessenger === 'whatsapp' ? whatsappPairing.status === 'importing' : isImporting) ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
                     Importing...
                   </>
                 ) : (
                   <>
-                    Import {selectedChats.size} Chat
-                    {selectedChats.size !== 1 ? 's' : ''}
+                    Import{' '}
+                    {selectedMessenger === 'whatsapp'
+                      ? whatsappPairing.selectedChatIds.size
+                      : selectedChats.size}{' '}
+                    Chat
+                    {(selectedMessenger === 'whatsapp'
+                      ? whatsappPairing.selectedChatIds.size
+                      : selectedChats.size) !== 1
+                      ? 's'
+                      : ''}
                   </>
                 )}
               </button>
