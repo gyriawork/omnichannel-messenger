@@ -26,8 +26,12 @@ import { validateEnv } from './lib/env.js';
 import { startRedisSubscriber, stopRedisSubscriber } from './services/redis-subscriber.js';
 import { getTelegramManager } from './services/telegram-connection-manager.js';
 import { csrfProtection } from './middleware/csrf.js';
+import { repairDatabase } from './db-repair.js';
 
 const env = validateEnv();
+
+// Ensure critical DB columns exist (handles stuck migrations)
+await repairDatabase();
 
 // ─── Create server ───
 
