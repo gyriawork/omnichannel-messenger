@@ -217,6 +217,24 @@ export default async function webhookRoutes(fastify: FastifyInstance): Promise<v
   fastify.post(
     '/webhooks/gmail',
     async (request: FastifyRequest, reply: FastifyReply) => {
+      // Verify the request comes from Google Pub/Sub via Bearer token
+      const authHeader = request.headers.authorization;
+      if (!authHeader?.startsWith('Bearer ')) {
+        return reply.status(401).send({ error: 'Missing authorization' });
+      }
+
+      // In production, verify the JWT token audience matches our project
+      // For now, check that the subscription name matches our expected one
+      const gmailWebhookToken = process.env.GMAIL_WEBHOOK_TOKEN;
+      if (gmailWebhookToken) {
+        const token = authHeader.slice(7);
+        if (token !== gmailWebhookToken) {
+          return reply.status(403).send({ error: 'Invalid webhook token' });
+        }
+      } else if (process.env.NODE_ENV === 'production') {
+        return reply.status(403).send({ error: 'Gmail webhook not configured' });
+      }
+
       const body = request.body as Record<string, unknown>;
       const message = body.message as Record<string, unknown>;
 
