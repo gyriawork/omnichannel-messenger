@@ -80,9 +80,14 @@ export async function saveIncomingMessage(params: SaveIncomingMessageParams) {
         id: message.id,
         chatId: chat.id,
         senderName: message.senderName,
-        text: message.text,
         isSelf: message.isSelf,
+        text: message.text,
+        editedAt: message.editedAt ?? null,
+        isPinned: message.isPinned,
+        deliveryStatus: message.deliveryStatus ?? null,
         createdAt: message.createdAt,
+        replyToMessage: null,
+        attachments: [],
       },
     });
   } catch {

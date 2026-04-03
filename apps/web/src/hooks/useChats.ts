@@ -33,6 +33,8 @@ export function useChats(filters?: ChatFilters) {
       if (filters?.search) params.set('search', filters.search);
       if (filters?.messenger) params.set('messenger', filters.messenger);
       if (filters?.status) params.set('status', filters.status);
+      if (filters?.ownerId) params.set('ownerId', filters.ownerId);
+      if (filters?.tagId) params.set('tagId', filters.tagId);
       const query = params.toString();
       return api.get<ChatsResponse>(
         `/api/chats${query ? `?${query}` : ''}`,

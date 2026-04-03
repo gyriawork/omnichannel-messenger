@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import {
   X,
   ChevronRight,
@@ -109,9 +109,15 @@ export function ImportChatsModal({ open, onClose }: ImportChatsModalProps) {
   // WhatsApp-specific pairing hook
   const whatsappPairing = useWhatsAppPairing();
 
-  // Use real data if available, fall back to mock
-  const availableChats =
-    availableData?.chats ?? (selectedMessenger ? MOCK_CHATS[selectedMessenger] : []);
+  // Use real data if available, fall back to mock.
+  // Ensure all chats have unique non-empty externalChatId to prevent selection bugs.
+  const availableChats = useMemo(() => {
+    const raw = availableData?.chats ?? (selectedMessenger ? MOCK_CHATS[selectedMessenger] : []);
+    return raw.map((chat, idx) => ({
+      ...chat,
+      externalChatId: chat.externalChatId || `fallback-${idx}`,
+    }));
+  }, [availableData, selectedMessenger]);
 
   const handleClose = () => {
     setStep(1);

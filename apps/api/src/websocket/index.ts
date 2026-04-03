@@ -60,6 +60,21 @@ async function chatBelongsToOrg(chatId: string, organizationId: string): Promise
 const typingThrottle = new Map<string, number>(); // `userId:chatId` → last emit timestamp
 const TYPING_THROTTLE_MS = 2000;
 
+// Periodic cleanup of stale typing throttle entries (every 5 minutes)
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, lastTime] of typingThrottle.entries()) {
+    if (now - lastTime > 300_000) {
+      typingThrottle.delete(key);
+    }
+  }
+}, 300_000);
+
+// ─── mark_read debounce state ───
+
+const markReadPending = new Map<string, NodeJS.Timeout>(); // `userId:chatId` → timer
+const MARK_READ_DEBOUNCE_MS = 2000;
+
 // ─── Factory ───
 
 /**
@@ -182,21 +197,31 @@ export function createWebSocketServer(httpServer: HttpServer): Server {
       const belongs = await chatBelongsToOrg(chatId, user.organizationId);
       if (!belongs) return;
 
-      // Upsert ChatPreference to set unread = false
-      await prisma.chatPreference.upsert({
-        where: {
-          userId_chatId: {
-            userId: user.id,
-            chatId,
-          },
-        },
-        update: { unread: false },
-        create: {
-          userId: user.id,
-          chatId,
-          unread: false,
-        },
-      });
+      // Debounce: batch writes per user-chat pair
+      const key = `${user.id}:${chatId}`;
+      const existing = markReadPending.get(key);
+      if (existing) clearTimeout(existing);
+
+      markReadPending.set(
+        key,
+        setTimeout(async () => {
+          markReadPending.delete(key);
+          await prisma.chatPreference.upsert({
+            where: {
+              userId_chatId: {
+                userId: user.id,
+                chatId,
+              },
+            },
+            update: { unread: false },
+            create: {
+              userId: user.id,
+              chatId,
+              unread: false,
+            },
+          });
+        }, MARK_READ_DEBOUNCE_MS),
+      );
     });
 
     // ── disconnect ──

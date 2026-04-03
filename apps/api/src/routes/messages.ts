@@ -5,6 +5,7 @@ import { authenticate } from '../middleware/auth.js';
 import { getIO } from '../websocket/index.js';
 import { decryptCredentials } from '../lib/crypto.js';
 import { createAdapter } from '../integrations/factory.js';
+import { logActivity } from '../lib/activity-logger.js';
 
 // ─── Zod Schemas ───
 
@@ -62,7 +63,7 @@ async function verifyChat(
   chatId: string,
   organizationId: string | null,
   reply: FastifyReply,
-): Promise<{ id: string; organizationId: string; messenger: string; externalChatId: string } | null> {
+): Promise<{ id: string; organizationId: string; messenger: string; externalChatId: string; name: string } | null> {
   if (!organizationId) {
     sendError(reply, 'VALIDATION_ERROR', 'User is not associated with an organization', 400);
     return null;
@@ -70,7 +71,7 @@ async function verifyChat(
 
   const chat = await prisma.chat.findUnique({
     where: { id: chatId },
-    select: { id: true, organizationId: true, messenger: true, externalChatId: true },
+    select: { id: true, organizationId: true, messenger: true, externalChatId: true, name: true },
   });
 
   if (!chat) {
@@ -290,6 +291,19 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
         // WebSocket not initialized yet — non-fatal
       }
 
+      // Log to activity feed
+      logActivity({
+        category: 'messages',
+        action: 'message_sent',
+        description: `sent a message in ${chat.name}`,
+        targetType: 'message',
+        targetId: message.id,
+        userId: request.user.id,
+        userName: request.user.name,
+        organizationId: request.user.organizationId!,
+        metadata: { chatId, chatName: chat.name, messageLength: text.length },
+      }).catch(() => {});
+
       return reply.status(201).send(message);
     },
   );
@@ -366,6 +380,17 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
         // WebSocket not initialized yet — non-fatal
       }
 
+      logActivity({
+        category: 'messages',
+        action: 'message_edited',
+        description: 'edited a message',
+        targetType: 'message',
+        targetId: id,
+        userId: request.user.id,
+        userName: request.user.name,
+        organizationId: message.chat.organizationId,
+      }).catch(() => {});
+
       return reply.status(200).send(updated);
     },
   );
@@ -429,6 +454,17 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
       } catch {
         // WebSocket not initialized yet — non-fatal
       }
+
+      logActivity({
+        category: 'messages',
+        action: 'message_deleted',
+        description: 'deleted a message',
+        targetType: 'message',
+        targetId: id,
+        userId: request.user.id,
+        userName: request.user.name,
+        organizationId: message.chat.organizationId,
+      }).catch(() => {});
 
       return reply.status(200).send({ success: true });
     },

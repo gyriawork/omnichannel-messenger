@@ -837,7 +837,8 @@ function MessageFeed({ chatId }: { chatId: string }) {
 
   const messages = useMemo(() => {
     if (!data?.pages) return [];
-    return data.pages.flatMap((p) => p.messages);
+    // API returns desc (newest first), reverse to chronological order (oldest first)
+    return data.pages.flatMap((p) => p.messages).reverse();
   }, [data]);
 
   // Group messages by date
@@ -857,11 +858,18 @@ function MessageFeed({ chatId }: { chatId: string }) {
     return groups;
   }, [messages]);
 
-  // Scroll to bottom on new messages
+  // Scroll to bottom on new messages (only if already near bottom)
+  const prevLengthRef = useRef(0);
+
   useEffect(() => {
-    if (feedRef.current) {
-      feedRef.current.scrollTop = feedRef.current.scrollHeight;
+    if (feedRef.current && messages.length > prevLengthRef.current) {
+      const { scrollTop, scrollHeight, clientHeight } = feedRef.current;
+      const wasNearBottom = scrollHeight - scrollTop - clientHeight < 150;
+      if (wasNearBottom || prevLengthRef.current === 0) {
+        feedRef.current.scrollTop = feedRef.current.scrollHeight;
+      }
     }
+    prevLengthRef.current = messages.length;
   }, [messages.length]);
 
   // Scroll up to load more

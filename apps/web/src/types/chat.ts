@@ -65,4 +65,6 @@ export interface ChatFilters {
   search?: string;
   messenger?: MessengerType | null;
   status?: string;
+  ownerId?: string;
+  tagId?: string;
 }

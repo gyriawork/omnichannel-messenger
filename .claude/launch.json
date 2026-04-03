@@ -3,15 +3,17 @@
   "configurations": [
     {
       "name": "web",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--workspace=apps/web"],
-      "port": 3000
+      "runtimeExecutable": "/bin/bash",
+      "runtimeArgs": ["-c", "export PATH=/usr/local/bin:$PATH && npm run dev --workspace=apps/web"],
+      "port": 3000,
+      "autoPort": false
     },
     {
       "name": "api",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--workspace=apps/api"],
-      "port": 3001
+      "runtimeExecutable": "/bin/bash",
+      "runtimeArgs": ["-c", "export PATH=/usr/local/bin:$PATH && npm run dev --workspace=apps/api"],
+      "port": 3001,
+      "autoPort": false
     },
     {
       "name": "worker",

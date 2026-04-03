@@ -4,6 +4,7 @@ import { useEffect, useRef, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { useAuthStore } from '@/stores/auth';
 import { useQueryClient } from '@tanstack/react-query';
+import type { Message } from '@/types/chat';
 
 const SOCKET_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
@@ -60,9 +61,30 @@ export function useSocket() {
       console.error('[WS] Connection error:', err.message);
     });
 
-    // Real-time message received → invalidate chat messages
-    socket.on('new_message', (data: { chatId: string }) => {
-      queryClient.invalidateQueries({ queryKey: ['messages', data.chatId] });
+    // Real-time message received → optimistically insert into cache
+    socket.on('new_message', (data: { chatId: string; message: Message }) => {
+      if (data.message) {
+        queryClient.setQueryData(
+          ['messages', data.chatId],
+          (oldData: { pages: Array<{ messages: Message[]; nextCursor?: string }>; pageParams: unknown[] } | undefined) => {
+            if (!oldData?.pages) return oldData;
+            const firstPage = oldData.pages[0];
+            if (!firstPage) return oldData;
+
+            // Check for duplicate
+            const allMessages = oldData.pages.flatMap((p) => p.messages);
+            if (allMessages.some((m) => m.id === data.message.id)) return oldData;
+
+            return {
+              ...oldData,
+              pages: [
+                { ...firstPage, messages: [data.message, ...firstPage.messages] },
+                ...oldData.pages.slice(1),
+              ],
+            };
+          },
+        );
+      }
       queryClient.invalidateQueries({ queryKey: ['chats'] });
     });
 

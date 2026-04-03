@@ -336,14 +336,21 @@ export default function ChatsPage() {
   const [search, setSearch] = useState('');
   const [messengerFilter, setMessengerFilter] = useState<MessengerType | null>(null);
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
+  const [ownerFilter, setOwnerFilter] = useState<string | null>(null);
+  const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [showImport, setShowImport] = useState(false);
-  const [sortBy, setSortBy] = useState<'lastActivityAt' | 'name' | 'messageCount'>('lastActivityAt');
+  const [sortBy, setSortBy] = useState<'lastActivityAt' | 'name' | 'messageCount' | 'chatType'>('lastActivityAt');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+
+  const { data: tagsData } = useTags();
 
   const { data, isLoading } = useChats({
     search: search || undefined,
     messenger: messengerFilter,
     status: statusFilter || undefined,
+    ownerId: ownerFilter || undefined,
+    tagId: tagFilter || undefined,
   });
 
   const chats = data?.chats ?? [];
@@ -351,11 +358,19 @@ export default function ChatsPage() {
 
   const sorted = useMemo(() => {
     return [...chats].sort((a, b) => {
-      if (sortBy === 'name') return a.name.localeCompare(b.name);
-      if (sortBy === 'messageCount') return (b.messageCount ?? 0) - (a.messageCount ?? 0);
-      return new Date(b.lastActivityAt ?? 0).getTime() - new Date(a.lastActivityAt ?? 0).getTime();
+      let cmp = 0;
+      if (sortBy === 'name') {
+        cmp = a.name.localeCompare(b.name);
+      } else if (sortBy === 'messageCount') {
+        cmp = (a.messageCount ?? 0) - (b.messageCount ?? 0);
+      } else if (sortBy === 'chatType') {
+        cmp = (a.chatType ?? '').localeCompare(b.chatType ?? '');
+      } else {
+        cmp = new Date(a.lastActivityAt ?? 0).getTime() - new Date(b.lastActivityAt ?? 0).getTime();
+      }
+      return sortDir === 'desc' ? -cmp : cmp;
     });
-  }, [chats, sortBy]);
+  }, [chats, sortBy, sortDir]);
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) =>
@@ -454,20 +469,46 @@ export default function ChatsPage() {
           <option value="read-only">Read-only</option>
         </select>
 
-        {/* Sort */}
+        {/* Tag filter */}
+        <select
+          value={tagFilter ?? ''}
+          onChange={(e) => setTagFilter(e.target.value || null)}
+          className="rounded border-[1.5px] border-slate-200 px-3 py-2 text-xs text-slate-600 focus:border-accent focus:outline-none"
+        >
+          <option value="">All tags</option>
+          {(tagsData?.tags ?? []).map((tag) => (
+            <option key={tag.id} value={tag.id}>{tag.name}</option>
+          ))}
+        </select>
+
+        {/* Owner filter */}
+        <input
+          value={ownerFilter ?? ''}
+          onChange={(e) => setOwnerFilter(e.target.value || null)}
+          placeholder="Filter by owner..."
+          className="rounded border-[1.5px] border-slate-200 py-2 pl-3 pr-3 text-xs text-slate-600 placeholder:text-slate-400 focus:border-accent focus:outline-none w-36"
+        />
+
+        {/* Sort dropdown */}
+        <select
+          value={sortBy}
+          onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+          className="rounded border-[1.5px] border-slate-200 px-3 py-2 text-xs text-slate-600 focus:border-accent focus:outline-none"
+        >
+          <option value="lastActivityAt">Sort: Last Active</option>
+          <option value="name">Sort: Name</option>
+          <option value="messageCount">Sort: Messages</option>
+          <option value="chatType">Sort: Type</option>
+        </select>
+
+        {/* Sort direction toggle */}
         <button
-          onClick={() => {
-            const order: typeof sortBy[] = ['lastActivityAt', 'name', 'messageCount'];
-            const idx = order.indexOf(sortBy);
-            setSortBy(order[(idx + 1) % order.length]!);
-          }}
-          className="flex items-center gap-1.5 rounded border-[1.5px] border-slate-200 px-3 py-2 text-xs text-slate-600 transition-colors hover:bg-slate-50"
-          title={`Sort by: ${sortBy}`}
+          onClick={() => setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'))}
+          className="flex items-center gap-1 rounded border-[1.5px] border-slate-200 px-2.5 py-2 text-xs text-slate-600 transition-colors hover:bg-slate-50"
+          title={sortDir === 'desc' ? 'Descending' : 'Ascending'}
         >
           <ArrowUpDown className="h-3.5 w-3.5" />
-          {sortBy === 'lastActivityAt' && 'Recent'}
-          {sortBy === 'name' && 'Name'}
-          {sortBy === 'messageCount' && 'Messages'}
+          {sortDir === 'desc' ? '\u2193' : '\u2191'}
         </button>
       </div>
 

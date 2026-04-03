@@ -99,6 +99,7 @@ model Chat {
 
   @@unique([externalChatId, messenger, organizationId])
   @@index([organizationId])
+  @@index([organizationId, lastActivityAt])
   @@index([ownerId])
   @@index([importedById])
 }
@@ -110,6 +111,7 @@ model ChatTag {
   tag     Tag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
 
   @@id([chatId, tagId])
+  @@index([tagId])
 }
 
 model ChatPreference {
@@ -304,6 +306,7 @@ model ActivityLog {
   createdAt      DateTime @default(now())
 
   @@index([organizationId, createdAt])
+  @@index([organizationId, userId, createdAt])
   @@index([category])
 }
 
