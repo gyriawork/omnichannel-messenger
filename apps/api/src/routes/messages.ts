@@ -38,6 +38,10 @@ const pinMessageBodySchema = z.object({
   isPinned: z.boolean(),
 });
 
+const forwardMessageBodySchema = z.object({
+  targetChatId: z.string().uuid(),
+});
+
 const searchMessagesQuerySchema = z.object({
   q: z.string().min(1).max(500),
   limit: z.coerce.number().int().min(1).max(100).default(20),
@@ -492,6 +496,77 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
       }).catch(() => {});
 
       return reply.status(200).send({ success: true });
+    },
+  );
+
+  // ── POST /messages/:id/forward — Forward message to another chat ──
+
+  fastify.post(
+    '/messages/:id/forward',
+    { preHandler: [authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { id } = request.params as { id: string };
+      const parsed = forwardMessageBodySchema.safeParse(request.body);
+      if (!parsed.success) {
+        return sendError(reply, 'VALIDATION_ERROR', 'Invalid input', 422);
+      }
+
+      const { targetChatId } = parsed.data;
+
+      // Verify source message
+      const sourceMessage = await prisma.message.findUnique({
+        where: { id },
+        include: { chat: { select: { organizationId: true, name: true } } },
+      });
+
+      if (!sourceMessage || sourceMessage.chat.organizationId !== request.user.organizationId) {
+        return sendError(reply, 'RESOURCE_NOT_FOUND', 'Message not found', 404);
+      }
+
+      // Verify target chat
+      const targetChat = await verifyChat(targetChatId, request.user.organizationId, reply);
+      if (!targetChat) return;
+
+      // Create forwarded message in target chat
+      const forwardedText = `[Forwarded from ${sourceMessage.chat.name}]\n${sourceMessage.text}`;
+
+      const [newMessage] = await prisma.$transaction([
+        prisma.message.create({
+          data: {
+            chatId: targetChatId,
+            senderName: request.user.name,
+            senderExternalId: request.user.id,
+            isSelf: true,
+            text: forwardedText,
+            deliveryStatus: 'sent',
+          },
+        }),
+        prisma.chat.update({
+          where: { id: targetChatId },
+          data: { messageCount: { increment: 1 }, lastActivityAt: new Date() },
+        }),
+      ]);
+
+      // Emit WebSocket event to target chat
+      try {
+        getIO().to(`chat:${targetChatId}`).emit('new_message', { chatId: targetChatId, message: newMessage });
+      } catch {
+        // WebSocket not initialized yet — non-fatal
+      }
+
+      logActivity({
+        category: 'messages',
+        action: 'message_forwarded',
+        description: `forwarded a message to ${targetChat.name}`,
+        targetType: 'message',
+        targetId: newMessage.id,
+        userId: request.user.id,
+        userName: request.user.name,
+        organizationId: request.user.organizationId!,
+        metadata: { sourceChatName: sourceMessage.chat.name, targetChatId },
+      }).catch(() => {});
+
+      return reply.status(201).send(newMessage);
     },
   );
 
