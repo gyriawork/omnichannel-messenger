@@ -85,8 +85,10 @@ await fastify.register(multipart, {
 fastify.addContentTypeParser(
   'application/json',
   { parseAs: 'string', bodyLimit: 10 * 1024 * 1024 }, // 10 MB
-  (_request, body, done) => {
+  (request, body, done) => {
     try {
+      // Store raw body string for webhook signature verification (e.g. Slack)
+      (request as unknown as Record<string, unknown>).rawBody = body as string;
       done(null, JSON.parse(body as string));
     } catch (err) {
       done(err as Error, undefined);

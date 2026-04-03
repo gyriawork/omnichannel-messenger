@@ -134,6 +134,13 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
               text: true,
             },
           },
+          reactions: {
+            select: {
+              id: true,
+              emoji: true,
+              userId: true,
+            },
+          },
         },
       });
 
@@ -236,33 +243,37 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
         if (integration && integration.credentials) {
           const creds = decryptCredentials(integration.credentials as string);
           const adapter = await createAdapter(chat.messenger, creds);
-          await adapter.connect();
+          try {
+            await adapter.connect();
 
-          // Find reply-to external ID if replying
-          let replyToExternalId: string | undefined;
-          if (replyToMessageId) {
-            const replyMsg = await prisma.message.findUnique({
-              where: { id: replyToMessageId },
-              select: { externalMessageId: true },
+            // Find reply-to external ID if replying
+            let replyToExternalId: string | undefined;
+            if (replyToMessageId) {
+              const replyMsg = await prisma.message.findUnique({
+                where: { id: replyToMessageId },
+                select: { externalMessageId: true },
+              });
+              replyToExternalId = replyMsg?.externalMessageId ?? undefined;
+            }
+
+            const savedAttachments = await prisma.attachment.findMany({
+              where: { messageId: message.id },
+              select: { url: true, filename: true, mimeType: true },
             });
-            replyToExternalId = replyMsg?.externalMessageId ?? undefined;
+
+            const result = await adapter.sendMessage(
+              chat.externalChatId,
+              text,
+              {
+                replyToExternalId,
+                attachments: savedAttachments.length > 0 ? savedAttachments : undefined,
+              },
+            );
+            externalMessageId = result.externalMessageId;
+            deliveryStatus = 'delivered';
+          } finally {
+            try { await adapter.disconnect(); } catch (e) { request.log.warn(e, 'adapter disconnect error'); }
           }
-
-          const savedAttachments = await prisma.attachment.findMany({
-            where: { messageId: message.id },
-            select: { url: true, filename: true, mimeType: true },
-          });
-
-          const result = await adapter.sendMessage(
-            chat.externalChatId,
-            text,
-            {
-              replyToExternalId,
-              attachments: savedAttachments.length > 0 ? savedAttachments : undefined,
-            },
-          );
-          externalMessageId = result.externalMessageId;
-          deliveryStatus = 'delivered';
         }
       } catch (err) {
         // Extract the real Slack/messenger API error from MessengerError wrapper
@@ -367,8 +378,12 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
             if (integration?.credentials) {
               const creds = decryptCredentials(integration.credentials as string);
               const adapter = await createAdapter(chat.messenger, creds);
-              await adapter.connect();
-              await adapter.editMessage(chat.externalChatId, message.externalMessageId, text).catch(() => {});
+              try {
+                await adapter.connect();
+                await adapter.editMessage(chat.externalChatId, message.externalMessageId, text).catch(() => {});
+              } finally {
+                try { await adapter.disconnect(); } catch (e) { request.log.warn(e, 'adapter disconnect error'); }
+              }
             }
           }
         } catch { /* best-effort */ }
@@ -442,8 +457,12 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
             if (integration?.credentials) {
               const creds = decryptCredentials(integration.credentials as string);
               const adapter = await createAdapter(chat.messenger, creds);
-              await adapter.connect();
-              await adapter.deleteMessage(chat.externalChatId, message.externalMessageId).catch(() => {});
+              try {
+                await adapter.connect();
+                await adapter.deleteMessage(chat.externalChatId, message.externalMessageId).catch(() => {});
+              } finally {
+                try { await adapter.disconnect(); } catch (e) { request.log.warn(e, 'adapter disconnect error'); }
+              }
             }
           }
         } catch { /* best-effort */ }

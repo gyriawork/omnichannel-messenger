@@ -1,30 +1,8 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-
-interface ReactionGroup {
-  emoji: string;
-  count: number;
-  userReacted: boolean;
-}
 
 export function useReactions(chatId: string, messageId: string) {
   const queryClient = useQueryClient();
-
-  // Fetch reactions for a specific message
-  const { data: reactions = [], isLoading } = useQuery({
-    queryKey: ['reactions', messageId],
-    queryFn: async () => {
-      try {
-        const data = await api.get<{ reactions: ReactionGroup[] }>(
-          `/api/chats/${chatId}/messages/${messageId}/reactions`,
-        );
-        return data.reactions;
-      } catch (error) {
-        console.error('Failed to fetch reactions:', error);
-        return [];
-      }
-    },
-  });
 
   // Add/update reaction mutation
   const addReactionMutation = useMutation({
@@ -35,9 +13,9 @@ export function useReactions(chatId: string, messageId: string) {
       );
     },
     onSuccess: () => {
-      // Refetch reactions
+      // Invalidate the messages query so reactions are refetched with messages
       queryClient.invalidateQueries({
-        queryKey: ['reactions', messageId],
+        queryKey: ['messages', chatId],
       });
     },
     onError: (error) => {
@@ -53,9 +31,9 @@ export function useReactions(chatId: string, messageId: string) {
       );
     },
     onSuccess: () => {
-      // Refetch reactions
+      // Invalidate the messages query so reactions are refetched with messages
       queryClient.invalidateQueries({
-        queryKey: ['reactions', messageId],
+        queryKey: ['messages', chatId],
       });
     },
     onError: (error) => {
@@ -64,8 +42,6 @@ export function useReactions(chatId: string, messageId: string) {
   });
 
   return {
-    reactions,
-    isLoading,
     addReaction: (emoji: string) => addReactionMutation.mutate(emoji),
     removeReaction: (emoji: string) => removeReactionMutation.mutate(emoji),
     isAddingReaction: addReactionMutation.isPending,

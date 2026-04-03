@@ -3,6 +3,14 @@ import { authenticate } from '../middleware/auth.js';
 import { requireOrganization, getOrgId } from '../middleware/rbac.js';
 import { uploadFile, getSignedDownloadUrl, deleteFile } from '../lib/storage.js';
 
+/** Validate that an upload key belongs to the given org and has no path traversal */
+function validateUploadKey(key: string, organizationId: string | null): boolean {
+  if (!organizationId) return false;
+  const normalized = key.replace(/\\/g, '/');
+  if (normalized.includes('..') || normalized.startsWith('/')) return false;
+  return normalized.startsWith(`${organizationId}/`);
+}
+
 export default async function uploadRoutes(fastify: FastifyInstance): Promise<void> {
   // POST /uploads — upload a file
   fastify.post(
@@ -45,7 +53,7 @@ export default async function uploadRoutes(fastify: FastifyInstance): Promise<vo
       }
 
       try {
-        const result = await uploadFile(buffer, data.filename, mimeType, orgId);
+        const result = await uploadFile(buffer, data.filename, mimeType, orgId!);
 
         return reply.status(201).send({
           file: {
@@ -68,13 +76,21 @@ export default async function uploadRoutes(fastify: FastifyInstance): Promise<vo
   // GET /uploads/signed-url — get signed download URL
   fastify.get(
     '/uploads/signed-url',
-    { preHandler: [authenticate] },
+    { preHandler: [authenticate, requireOrganization()] },
     async (request: FastifyRequest, reply: FastifyReply) => {
+      const orgId = getOrgId(request);
       const { key } = request.query as { key: string };
 
       if (!key) {
         return reply.status(400).send({
           error: { code: 'VALIDATION_ERROR', message: 'File key is required', statusCode: 400 },
+        });
+      }
+
+      // Prevent path traversal and enforce org ownership
+      if (!validateUploadKey(key, orgId)) {
+        return reply.status(403).send({
+          error: { code: 'AUTH_INSUFFICIENT_PERMISSIONS', message: 'Access denied to this resource', statusCode: 403 },
         });
       }
 
@@ -94,11 +110,19 @@ export default async function uploadRoutes(fastify: FastifyInstance): Promise<vo
     '/uploads',
     { preHandler: [authenticate, requireOrganization()] },
     async (request: FastifyRequest, reply: FastifyReply) => {
+      const orgId = getOrgId(request);
       const { key } = request.query as { key: string };
 
       if (!key) {
         return reply.status(400).send({
           error: { code: 'VALIDATION_ERROR', message: 'File key is required', statusCode: 400 },
+        });
+      }
+
+      // Prevent path traversal and enforce org ownership
+      if (!validateUploadKey(key, orgId)) {
+        return reply.status(403).send({
+          error: { code: 'AUTH_INSUFFICIENT_PERMISSIONS', message: 'Access denied to this resource', statusCode: 403 },
         });
       }
 

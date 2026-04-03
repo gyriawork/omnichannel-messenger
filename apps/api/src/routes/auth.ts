@@ -295,8 +295,16 @@ export default async function authRoutes(fastify: FastifyInstance): Promise<void
         });
       }
 
-      // Generate new access token
+      // Rotate: delete old refresh token
+      await prisma.refreshToken.delete({ where: { id: storedToken.id } });
+
+      // Generate new tokens
       const accessToken = generateAccessToken(storedToken.user);
+      const newRefreshToken = generateRefreshToken();
+      await storeRefreshToken(storedToken.user.id, newRefreshToken);
+
+      // Set new refresh token cookie
+      setRefreshTokenCookie(reply, newRefreshToken);
 
       return reply.status(200).send({
         accessToken,

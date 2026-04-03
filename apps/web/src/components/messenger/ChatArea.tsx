@@ -31,8 +31,10 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { getMessengerDotColor, getAvatarColor, getInitials } from '@/lib/chat-utils';
 import { api } from '@/lib/api';
 import { useChatStore } from '@/stores/chat';
+import { useAuthStore } from '@/stores/auth';
 import {
   useMessages,
   useSendMessage,
@@ -45,16 +47,6 @@ import {
 import { useReactions } from '@/hooks/useReactions';
 import { ReactionsBubble } from './ReactionsBubble';
 import type { Chat, Message, MessengerType } from '@/types/chat';
-
-function getMessengerDotColor(messenger: MessengerType): string {
-  const map: Record<MessengerType, string> = {
-    telegram: '#0088cc',
-    slack: '#611f69',
-    whatsapp: '#25D366',
-    gmail: '#EA4335',
-  };
-  return map[messenger];
-}
 
 function getMessengerLabel(messenger: MessengerType): string {
   const map: Record<MessengerType, string> = {
@@ -85,29 +77,6 @@ function getChatTypeIcon(chatType: string) {
     default:
       return User;
   }
-}
-
-function getAvatarColor(name: string): string {
-  const colors = [
-    '#6366f1', '#8b5cf6', '#a855f7', '#d946ef',
-    '#ec4899', '#f43f5e', '#ef4444', '#f97316',
-    '#eab308', '#84cc16', '#22c55e', '#14b8a6',
-    '#06b6d4', '#3b82f6', '#2563eb',
-  ];
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) {
-    hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  return colors[Math.abs(hash) % colors.length];
-}
-
-function getInitials(name: string): string {
-  return name
-    .split(' ')
-    .map((w) => w[0])
-    .join('')
-    .toUpperCase()
-    .slice(0, 2);
 }
 
 function formatMessageTime(dateStr: string): string {
@@ -170,14 +139,28 @@ function MessageBubble({
   const { mutate: pinMessage } = usePinMessage();
   const { mutate: sendMessage, isPending: isRetrySending } = useSendMessage();
 
+  const currentUserId = useAuthStore((s) => s.user?.id);
   const {
-    reactions,
-    isLoading: isReactionsLoading,
     addReaction,
     removeReaction,
     isAddingReaction,
     isRemovingReaction,
   } = useReactions(message.chatId, message.id);
+
+  const reactionGroups = useMemo(() => {
+    if (!message.reactions?.length) return [];
+    const groups = new Map<string, { emoji: string; count: number; userReacted: boolean }>();
+    for (const r of message.reactions) {
+      const existing = groups.get(r.emoji);
+      if (existing) {
+        existing.count++;
+        if (r.userId === currentUserId) existing.userReacted = true;
+      } else {
+        groups.set(r.emoji, { emoji: r.emoji, count: 1, userReacted: r.userId === currentUserId });
+      }
+    }
+    return Array.from(groups.values());
+  }, [message.reactions, currentUserId]);
 
   const handleRetry = useCallback(() => {
     sendMessage(
@@ -459,7 +442,7 @@ function MessageBubble({
 
       {/* Emoji reactions — outside bubble */}
       <ReactionsBubble
-        reactions={reactions}
+        reactions={reactionGroups}
         onAddReaction={addReaction}
         onRemoveReaction={removeReaction}
         isLoading={isAddingReaction || isRemovingReaction}

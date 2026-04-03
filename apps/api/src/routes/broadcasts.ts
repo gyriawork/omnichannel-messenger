@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
+import { Prisma } from '@prisma/client';
 import prisma from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
 import { requireMinRole, getOrgId } from '../middleware/rbac.js';
@@ -86,9 +87,7 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
           where,
           include: {
             createdBy: { select: { id: true, name: true, email: true } },
-            chats: {
-              select: { status: true },
-            },
+            _count: { select: { chats: true } },
           },
           orderBy: { createdAt: 'desc' },
           skip: (page - 1) * limit,
@@ -97,17 +96,34 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
         prisma.broadcast.count({ where }),
       ]);
 
-      const result = broadcasts.map((b) => {
-        const chatStatuses = b.chats;
-        const totalChats = chatStatuses.length;
-        const sentCount = chatStatuses.filter((c) => c.status === 'sent').length;
-        const failedCount = chatStatuses.filter((c) =>
-          c.status === 'failed' || c.status === 'retry_exhausted',
-        ).length;
-        const pendingCount = chatStatuses.filter((c) =>
-          c.status === 'pending' || c.status === 'retrying',
-        ).length;
+      // Fetch per-broadcast status counts in a single query instead of loading all BroadcastChat rows
+      const broadcastIds = broadcasts.map((b) => b.id);
+      const statusCountRows = broadcastIds.length > 0
+        ? await prisma.$queryRaw<Array<{ broadcastId: string; status: string; count: bigint }>>(
+            Prisma.sql`
+              SELECT "broadcastId", "status", COUNT(*)::bigint as count
+              FROM "BroadcastChat"
+              WHERE "broadcastId" IN (${Prisma.join(broadcastIds)})
+              GROUP BY "broadcastId", "status"
+            `,
+          )
+        : [];
 
+      // Build a map of broadcastId -> { sent, failed, pending }
+      const statsMap = new Map<string, { sent: number; failed: number; pending: number }>();
+      for (const row of statusCountRows) {
+        if (!statsMap.has(row.broadcastId)) {
+          statsMap.set(row.broadcastId, { sent: 0, failed: 0, pending: 0 });
+        }
+        const entry = statsMap.get(row.broadcastId)!;
+        const count = Number(row.count);
+        if (row.status === 'sent') entry.sent += count;
+        if (row.status === 'failed' || row.status === 'retry_exhausted') entry.failed += count;
+        if (row.status === 'pending' || row.status === 'retrying') entry.pending += count;
+      }
+
+      const result = broadcasts.map((b) => {
+        const stats = statsMap.get(b.id) ?? { sent: 0, failed: 0, pending: 0 };
         return {
           id: b.id,
           name: b.name,
@@ -122,10 +138,10 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
           createdAt: b.createdAt,
           updatedAt: b.updatedAt,
           stats: {
-            total: totalChats,
-            sent: sentCount,
-            failed: failedCount,
-            pending: pendingCount,
+            total: b._count.chats,
+            sent: stats.sent,
+            failed: stats.failed,
+            pending: stats.pending,
           },
         };
       });
@@ -156,7 +172,7 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
       const since = new Date();
       since.setDate(since.getDate() - days);
 
-      // Get all BroadcastChats for this org within the period
+      // Common where clause for Prisma groupBy
       const broadcastChatWhere: Record<string, unknown> = {
         broadcast: {
           organizationId,
@@ -168,56 +184,92 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
         broadcastChatWhere.chat = { messenger };
       }
 
-      const broadcastChats = await prisma.broadcastChat.findMany({
-        where: broadcastChatWhere,
-        select: {
-          status: true,
-          sentAt: true,
-          chat: { select: { messenger: true } },
-        },
-      });
+      // Build conditional SQL fragment for messenger filter
+      const messengerCondition = messenger
+        ? Prisma.sql`AND c."messenger" = ${messenger}`
+        : Prisma.empty;
 
-      const totalSent = broadcastChats.filter((bc) => bc.status === 'sent').length;
-      const totalFailed = broadcastChats.filter((bc) =>
-        bc.status === 'failed' || bc.status === 'retry_exhausted',
-      ).length;
-      const totalAll = broadcastChats.length;
+      // Use database-level aggregation instead of loading all rows into memory
+      const [statusCounts, messengerStatusCounts, dailyStatusCounts] = await Promise.all([
+        // Overall status counts via Prisma groupBy
+        prisma.broadcastChat.groupBy({
+          by: ['status'],
+          where: broadcastChatWhere,
+          _count: { status: true },
+        }),
+
+        // Per-messenger status counts via raw SQL (needs join through Chat)
+        prisma.$queryRaw<Array<{ messenger: string; status: string; count: bigint }>>(
+          Prisma.sql`
+            SELECT c."messenger", bc."status", COUNT(*)::bigint as count
+            FROM "BroadcastChat" bc
+            JOIN "Chat" c ON bc."chatId" = c."id"
+            JOIN "Broadcast" b ON bc."broadcastId" = b."id"
+            WHERE b."organizationId" = ${organizationId}
+              AND b."sentAt" >= ${since}
+              ${messengerCondition}
+            GROUP BY c."messenger", bc."status"
+          `,
+        ),
+
+        // Daily counts via raw SQL (grouped by date + status)
+        prisma.$queryRaw<Array<{ date: string; status: string; count: bigint }>>(
+          Prisma.sql`
+            SELECT bc."sentAt"::date::text as date, bc."status", COUNT(*)::bigint as count
+            FROM "BroadcastChat" bc
+            JOIN "Broadcast" b ON bc."broadcastId" = b."id"
+            ${messenger ? Prisma.sql`JOIN "Chat" c ON bc."chatId" = c."id"` : Prisma.empty}
+            WHERE b."organizationId" = ${organizationId}
+              AND b."sentAt" >= ${since}
+              AND bc."sentAt" IS NOT NULL
+              ${messengerCondition}
+            GROUP BY bc."sentAt"::date, bc."status"
+            ORDER BY date
+          `,
+        ),
+      ]);
+
+      // Convert statusCounts groupBy result into totals
+      let totalAll = 0;
+      let totalSent = 0;
+      let totalFailed = 0;
+      for (const row of statusCounts) {
+        const count = row._count.status;
+        totalAll += count;
+        if (row.status === 'sent') totalSent += count;
+        if (row.status === 'failed' || row.status === 'retry_exhausted') totalFailed += count;
+      }
       const deliveryRate = totalAll > 0 ? totalSent / totalAll : 0;
 
-      // Per-messenger breakdown
-      const messengerMap = new Map<string, { sent: number; failed: number; total: number }>();
-      for (const bc of broadcastChats) {
-        const m = bc.chat.messenger;
-        const entry = messengerMap.get(m) ?? { sent: 0, failed: 0, total: 0 };
-        entry.total++;
-        if (bc.status === 'sent') entry.sent++;
-        if (bc.status === 'failed' || bc.status === 'retry_exhausted') entry.failed++;
-        messengerMap.set(m, entry);
-      }
-
+      // Convert messengerStatusCounts into perMessenger map
       const perMessenger: Record<string, { sent: number; failed: number; total: number; deliveryRate: number }> = {};
-      for (const [m, entry] of messengerMap) {
-        perMessenger[m] = {
-          ...entry,
-          deliveryRate: entry.total > 0 ? entry.sent / entry.total : 0,
-        };
+      for (const row of messengerStatusCounts) {
+        const m = row.messenger;
+        if (!perMessenger[m]) {
+          perMessenger[m] = { sent: 0, failed: 0, total: 0, deliveryRate: 0 };
+        }
+        const count = Number(row.count);
+        perMessenger[m].total += count;
+        if (row.status === 'sent') perMessenger[m].sent += count;
+        if (row.status === 'failed' || row.status === 'retry_exhausted') perMessenger[m].failed += count;
+      }
+      for (const entry of Object.values(perMessenger)) {
+        entry.deliveryRate = entry.total > 0 ? entry.sent / entry.total : 0;
       }
 
-      // Daily counts (based on sentAt)
+      // Convert dailyStatusCounts into dailyCounts array
       const dailyMap = new Map<string, { sent: number; failed: number }>();
-      for (const bc of broadcastChats) {
-        const dateStr = bc.sentAt
-          ? bc.sentAt.toISOString().slice(0, 10)
-          : null;
-        if (!dateStr) continue;
-        const entry = dailyMap.get(dateStr) ?? { sent: 0, failed: 0 };
-        if (bc.status === 'sent') entry.sent++;
-        if (bc.status === 'failed' || bc.status === 'retry_exhausted') entry.failed++;
-        dailyMap.set(dateStr, entry);
+      for (const row of dailyStatusCounts) {
+        const dateStr = row.date;
+        if (!dailyMap.has(dateStr)) {
+          dailyMap.set(dateStr, { sent: 0, failed: 0 });
+        }
+        const entry = dailyMap.get(dateStr)!;
+        const count = Number(row.count);
+        if (row.status === 'sent') entry.sent += count;
+        if (row.status === 'failed' || row.status === 'retry_exhausted') entry.failed += count;
       }
-
       const dailyCounts = Array.from(dailyMap.entries())
-        .sort(([a], [b]) => a.localeCompare(b))
         .map(([date, counts]) => ({ date, ...counts }));
 
       return reply.send({
@@ -564,27 +616,26 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
         return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
       }
 
-      const broadcast = await prisma.broadcast.findFirst({
-        where: { id, organizationId },
-        include: { chats: { select: { id: true } } },
-      });
-      if (!broadcast) {
-        return sendError(reply, 'RESOURCE_NOT_FOUND', `Broadcast with id ${id} not found`, 404);
-      }
-
-      if (broadcast.status !== 'draft' && broadcast.status !== 'scheduled') {
-        return sendError(reply, 'VALIDATION_ERROR', `Cannot send a broadcast with status "${broadcast.status}"`, 422);
-      }
-
-      if (broadcast.chats.length === 0) {
-        return sendError(reply, 'VALIDATION_ERROR', 'Broadcast has no recipient chats', 422);
-      }
-
-      // Update status to sending
-      await prisma.broadcast.update({
-        where: { id },
+      // Atomic status transition to prevent race conditions
+      const updated = await prisma.broadcast.updateMany({
+        where: { id, organizationId, status: { in: ['draft', 'scheduled'] } },
         data: { status: 'sending', sentAt: new Date() },
       });
+      if (updated.count === 0) {
+        const broadcast = await prisma.broadcast.findUnique({ where: { id } });
+        if (!broadcast || broadcast.organizationId !== organizationId) {
+          return sendError(reply, 'RESOURCE_NOT_FOUND', `Broadcast with id ${id} not found`, 404);
+        }
+        return reply.status(409).send({ error: { code: 'BROADCAST_ALREADY_SENT', message: `Broadcast is already ${broadcast.status}`, statusCode: 409 } });
+      }
+
+      // Verify broadcast has recipient chats
+      const chatCount = await prisma.broadcastChat.count({ where: { broadcastId: id } });
+      if (chatCount === 0) {
+        // Roll back status
+        await prisma.broadcast.update({ where: { id }, data: { status: 'draft', sentAt: null } });
+        return sendError(reply, 'VALIDATION_ERROR', 'Broadcast has no recipient chats', 422);
+      }
 
       // Remove scheduled job if exists (in case of early manual send)
       const scheduledJob = await broadcastQueue.getJob(`broadcast-${id}`);
@@ -629,24 +680,21 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
         return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
       }
 
-      const broadcast = await prisma.broadcast.findFirst({
-        where: { id, organizationId },
-        include: {
-          chats: {
-            where: { status: { in: ['failed', 'retry_exhausted'] } },
-          },
-        },
+      // Atomic status transition to prevent race conditions
+      const retryUpdated = await prisma.broadcast.updateMany({
+        where: { id, organizationId, status: { in: ['partially_failed', 'failed', 'sent'] } },
+        data: { status: 'sending' },
       });
-      if (!broadcast) {
-        return sendError(reply, 'RESOURCE_NOT_FOUND', `Broadcast with id ${id} not found`, 404);
+      if (retryUpdated.count === 0) {
+        const broadcast = await prisma.broadcast.findUnique({ where: { id } });
+        if (!broadcast || broadcast.organizationId !== organizationId) {
+          return sendError(reply, 'RESOURCE_NOT_FOUND', `Broadcast with id ${id} not found`, 404);
+        }
+        return reply.status(409).send({ error: { code: 'BROADCAST_ALREADY_SENT', message: `Broadcast is already ${broadcast.status}`, statusCode: 409 } });
       }
 
-      if (broadcast.chats.length === 0) {
-        return sendError(reply, 'VALIDATION_ERROR', 'No failed chats to retry', 422);
-      }
-
-      // Reset failed chats to pending
-      await prisma.broadcastChat.updateMany({
+      // Reset failed chats to retrying
+      const resetResult = await prisma.broadcastChat.updateMany({
         where: {
           broadcastId: id,
           status: { in: ['failed', 'retry_exhausted'] },
@@ -654,11 +702,11 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
         data: { status: 'retrying', errorReason: null },
       });
 
-      // Update broadcast status
-      await prisma.broadcast.update({
-        where: { id },
-        data: { status: 'sending' },
-      });
+      if (resetResult.count === 0) {
+        // Roll back broadcast status — no failed chats to retry
+        await prisma.broadcast.update({ where: { id }, data: { status: 'partially_failed' } });
+        return sendError(reply, 'VALIDATION_ERROR', 'No failed chats to retry', 422);
+      }
 
       // Enqueue retry job
       await broadcastQueue.add(

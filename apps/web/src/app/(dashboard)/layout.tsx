@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Sidebar } from '@/components/layout/Sidebar';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { useAuthStore } from '@/stores/auth';
 import { useSocket } from '@/hooks/useSocket';
 
@@ -50,7 +51,9 @@ export default function DashboardLayout({
   return (
     <div className="flex h-screen bg-[#f8fafc]">
       <Sidebar />
-      <main className="flex-1 overflow-auto">{children}</main>
+      <main className="flex-1 overflow-auto">
+        <ErrorBoundary>{children}</ErrorBoundary>
+      </main>
     </div>
   );
 }

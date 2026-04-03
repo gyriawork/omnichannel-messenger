@@ -6,16 +6,10 @@ const AUTH_TAG_LENGTH = 16;
 
 function getKey(): Buffer {
   const key = process.env.CREDENTIALS_ENCRYPTION_KEY;
-  if (!key) {
-    throw new Error('CREDENTIALS_ENCRYPTION_KEY is not set in environment variables');
+  if (!key || !/^[0-9a-fA-F]{64,}$/.test(key)) {
+    throw new Error('CREDENTIALS_ENCRYPTION_KEY must be a 64+ character hex string (256 bits)');
   }
-  // Key must be 32 bytes (256 bits) for AES-256
-  // Accept hex-encoded (64 chars) or raw string (will be hashed)
-  if (key.length === 64 && /^[0-9a-f]+$/i.test(key)) {
-    return Buffer.from(key, 'hex');
-  }
-  // If not hex, hash it to get 32 bytes
-  return createHash('sha256').update(key).digest();
+  return Buffer.from(key.slice(0, 64), 'hex');
 }
 
 /**

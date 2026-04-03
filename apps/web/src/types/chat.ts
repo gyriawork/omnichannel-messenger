@@ -42,6 +42,11 @@ export interface Message {
     senderName: string;
     text: string;
   };
+  reactions?: Array<{
+    id: string;
+    emoji: string;
+    userId: string;
+  }>;
   isPinned: boolean;
   deliveryStatus?: string;
   attachments?: Array<{

@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, useRef, useEffect } from 'react';
+import React, { useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import {
   Search,
   Pin,
@@ -10,6 +10,7 @@ import {
   Star,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { getMessengerDotColor, getAvatarColor, getInitials } from '@/lib/chat-utils';
 import { useChatStore } from '@/stores/chat';
 import { useChats, useChatPreferences } from '@/hooks/useChats';
 import type { Chat, MessengerType } from '@/types/chat';
@@ -17,46 +18,12 @@ import type { Chat, MessengerType } from '@/types/chat';
 const MESSENGER_FILTERS: Array<{
   key: MessengerType;
   label: string;
-  dotColor: string;
 }> = [
-  { key: 'telegram', label: 'Telegram', dotColor: '#0088cc' },
-  { key: 'slack', label: 'Slack', dotColor: '#611f69' },
-  { key: 'whatsapp', label: 'WhatsApp', dotColor: '#25D366' },
-  { key: 'gmail', label: 'Gmail', dotColor: '#EA4335' },
+  { key: 'telegram', label: 'Telegram' },
+  { key: 'slack', label: 'Slack' },
+  { key: 'whatsapp', label: 'WhatsApp' },
+  { key: 'gmail', label: 'Gmail' },
 ];
-
-function getMessengerDotColor(messenger: MessengerType): string {
-  const map: Record<MessengerType, string> = {
-    telegram: '#0088cc',
-    slack: '#611f69',
-    whatsapp: '#25D366',
-    gmail: '#EA4335',
-  };
-  return map[messenger];
-}
-
-function getAvatarColor(name: string): string {
-  const colors = [
-    '#6366f1', '#8b5cf6', '#a855f7', '#d946ef',
-    '#ec4899', '#f43f5e', '#ef4444', '#f97316',
-    '#eab308', '#84cc16', '#22c55e', '#14b8a6',
-    '#06b6d4', '#3b82f6', '#2563eb',
-  ];
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) {
-    hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  return colors[Math.abs(hash) % colors.length];
-}
-
-function getInitials(name: string): string {
-  return name
-    .split(' ')
-    .map((w) => w[0])
-    .join('')
-    .toUpperCase()
-    .slice(0, 2);
-}
 
 function formatTime(dateStr?: string): string {
   if (!dateStr) return '';
@@ -75,7 +42,7 @@ function formatTime(dateStr?: string): string {
   return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
 }
 
-function ChatItem({ chat, isActive }: { chat: Chat; isActive: boolean }) {
+const ChatItem = React.memo(function ChatItem({ chat, isActive }: { chat: Chat; isActive: boolean }) {
   const setActiveChat = useChatStore((s) => s.setActiveChat);
   const isUnread = chat.preferences?.unread;
   const isPinned = chat.preferences?.pinned;
@@ -227,7 +194,7 @@ function ChatItem({ chat, isActive }: { chat: Chat; isActive: boolean }) {
     )}
     </>
   );
-}
+});
 
 export function ChatList() {
   const [sortBy, setSortBy] = useState<'lastActivityAt' | 'lastMessageDate' | 'name' | 'messageCount'>('lastActivityAt');
@@ -238,6 +205,14 @@ export function ChatList() {
     messengerFilter,
     setMessengerFilter,
   } = useChatStore();
+
+  const [localSearch, setLocalSearch] = useState(searchQuery);
+  const debounceRef = useRef<NodeJS.Timeout>();
+  const handleSearchChange = useCallback((value: string) => {
+    setLocalSearch(value);
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => setSearchQuery(value), 300);
+  }, [setSearchQuery]);
 
   const { data, isLoading } = useChats({
     search: searchQuery || undefined,
@@ -282,8 +257,8 @@ export function ChatList() {
             <input
               type="text"
               placeholder="Search chats..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              value={localSearch}
+              onChange={(e) => handleSearchChange(e.target.value)}
               className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-3 text-sm text-slate-700 placeholder-slate-400 outline-none transition-shadow focus:border-accent focus:bg-white focus:shadow-focus-ring"
             />
           </div>

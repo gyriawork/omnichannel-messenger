@@ -233,6 +233,14 @@ export function createWebSocketServer(httpServer: HttpServer): Server {
           typingThrottle.delete(key);
         }
       }
+
+      // Clean up markReadPending timers for this user
+      for (const [key, timer] of markReadPending) {
+        if (key.startsWith(`${user.id}:`)) {
+          clearTimeout(timer);
+          markReadPending.delete(key);
+        }
+      }
     });
   });
 

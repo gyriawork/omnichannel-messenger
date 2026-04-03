@@ -12,7 +12,14 @@ function verifyTelegramSecret(request: FastifyRequest): boolean {
     if (process.env.NODE_ENV === 'production') return false; // require in production
     return true; // skip check in dev
   }
-  return secret === expected;
+  if (typeof secret !== 'string') return false;
+  // Use timing-safe comparison to prevent timing attacks
+  if (secret.length !== expected.length) return false;
+  try {
+    return timingSafeEqual(Buffer.from(secret, 'utf8'), Buffer.from(expected, 'utf8'));
+  } catch {
+    return false;
+  }
 }
 
 function verifySlackRequest(request: FastifyRequest): boolean {
@@ -31,8 +38,9 @@ function verifySlackRequest(request: FastifyRequest): boolean {
   const fiveMinutesAgo = Math.floor(Date.now() / 1000) - 300;
   if (parseInt(timestamp, 10) < fiveMinutesAgo) return false;
 
-  // Reconstruct the raw body for verification
-  const rawBody = JSON.stringify(request.body);
+  // Use the actual raw body stored by the content type parser for accurate verification
+  const rawBody = (request as unknown as Record<string, unknown>).rawBody as string | undefined;
+  if (!rawBody) return false;
   const sigBasestring = `v0:${timestamp}:${rawBody}`;
   const hmac = createHmac('sha256', signingSecret).update(sigBasestring).digest('hex');
   const computedSignature = `v0=${hmac}`;
@@ -111,13 +119,14 @@ export default async function webhookRoutes(fastify: FastifyInstance): Promise<v
     async (request: FastifyRequest, reply: FastifyReply) => {
       const body = request.body as Record<string, unknown>;
 
-      // Handle Slack URL verification challenge (must respond before signature check)
-      if (body.type === 'url_verification') {
-        return reply.send({ challenge: body.challenge });
-      }
-
+      // Always verify Slack signature first — even for url_verification challenges
       if (!verifySlackRequest(request)) {
         return reply.status(403).send({ error: 'Invalid Slack signature' });
+      }
+
+      // Handle Slack URL verification challenge (after signature is verified)
+      if (body.type === 'url_verification') {
+        return reply.send({ challenge: body.challenge });
       }
 
       if (body.type !== 'event_callback') {
@@ -165,14 +174,7 @@ export default async function webhookRoutes(fastify: FastifyInstance): Promise<v
     async (request: FastifyRequest, reply: FastifyReply) => {
       const body = request.body as Record<string, unknown>;
 
-      // WhatsApp Business API verification
-      if (request.method === 'GET') {
-        const query = request.query as Record<string, string>;
-        if (query['hub.verify_token'] === process.env.WHATSAPP_VERIFY_TOKEN) {
-          return reply.send(query['hub.challenge']);
-        }
-        return reply.status(403).send({ error: 'Invalid verify token' });
-      }
+      // Note: GET-based verification is handled by the separate GET route below
 
       const entry = (body.entry as Array<Record<string, unknown>>)?.[0];
       const changes = (entry?.changes as Array<Record<string, unknown>>)?.[0];
@@ -245,7 +247,12 @@ export default async function webhookRoutes(fastify: FastifyInstance): Promise<v
     '/webhooks/whatsapp',
     async (request: FastifyRequest, reply: FastifyReply) => {
       const query = request.query as Record<string, string>;
-      if (query['hub.verify_token'] === (process.env.WHATSAPP_VERIFY_TOKEN || 'omnichannel-verify')) {
+      const whatsappVerifyToken = process.env.WHATSAPP_VERIFY_TOKEN;
+      if (!whatsappVerifyToken) {
+        fastify.log.error('WHATSAPP_VERIFY_TOKEN environment variable is not set');
+        return reply.status(500).send({ error: 'Server misconfiguration' });
+      }
+      if (query['hub.verify_token'] === whatsappVerifyToken) {
         return reply.send(query['hub.challenge'] || 'OK');
       }
       return reply.status(403).send({ error: 'Invalid verify token' });

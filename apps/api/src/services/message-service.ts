@@ -19,48 +19,64 @@ export interface SaveIncomingMessageParams {
 }
 
 export async function saveIncomingMessage(params: SaveIncomingMessageParams) {
-  // Find chat and check deduplication in parallel
-  const [chat, existingMessage] = await Promise.all([
-    prisma.chat.findFirst({
-      where: {
-        externalChatId: params.externalChatId,
-        messenger: params.messenger,
-        organizationId: params.organizationId,
-      },
-    }),
-    params.externalMessageId
-      ? prisma.message.findFirst({
-          where: { externalMessageId: params.externalMessageId },
-          select: { id: true },
-        })
-      : Promise.resolve(null),
-  ]);
+  // Find the chat this message belongs to
+  const chat = await prisma.chat.findFirst({
+    where: {
+      externalChatId: params.externalChatId,
+      messenger: params.messenger,
+      organizationId: params.organizationId,
+    },
+  });
 
   if (!chat) return null;
-  if (existingMessage) return null;
 
-  // Create message and update chat in a single transaction
-  const [message] = await prisma.$transaction([
-    prisma.message.create({
-      data: {
-        chatId: chat.id,
-        senderName: params.senderName,
-        senderExternalId: params.senderExternalId,
-        isSelf: params.isSelf ?? false,
-        text: params.text || '',
-        externalMessageId: params.externalMessageId,
-        attachmentsLegacy: params.attachments ? JSON.parse(JSON.stringify(params.attachments)) : undefined,
-        ...(params.createdAt ? { createdAt: params.createdAt } : {}),
-      },
-    }),
-    prisma.chat.update({
-      where: { id: chat.id },
-      data: {
-        lastActivityAt: new Date(),
-        messageCount: { increment: 1 },
-      },
-    }),
-  ]);
+  const messageData = {
+    chatId: chat.id,
+    senderName: params.senderName,
+    senderExternalId: params.senderExternalId,
+    isSelf: params.isSelf ?? false,
+    text: params.text || '',
+    externalMessageId: params.externalMessageId,
+    attachmentsLegacy: params.attachments ? JSON.parse(JSON.stringify(params.attachments)) : undefined,
+    ...(params.createdAt ? { createdAt: params.createdAt } : {}),
+  };
+
+  let message;
+
+  if (params.externalMessageId) {
+    // Use create-and-catch-unique-violation to avoid TOCTOU race condition.
+    // The @@unique([chatId, externalMessageId]) constraint guarantees dedup.
+    try {
+      [message] = await prisma.$transaction([
+        prisma.message.create({ data: messageData }),
+        prisma.chat.update({
+          where: { id: chat.id },
+          data: {
+            lastActivityAt: new Date(),
+            messageCount: { increment: 1 },
+          },
+        }),
+      ]);
+    } catch (error: unknown) {
+      if ((error as { code?: string }).code === 'P2002') {
+        // Duplicate external message — already saved, skip silently
+        return null;
+      }
+      throw error;
+    }
+  } else {
+    // No externalMessageId — no dedup needed, just create
+    [message] = await prisma.$transaction([
+      prisma.message.create({ data: messageData }),
+      prisma.chat.update({
+        where: { id: chat.id },
+        data: {
+          lastActivityAt: new Date(),
+          messageCount: { increment: 1 },
+        },
+      }),
+    ]);
+  }
 
   // Emit real-time event via WebSocket
   try {

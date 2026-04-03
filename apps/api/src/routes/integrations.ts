@@ -221,6 +221,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
       try {
         await adapter.connect();
       } catch (err) {
+        try { await adapter.disconnect(); } catch (e) { request.log.warn(e, 'adapter disconnect error'); }
         const message =
           err instanceof MessengerError
             ? err.message
@@ -233,29 +234,37 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
 
       let integration;
 
-      if (existing) {
-        // Update existing integration
-        integration = await prisma.integration.update({
-          where: { id: existing.id },
-          data: {
-            credentials: encryptedCredentials,
-            status: 'connected',
-            connectedAt: new Date(),
-          },
-        });
-      } else {
-        // Create new integration
-        integration = await prisma.integration.create({
-          data: {
-            messenger,
-            status: 'connected',
-            credentials: encryptedCredentials,
-            organizationId,
-            userId: request.user.id,
-            connectedAt: new Date(),
-          },
-        });
+      try {
+        if (existing) {
+          // Update existing integration
+          integration = await prisma.integration.update({
+            where: { id: existing.id },
+            data: {
+              credentials: encryptedCredentials,
+              status: 'connected',
+              connectedAt: new Date(),
+            },
+          });
+        } else {
+          // Create new integration
+          integration = await prisma.integration.create({
+            data: {
+              messenger,
+              status: 'connected',
+              credentials: encryptedCredentials,
+              organizationId,
+              userId: request.user.id,
+              connectedAt: new Date(),
+            },
+          });
+        }
+      } catch (err) {
+        try { await adapter.disconnect(); } catch (e) { request.log.warn(e, 'adapter disconnect error'); }
+        throw err;
       }
+
+      // Adapter verification is done; disconnect it (persistent listeners use their own connections)
+      try { await adapter.disconnect(); } catch (e) { request.log.warn(e, 'adapter disconnect error'); }
 
       // Start persistent listener for Telegram
       if (messenger === 'telegram') {
@@ -375,6 +384,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
       try {
         await adapter.connect();
       } catch (err) {
+        try { await adapter.disconnect(); } catch (e) { request.log.warn(e, 'adapter disconnect error'); }
         const status = adapter.getStatus();
 
         // Update status to reflect the failure reason
@@ -390,13 +400,22 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
         return sendError(reply, 'MESSENGER_API_ERROR', message, 502);
       }
 
-      const updated = await prisma.integration.update({
-        where: { id: integration.id },
-        data: {
-          status: 'connected',
-          connectedAt: new Date(),
-        },
-      });
+      let updated;
+      try {
+        updated = await prisma.integration.update({
+          where: { id: integration.id },
+          data: {
+            status: 'connected',
+            connectedAt: new Date(),
+          },
+        });
+      } catch (err) {
+        try { await adapter.disconnect(); } catch (e) { request.log.warn(e, 'adapter disconnect error'); }
+        throw err;
+      }
+
+      // Adapter verification is done; disconnect it (persistent listeners use their own connections)
+      try { await adapter.disconnect(); } catch (e) { request.log.warn(e, 'adapter disconnect error'); }
 
       // Start persistent listener for Telegram
       if (messenger === 'telegram') {
@@ -889,22 +908,23 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
 
         // Create adapter and connect
         const adapter = await createAdapter('whatsapp', decrypted);
-        await adapter.connect(decrypted);
+        try {
+          await adapter.connect(decrypted);
 
-        // List available chats
-        const chats = await adapter.listChats();
-        console.log(`[WhatsApp] Listed ${chats.length} chats for user ${userId}`);
+          // List available chats
+          const chats = await adapter.listChats();
+          console.log(`[WhatsApp] Listed ${chats.length} chats for user ${userId}`);
 
-        // Emit chats via WebSocket
-        const io = getIO();
-        io.to(`user:${userId}`).emit('whatsapp:chats-available', { chats });
+          // Emit chats via WebSocket
+          const io = getIO();
+          io.to(`user:${userId}`).emit('whatsapp:chats-available', { chats });
 
-        // Disconnect adapter
-        await adapter.disconnect();
-
-        return reply.send({
-          message: `Found ${chats.length} available chats. Check WebSocket for whatsapp:chats-available event.`,
-        });
+          return reply.send({
+            message: `Found ${chats.length} available chats. Check WebSocket for whatsapp:chats-available event.`,
+          });
+        } finally {
+          try { await adapter.disconnect(); } catch (e) { fastify.log.warn(e, 'adapter disconnect error'); }
+        }
       } catch (err) {
         console.error(`[WhatsApp] Failed to list chats for user ${userId}:`, err);
         return sendError(

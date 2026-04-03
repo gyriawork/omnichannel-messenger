@@ -103,7 +103,7 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
         return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
       }
 
-      const where: Record<string, unknown> = { organizationId };
+      const where: Record<string, unknown> = { organizationId, deletedAt: null };
 
       if (messenger) where.messenger = messenger;
       if (status) where.status = status;
@@ -208,9 +208,10 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
 
       if (integration) {
         // Try to list chats via the adapter
+        let adapter: Awaited<ReturnType<typeof createAdapter>> | null = null;
         try {
           const credentials = decryptCredentials(integration.credentials as string);
-          const adapter = await createAdapter(messenger, credentials);
+          adapter = await createAdapter(messenger, credentials);
           await adapter.connect();
           const rawChats = await adapter.listChats();
           const chats = rawChats.map((c: Record<string, unknown>) => ({
@@ -226,6 +227,10 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
             { messenger, error: err instanceof MessengerError ? err.message : String(err) },
             'Adapter listChats failed, falling back to mock data',
           );
+        } finally {
+          if (adapter) {
+            try { await adapter.disconnect(); } catch (e) { fastify.log.warn(e, 'adapter disconnect error'); }
+          }
         }
       }
 
@@ -273,7 +278,7 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
       }
 
       const chat = await prisma.chat.findFirst({
-        where: { id, organizationId },
+        where: { id, organizationId, deletedAt: null },
         include: {
           tags: {
             include: { tag: true },
@@ -468,9 +473,8 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
         return sendError(reply, 'RESOURCE_NOT_FOUND', `Chat with id ${id} not found`, 404);
       }
 
-      // Cascade deletes are handled by Prisma schema (onDelete: Cascade) for:
-      // messages, tags (ChatTag), preferences, participants, broadcastChats
-      await prisma.chat.delete({ where: { id } });
+      // Soft delete: set deletedAt instead of hard deleting
+      await prisma.chat.update({ where: { id }, data: { deletedAt: new Date() } });
 
       return reply.status(204).send();
     },

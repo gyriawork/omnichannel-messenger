@@ -144,10 +144,10 @@ export function requireOrganization() {
  * Helper to get the current user's organization ID for Prisma queries.
  * Superadmin can optionally specify organizationId via query param.
  */
-export function getOrgId(request: FastifyRequest): string {
+export function getOrgId(request: FastifyRequest): string | null {
   if (request.user.role === 'superadmin') {
     const query = request.query as Record<string, string>;
-    return query.organizationId ?? request.user.organizationId ?? '';
+    return query.organizationId ?? request.user.organizationId ?? null;
   }
-  return request.user.organizationId ?? '';
+  return request.user.organizationId ?? null;
 }

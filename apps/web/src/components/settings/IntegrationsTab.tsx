@@ -20,6 +20,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { getAccessToken } from '@/lib/api';
 import {
   useIntegrations,
   useConnectIntegration,
@@ -423,15 +424,9 @@ function SlackConnectForm({
 
   const oauthConfigured = oauthStatus?.oauthConfigured ?? false;
 
-  const handleOAuthConnect = () => {
-    // Redirect to the API OAuth endpoint. The backend requires auth,
-    // so we pass the access token as a query parameter for this redirect.
-    const token = localStorage.getItem('accessToken');
+  const handleOAuthConnect = async () => {
+    const token = await getAccessToken();
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || (process.env.NODE_ENV === 'production' ? 'https://api-production-3c91.up.railway.app' : 'http://localhost:3001');
-    // The authorize endpoint needs the JWT in the Authorization header.
-    // Since this is a redirect, we set the token as a cookie-based workaround
-    // or use a pre-auth endpoint. For simplicity, we open a URL that includes
-    // the token as a query parameter, and the backend will accept it.
     window.location.href = `${apiUrl}/api/oauth/slack/authorize?token=${encodeURIComponent(token ?? '')}`;
   };
 
@@ -635,8 +630,8 @@ function GmailConnectForm({}: {
 
   const oauthAvailable = oauthData?.available ?? false;
 
-  const handleOAuthConnect = () => {
-    const token = localStorage.getItem('accessToken');
+  const handleOAuthConnect = async () => {
+    const token = await getAccessToken();
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || (process.env.NODE_ENV === 'production' ? 'https://api-production-3c91.up.railway.app' : 'http://localhost:3001');
     window.location.href = `${apiUrl}/api/oauth/gmail/authorize?token=${encodeURIComponent(token ?? '')}`;
   };

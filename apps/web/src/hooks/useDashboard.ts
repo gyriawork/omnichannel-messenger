@@ -7,12 +7,12 @@ import type { BroadcastAnalytics } from '@/types/broadcast';
 import type { ActivityEntry } from '@/types/activity';
 
 interface ChatsResponse {
-  chats: unknown[];
+  chats: Array<{ id: string; messenger?: string; name: string }>;
   total: number;
 }
 
 interface BroadcastsResponse {
-  broadcasts: unknown[];
+  broadcasts: Array<{ id: string; status: string; name: string }>;
   total: number;
 }
 
@@ -50,7 +50,7 @@ export function useDashboardStats() {
 
       const messengerChatCounts = { telegram: 0, slack: 0, whatsapp: 0, gmail: 0 };
       if (chatsData.status === 'fulfilled' && Array.isArray(chats.chats)) {
-        for (const chat of chats.chats as Array<{ messenger?: string }>) {
+        for (const chat of chats.chats) {
           const m = chat.messenger as keyof typeof messengerChatCounts;
           if (m && m in messengerChatCounts) {
             messengerChatCounts[m]++;

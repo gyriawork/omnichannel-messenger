@@ -10,7 +10,7 @@ export interface Broadcast {
   id: string;
   name: string;
   messageText: string;
-  attachments?: unknown[];
+  attachments?: BroadcastAttachment[];
   status: BroadcastStatus;
   scheduledAt?: string;
   sentAt?: string;

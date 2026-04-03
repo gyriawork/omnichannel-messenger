@@ -151,12 +151,34 @@ export const api = {
     const headers: Record<string, string> = {};
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
-    const response = await fetch(`${BASE_URL}${endpoint}`, {
+    let response = await fetch(`${BASE_URL}${endpoint}`, {
       method: 'POST',
       headers,
       credentials: 'include',
       body: formData,
     });
+
+    // Retry on 401 with refreshed token
+    if (response.status === 401 && token) {
+      if (!refreshPromise) {
+        refreshPromise = refreshAccessToken().finally(() => { refreshPromise = null; });
+      }
+      const newToken = await refreshPromise;
+      if (newToken) {
+        const retryFormData = new FormData();
+        retryFormData.append('file', file);
+        response = await fetch(`${BASE_URL}${endpoint}`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${newToken}` },
+          credentials: 'include',
+          body: retryFormData,
+        });
+      } else {
+        clearTokens();
+        if (typeof window !== 'undefined') window.location.href = '/login';
+        throw new ApiError(401, 'AUTH_TOKEN_EXPIRED', 'Session expired');
+      }
+    }
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({
@@ -172,4 +194,4 @@ export const api = {
   },
 };
 
-export { ApiError, setAccessToken, clearTokens };
+export { ApiError, getAccessToken, setAccessToken, clearTokens };
