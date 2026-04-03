@@ -11,7 +11,15 @@ export interface Chat {
   ownerId?: string;
   ownerName?: string;
   messageCount: number;
+  createdAt?: string;
   lastActivityAt?: string;
+  externalChatId?: string;
+  importedByName?: string;
+  participants?: Array<{
+    id: string;
+    name: string;
+    role?: string;
+  }>;
   lastMessage?: {
     text: string;
     senderName: string;

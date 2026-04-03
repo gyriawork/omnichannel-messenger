@@ -16,8 +16,10 @@ import {
   Plus,
   Check,
 } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { api } from '@/lib/api';
 import { useChatStore } from '@/stores/chat';
 import {
   useChatPreferences,
@@ -124,6 +126,22 @@ export function ChatInfo() {
   const [isEditingOwner, setIsEditingOwner] = useState(false);
   const [ownerInput, setOwnerInput] = useState('');
   const [showAddTag, setShowAddTag] = useState(false);
+
+  const { data: pinnedData } = useQuery({
+    queryKey: ['pinned-messages', activeChat?.id],
+    queryFn: () =>
+      api.get<{
+        messages: Array<{
+          id: string;
+          text: string;
+          senderName: string;
+          createdAt: string;
+        }>;
+      }>(`/api/chats/${activeChat!.id}/messages?pinned=true`),
+    enabled: !!activeChat?.id,
+  });
+
+  const pinnedMessages = pinnedData?.messages ?? [];
 
   if (!activeChat || !infoPanelOpen) return null;
 
@@ -327,6 +345,42 @@ export function ChatInfo() {
           </button>
         </div>
 
+        {/* Metadata */}
+        <div className="border-b border-slate-100 p-4">
+          <SectionTitle>Details</SectionTitle>
+          <div className="space-y-2 text-xs">
+            {chat.createdAt && (
+              <div className="flex justify-between">
+                <span className="text-slate-500">Created</span>
+                <span className="text-slate-700">
+                  {new Date(chat.createdAt).toLocaleDateString()}
+                </span>
+              </div>
+            )}
+            <div className="flex justify-between">
+              <span className="text-slate-500">Messages</span>
+              <span className="text-slate-700">{chat.messageCount ?? 0}</span>
+            </div>
+            {chat.importedByName && (
+              <div className="flex justify-between">
+                <span className="text-slate-500">Imported by</span>
+                <span className="text-slate-700">{chat.importedByName}</span>
+              </div>
+            )}
+            {chat.externalChatId && (
+              <div className="flex justify-between">
+                <span className="text-slate-500">External ID</span>
+                <span
+                  className="truncate max-w-[160px] font-mono text-slate-500"
+                  title={chat.externalChatId}
+                >
+                  {chat.externalChatId}
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+
         {/* Quick actions */}
         <div className="border-b border-slate-100 p-4">
           <SectionTitle>Quick Actions</SectionTitle>
@@ -377,6 +431,37 @@ export function ChatInfo() {
               {prefs?.pinned ? 'Unpin' : 'Pin'}
             </button>
           </div>
+        </div>
+
+        {/* Participants */}
+        <div className="border-b border-slate-100 p-4">
+          <SectionTitle>Participants</SectionTitle>
+          {chat.participants && chat.participants.length > 0 ? (
+            <div className="space-y-2">
+              {chat.participants.map((p) => (
+                <div key={p.id} className="flex items-center gap-2">
+                  <div
+                    className="flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-semibold text-white"
+                    style={{ backgroundColor: getAvatarColor(p.name) }}
+                  >
+                    {getInitials(p.name)}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-xs font-medium text-slate-700">
+                      {p.name}
+                    </p>
+                    {p.role && (
+                      <p className="text-[10px] text-slate-400">{p.role}</p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-slate-400">
+              No participant data available
+            </p>
+          )}
         </div>
 
         {/* Tags (editable) */}
@@ -449,13 +534,31 @@ export function ChatInfo() {
 
         {/* Pinned messages */}
         <div className="border-b border-slate-100 p-4">
-          <SectionTitle>Pinned Messages</SectionTitle>
-          <div className="flex items-center gap-2 rounded-lg bg-slate-50 p-3">
-            <Pin className="h-4 w-4 flex-shrink-0 text-slate-400" />
-            <p className="text-xs text-slate-500">
-              No pinned messages in this chat
-            </p>
-          </div>
+          <SectionTitle>
+            Pinned Messages ({pinnedMessages.length})
+          </SectionTitle>
+          {pinnedMessages.length > 0 ? (
+            <div className="space-y-2">
+              {pinnedMessages.slice(0, 5).map((msg) => (
+                <div key={msg.id} className="rounded-lg bg-slate-50 p-2.5">
+                  <p className="text-xs font-medium text-accent">
+                    {msg.senderName}
+                  </p>
+                  <p className="mt-0.5 line-clamp-2 text-xs text-slate-600">
+                    {msg.text}
+                  </p>
+                  <p className="mt-1 text-[10px] text-slate-400">
+                    {new Date(msg.createdAt).toLocaleDateString()}
+                  </p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 rounded-lg bg-slate-50 p-3">
+              <Pin className="h-4 w-4 flex-shrink-0 text-slate-400" />
+              <p className="text-xs text-slate-500">No pinned messages</p>
+            </div>
+          )}
         </div>
 
         {/* Shared files */}
