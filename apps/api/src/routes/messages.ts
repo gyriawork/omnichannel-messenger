@@ -265,8 +265,10 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
           deliveryStatus = 'delivered';
         }
       } catch (err) {
-        console.error(`Failed to send message to ${chat.messenger}:`, err);
+        const errMsg = err instanceof Error ? err.message : String(err);
+        console.error(`Failed to send message to ${chat.messenger}:`, errMsg, err);
         deliveryStatus = 'failed';
+        (message as Record<string, unknown>).deliveryError = errMsg;
       }
 
       // Update message with delivery result
