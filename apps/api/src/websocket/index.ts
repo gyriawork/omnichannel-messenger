@@ -1,5 +1,6 @@
 import type { Server as HttpServer } from 'node:http';
 import { Server } from 'socket.io';
+import IORedis from 'ioredis';
 import jwt from 'jsonwebtoken';
 import prisma from '../lib/prisma.js';
 
@@ -132,6 +133,15 @@ export function createWebSocketServer(httpServer: HttpServer): Server {
     // Join a personal room for user-specific events (e.g., WhatsApp QR pairing)
     socket.join(`user:${user.id}`);
 
+    // Broadcast online status to org
+    if (user.organizationId) {
+      socket.to(`org:${user.organizationId}`).emit('presence', {
+        userId: user.id,
+        userName: user.name,
+        status: 'online',
+      });
+    }
+
     // ── join_chat ──
 
     socket.on('join_chat', async (data: { chatId: string }) => {
@@ -227,6 +237,15 @@ export function createWebSocketServer(httpServer: HttpServer): Server {
     // ── disconnect ──
 
     socket.on('disconnect', () => {
+      // Broadcast offline status
+      if (user.organizationId) {
+        socket.to(`org:${user.organizationId}`).emit('presence', {
+          userId: user.id,
+          userName: user.name,
+          status: 'offline',
+        });
+      }
+
       // Clean up typing throttle entries for this user
       for (const [key] of typingThrottle) {
         if (key.startsWith(`${user.id}:`)) {
@@ -242,6 +261,27 @@ export function createWebSocketServer(httpServer: HttpServer): Server {
         }
       }
     });
+  });
+
+  // ── Redis subscriber for worker events ──
+
+  const redisSub = new IORedis(process.env.REDIS_URL ?? 'redis://localhost:6379');
+
+  redisSub.subscribe('ws:events').catch((err) => {
+    console.error('Failed to subscribe to ws:events', err);
+  });
+
+  redisSub.on('message', (_channel: string, message: string) => {
+    try {
+      const parsed = JSON.parse(message) as {
+        event: string;
+        room: string;
+        data: unknown;
+      };
+      io!.to(parsed.room).emit(parsed.event, parsed.data);
+    } catch (err) {
+      console.error('Failed to parse ws:events message', err);
+    }
   });
 
   return io;
