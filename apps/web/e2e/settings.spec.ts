@@ -29,9 +29,10 @@ test.describe('Settings', () => {
     await expect(page.getByText('Workspace Settings')).toBeVisible({ timeout: 10000 });
     await expect(page.getByText('Organization Name')).toBeVisible();
 
-    // Scroll down to Team Members section
-    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-    await expect(page.getByText('Team Members')).toBeVisible({ timeout: 10000 });
+    // Scroll to Team Members section
+    const teamMembers = page.getByRole('heading', { name: 'Team Members' });
+    await teamMembers.scrollIntoViewIfNeeded();
+    await expect(teamMembers).toBeVisible({ timeout: 10000 });
   });
 
   test('should switch to Profile tab', async ({ page }) => {

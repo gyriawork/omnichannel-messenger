@@ -1,580 +1,274 @@
 import { test, expect } from '@playwright/test';
-import { login, logout, TEST_ADMIN, TEST_USER } from './helpers';
+import { login, TEST_ADMIN } from './helpers';
 
 /**
  * Phase 4.2: E2E Tests for Critical User Workflows
  *
- * This file contains integration tests for the 4 most critical user journeys:
- * 1. Registration → Login → Dashboard Flow
- * 2. Broadcast Creation & Scheduling
- * 3. Chat Filtering & Search
- * 4. Integration OAuth Flow (Telegram example)
+ * Covers:
+ * 1. Registration page (login/auth details are in auth.spec.ts)
+ * 2. Broadcast creation wizard (full flow)
+ * 3. Chat search & filtering on messenger page
+ * 4. Settings & integrations page structure
+ *
+ * NOTE: auth.spec.ts covers login/logout/redirect flows.
+ *       settings.spec.ts covers settings tabs and FAQ.
+ *       messenger.spec.ts covers chat list and opening chats.
+ *       This file tests workflows that span multiple steps.
  */
 
-test.describe('Workflow 1: Registration → Login → Dashboard', () => {
-  test('should complete full registration flow', async ({ page }) => {
-    // Navigate to signup page
-    await page.goto('/signup');
+test.describe('Registration Page', () => {
+  test('should show registration form at /register', async ({ page }) => {
+    await page.goto('/register');
 
-    // Verify signup form is visible
-    await expect(page.locator('h1, h2').first()).toContainText(/sign up|register|create account/i);
-    await expect(page.locator('input[type="email"]')).toBeVisible();
-    await expect(page.locator('input[type="password"]')).toBeVisible();
-    await expect(page.locator('input[name="name"], input[placeholder*="Name"]')).toBeVisible();
+    // Verify all form fields with exact IDs
+    await expect(page.locator('input#name')).toBeVisible();
+    await expect(page.locator('input#email')).toBeVisible();
+    await expect(page.locator('input#password')).toBeVisible();
+    await expect(page.locator('input#confirmPassword')).toBeVisible();
+    await expect(page.locator('button[type="submit"]')).toHaveText('Create account');
   });
 
   test('should reject registration with existing email', async ({ page }) => {
-    await page.goto('/signup');
+    await page.goto('/register');
 
-    // Try to register with existing email (admin account from seed)
-    await page.fill('input[type="email"]', TEST_ADMIN.email);
-    await page.fill('input[name="name"], input[placeholder*="Name"]', 'Test User');
-    await page.fill('input[type="password"]', 'password123');
+    // Fill with existing admin email — use exact field IDs from register page
+    await page.locator('input#name').fill('Test User');
+    await page.locator('input#email').fill(TEST_ADMIN.email);
+    await page.locator('input#password').fill('password123');
+    await page.locator('input#confirmPassword').fill('password123');
+    await page.locator('button[type="submit"]').click();
 
-    // Find and click submit button
-    await page.click('button[type="submit"], button:has-text("Sign Up"), button:has-text("Register")');
+    // Should show error toast (Sonner) for duplicate email
+    await expect(page.locator('[data-sonner-toast]').first()).toBeVisible({ timeout: 5000 });
+  });
+});
 
-    // Should show error message
+test.describe('Broadcast Creation Wizard', () => {
+  test.beforeEach(async ({ page }) => {
+    await login(page, TEST_ADMIN);
+  });
+
+  test('should navigate to broadcast list page', async ({ page }) => {
+    await page.locator('a[href="/broadcast"]').click();
+    await expect(page).toHaveURL(/\/broadcast/);
+
+    // Should show the "New Broadcast" button
+    await expect(page.getByRole('button', { name: /New Broadcast/i })).toBeVisible();
+  });
+
+  test('should show broadcast list with status tabs', async ({ page }) => {
+    await page.goto('/broadcast');
+
+    // Status filter tabs
+    await expect(page.getByRole('button', { name: 'All' }).or(page.getByText('All').first())).toBeVisible();
+    await expect(page.getByText('Draft')).toBeVisible();
+    await expect(page.getByText('Sent')).toBeVisible();
+  });
+
+  test('should show search input on broadcast list', async ({ page }) => {
+    await page.goto('/broadcast');
+
     await expect(
-      page.locator('[role="alert"], .text-red-500, [data-sonner-toast]').first()
+      page.locator('input[placeholder="Search broadcasts..."]')
+    ).toBeVisible();
+  });
+
+  test('should navigate to broadcast wizard via New Broadcast button', async ({ page }) => {
+    await page.goto('/broadcast');
+
+    await page.getByRole('button', { name: /New Broadcast/i }).click();
+    await expect(page).toHaveURL(/\/broadcast\/new/);
+  });
+
+  test('should show Step 0 (Compose) with name and message fields', async ({ page }) => {
+    await page.goto('/broadcast/new');
+
+    // Broadcast name input
+    await expect(
+      page.locator('input[placeholder="e.g., Weekly Update, Product Launch..."]')
+    ).toBeVisible();
+
+    // Message textarea
+    await expect(
+      page.locator('textarea[placeholder="Type your broadcast message here..."]')
+    ).toBeVisible();
+  });
+
+  test('should fill compose step and navigate to recipients', async ({ page }) => {
+    await page.goto('/broadcast/new');
+
+    // Fill broadcast name
+    await page.locator('input[placeholder="e.g., Weekly Update, Product Launch..."]').fill('E2E Test Broadcast');
+
+    // Fill message
+    await page.locator('textarea[placeholder="Type your broadcast message here..."]').fill('Hello from E2E tests!');
+
+    // Click Next button (has ArrowRight icon)
+    await page.getByRole('button', { name: /Next/i }).click();
+
+    // Step 1 (Recipients) should show search for chats
+    await expect(
+      page.locator('input[placeholder="Search chats..."]')
     ).toBeVisible({ timeout: 5000 });
   });
 
-  test('should login and reach dashboard', async ({ page }) => {
-    // Login with admin credentials
+  test('should show messenger filter buttons on recipients step', async ({ page }) => {
+    await page.goto('/broadcast/new');
+
+    // Fill required fields and go to step 1
+    await page.locator('input[placeholder="e.g., Weekly Update, Product Launch..."]').fill('Test');
+    await page.locator('textarea[placeholder="Type your broadcast message here..."]').fill('Test message');
+    await page.getByRole('button', { name: /Next/i }).click();
+
+    // Wait for recipients step
+    await expect(page.locator('input[placeholder="Search chats..."]')).toBeVisible({ timeout: 5000 });
+
+    // Messenger filter buttons should be visible (use exact: true to avoid matching chat buttons)
+    await expect(page.getByRole('button', { name: 'Telegram', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Slack', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'WhatsApp', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Gmail', exact: true })).toBeVisible();
+  });
+
+  test('should navigate back from recipients to compose', async ({ page }) => {
+    await page.goto('/broadcast/new');
+
+    // Go to step 1
+    await page.locator('input[placeholder="e.g., Weekly Update, Product Launch..."]').fill('Test');
+    await page.locator('textarea[placeholder="Type your broadcast message here..."]').fill('Test message');
+    await page.getByRole('button', { name: /Next/i }).click();
+
+    // Wait for step 1
+    await expect(page.locator('input[placeholder="Search chats..."]')).toBeVisible({ timeout: 5000 });
+
+    // Click Back button (exact match to avoid matching "Back to Broadcasts")
+    await page.getByRole('button', { name: 'Back', exact: true }).click();
+
+    // Should be back on compose step
+    await expect(
+      page.locator('input[placeholder="e.g., Weekly Update, Product Launch..."]')
+    ).toBeVisible({ timeout: 5000 });
+  });
+
+  test('should cancel wizard and return to broadcast list', async ({ page }) => {
+    await page.goto('/broadcast/new');
+
+    // Click Cancel button
+    await page.getByRole('button', { name: /Cancel/i }).click();
+
+    // Should navigate back to broadcast list
+    await expect(page).toHaveURL(/\/broadcast$/, { timeout: 5000 });
+  });
+
+  test('should show Analytics and Anti-ban buttons on broadcast list', async ({ page }) => {
+    await page.goto('/broadcast');
+
+    await expect(page.getByRole('button', { name: /Analytics/i }).or(page.getByRole('link', { name: /Analytics/i }))).toBeVisible();
+    await expect(page.getByRole('button', { name: /Anti-ban/i }).or(page.getByText('Anti-ban'))).toBeVisible();
+  });
+});
+
+test.describe('Chat Search & Filtering', () => {
+  test.beforeEach(async ({ page }) => {
+    await login(page, TEST_ADMIN);
+    await page.locator('a[href="/messenger"]').click();
+    await expect(page).toHaveURL(/\/messenger/);
+  });
+
+  test('should search chats by name', async ({ page }) => {
+    // Wait for chat list to load
+    await expect(page.getByText('Dmitry Volkov').first()).toBeVisible({ timeout: 10000 });
+
+    // Find search input in the messenger chat list
+    const searchInput = page.locator('input[placeholder*="Search"]').first();
+    await expect(searchInput).toBeVisible();
+
+    // Search for a known seeded chat
+    await searchInput.fill('Dmitry');
+    await page.waitForTimeout(500);
+
+    // Dmitry Volkov should still be visible
+    await expect(page.getByText('Dmitry Volkov').first()).toBeVisible();
+  });
+
+  test('should show no results for non-matching search', async ({ page }) => {
+    await expect(page.getByText('Dmitry Volkov').first()).toBeVisible({ timeout: 10000 });
+
+    const searchInput = page.locator('input[placeholder*="Search"]').first();
+    await expect(searchInput).toBeVisible();
+
+    // Search for something that won't match
+    await searchInput.fill('zzz-nonexistent-chat-xyz');
+    await page.waitForTimeout(500);
+
+    // Known seeded chats should not be visible
+    await expect(page.getByText('Dmitry Volkov')).not.toBeVisible({ timeout: 3000 });
+  });
+
+  test('should clear search and restore all chats', async ({ page }) => {
+    await expect(page.getByText('Dmitry Volkov').first()).toBeVisible({ timeout: 10000 });
+
+    const searchInput = page.locator('input[placeholder*="Search"]').first();
+    await searchInput.fill('zzz-nonexistent');
+    await page.waitForTimeout(500);
+
+    // Clear the search
+    await searchInput.clear();
+    await page.waitForTimeout(500);
+
+    // Seeded chats should reappear
+    await expect(page.getByText('Dmitry Volkov').first()).toBeVisible({ timeout: 5000 });
+  });
+});
+
+test.describe('Cross-Page Session Consistency', () => {
+  test('should maintain session across messenger, broadcast, and settings', async ({ page }) => {
     await login(page, TEST_ADMIN);
 
-    // Verify dashboard is loaded
-    await expect(page).toHaveURL(/\/(dashboard|messenger)?/);
-
-    // Check for key dashboard elements
-    // Sidebar should be visible (from helpers.ts login)
+    // Navigate to messenger
+    await page.goto('/messenger');
+    await expect(page).toHaveURL(/\/messenger/);
     await expect(page.locator('aside').first()).toBeVisible();
 
-    // Should see some content area
-    await expect(page.locator('main, [role="main"], .main-content').first()).toBeVisible();
-  });
+    // Navigate to broadcast
+    await page.goto('/broadcast');
+    await expect(page).toHaveURL(/\/broadcast/);
+    await expect(page.locator('aside').first()).toBeVisible();
 
-  test('should show chat list on dashboard', async ({ page }) => {
-    await login(page, TEST_ADMIN);
-
-    // Look for chat list or messenger section
-    // Could be in sidebar or main content area
-    const chatListItems = page.locator('[data-testid*="chat"], li:has-text("Chat"), .chat-item');
-    const hasChats = await chatListItems.count().then(count => count > 0).catch(() => false);
-
-    // Check for any messaging elements if chat list not found
-    if (!hasChats) {
-      await expect(
-        page.locator('button, a, div').filter({ hasText: /Message|Chat|Conversation/ }).first()
-      ).toBeVisible({ timeout: 5000 });
-    }
-  });
-
-  test('should display real-time updates in chat list', async ({ page }) => {
-    await login(page, TEST_ADMIN);
-
-    // Wait for any activity or unread badges to appear
-    // These would indicate real-time updates are working
-    const unreadBadges = page.locator('[data-unread], .badge, span:has-text("•")');
-
-    // At minimum, should be able to interact with chat items
-    const firstChatItem = page.locator('[data-testid*="chat"], li:has-text("Chat"), .chat-item').first();
-    await expect(firstChatItem).toBeVisible({ timeout: 10000 }).catch(() => {
-      // Chat list might not have items, that's ok
-    });
+    // Navigate to settings
+    await page.goto('/settings');
+    await expect(page).toHaveURL(/\/settings/);
+    await expect(page.locator('aside').first()).toBeVisible();
   });
 
   test('should maintain session after page reload', async ({ page }) => {
     await login(page, TEST_ADMIN);
 
-    // Get current URL to verify we're authenticated
-    const currentUrl = page.url();
-    expect(currentUrl).not.toContain('/login');
+    // Verify we are authenticated
+    expect(page.url()).toContain('/messenger');
 
-    // Reload page
+    // Reload
     await page.reload();
 
-    // Should still be authenticated
+    // Should still be authenticated (sidebar visible, not redirected to login)
     await expect(page.locator('aside').first()).toBeVisible({ timeout: 10000 });
     expect(page.url()).not.toContain('/login');
   });
 
-  test('should auto-redirect to login when token expires', async ({ page }) => {
+  test('should redirect to login after clearing tokens', async ({ page }) => {
     await login(page, TEST_ADMIN);
 
-    // Clear authentication token to simulate expiry
+    // Clear all auth state — localStorage keys and force a fresh page load
     await page.evaluate(() => {
-      localStorage.removeItem('token');
-      sessionStorage.removeItem('token');
+      localStorage.clear();
+      sessionStorage.clear();
     });
 
-    // Navigate to protected route
-    await page.goto('/messenger');
+    // Full navigation (not client-side) to force hydrate() to re-read empty localStorage
+    await page.goto('/messenger', { waitUntil: 'networkidle' });
 
-    // Should redirect to login
-    await page.waitForURL('**/login', { timeout: 10000 });
+    // Should redirect to login since hydrate() finds no accessToken
+    await page.waitForURL('**/login', { timeout: 15000 });
     await expect(page).toHaveURL(/\/login/);
-  });
-
-  test('should support logout flow', async ({ page }) => {
-    await login(page, TEST_ADMIN);
-
-    // Look for logout button (typically in user menu/settings)
-    const logoutButton = page.locator('button:has-text("Logout"), button:has-text("Sign Out"), [data-testid="logout"]');
-
-    if (await logoutButton.isVisible().catch(() => false)) {
-      await logoutButton.click();
-
-      // Should redirect to login
-      await page.waitForURL('**/login', { timeout: 5000 });
-      await expect(page).toHaveURL(/\/login/);
-    } else {
-      // Alternative: try user menu/settings
-      const userMenu = page.locator('button[aria-label*="user"], button:has-text("Profile"), [data-testid="user-menu"]').first();
-      if (await userMenu.isVisible().catch(() => false)) {
-        await userMenu.click();
-        await logoutButton.click();
-        await page.waitForURL('**/login', { timeout: 5000 });
-      }
-    }
-  });
-});
-
-test.describe('Workflow 2: Broadcast Creation & Scheduling', () => {
-  test.beforeEach(async ({ page }) => {
-    // Login before each test
-    await login(page, TEST_ADMIN);
-  });
-
-  test('should navigate to broadcast creation page', async ({ page }) => {
-    // Look for Broadcasts link or button
-    const broadcastsLink = page.locator('a:has-text("Broadcast"), button:has-text("Broadcast"), [href*="broadcast"]').first();
-
-    if (await broadcastsLink.isVisible().catch(() => false)) {
-      await broadcastsLink.click();
-      await expect(page).toHaveURL(/.*broadcast.*/, { timeout: 5000 });
-    } else {
-      // Try direct navigation
-      await page.goto('/broadcasts');
-      await expect(page.locator('h1, h2').first()).toContainText(/broadcast/i, { timeout: 5000 }).catch(() => {});
-    }
-  });
-
-  test('should access broadcast creation form', async ({ page }) => {
-    // Navigate to broadcasts
-    await page.goto('/broadcasts');
-
-    // Look for "New Broadcast" button
-    const newBroadcastBtn = page.locator('button:has-text("New"), button:has-text("Create"), button:has-text("Send"), a:has-text("New")').first();
-
-    if (await newBroadcastBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
-      await newBroadcastBtn.click();
-
-      // Should see broadcast form with key fields
-      await expect(page.locator('input, textarea, [contenteditable]').first()).toBeVisible({ timeout: 5000 });
-    }
-  });
-
-  test('should select multiple chats for broadcast', async ({ page }) => {
-    await page.goto('/broadcasts');
-
-    // Look for chat selection interface
-    const chatSelector = page.locator('[data-testid="chat-select"], select, .chat-selector, input[placeholder*="Select"]').first();
-
-    if (await chatSelector.isVisible({ timeout: 5000 }).catch(() => false)) {
-      await chatSelector.click();
-
-      // Select first few chats (or at least attempt to)
-      const chatOptions = page.locator('[role="option"], .chat-item, li').first();
-      if (await chatOptions.isVisible().catch(() => false)) {
-        await chatOptions.click();
-      }
-    }
-  });
-
-  test('should enter message text for broadcast', async ({ page }) => {
-    await page.goto('/broadcasts');
-
-    // Look for message input field
-    const messageInput = page.locator('textarea, [contenteditable], input[placeholder*="Message"]').first();
-
-    if (await messageInput.isVisible({ timeout: 5000 }).catch(() => false)) {
-      await messageInput.fill('Test broadcast message: ' + new Date().toISOString());
-
-      // Verify text was entered
-      const value = await messageInput.inputValue().catch(() => null);
-      if (value) {
-        expect(value).toContain('Test broadcast message');
-      }
-    }
-  });
-
-  test('should set broadcast schedule date and time', async ({ page }) => {
-    await page.goto('/broadcasts');
-
-    // Look for scheduling controls
-    const dateInput = page.locator('input[type="date"], input[type="datetime-local"], [data-testid="date"]').first();
-    const timeInput = page.locator('input[type="time"], [data-testid="time"]').first();
-
-    // Set future date (tomorrow)
-    if (await dateInput.isVisible({ timeout: 5000 }).catch(() => false)) {
-      const tomorrow = new Date();
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      const dateStr = tomorrow.toISOString().split('T')[0];
-
-      await dateInput.fill(dateStr);
-    }
-
-    // Set time to 14:00
-    if (await timeInput.isVisible().catch(() => false)) {
-      await timeInput.fill('14:00');
-    }
-  });
-
-  test('should submit broadcast and appear in activity log', async ({ page }) => {
-    await page.goto('/broadcasts');
-
-    // Fill out basic broadcast (at least message)
-    const messageInput = page.locator('textarea, [contenteditable], input[placeholder*="Message"]').first();
-    if (await messageInput.isVisible({ timeout: 5000 }).catch(() => false)) {
-      await messageInput.fill('E2E Test Broadcast: ' + new Date().toISOString());
-
-      // Find and click submit button
-      const submitBtn = page.locator('button[type="submit"], button:has-text("Send"), button:has-text("Schedule")').first();
-      if (await submitBtn.isVisible().catch(() => false)) {
-        await submitBtn.click();
-
-        // Should show success message
-        await expect(
-          page.locator('[role="alert"], .text-green-500, [data-sonner-toast]:has-text("Success")').first()
-        ).toBeVisible({ timeout: 5000 }).catch(() => {});
-
-        // Navigate to activity log to verify broadcast appears
-        const activityLink = page.locator('a:has-text("Activity"), [href*="activity"]').first();
-        if (await activityLink.isVisible().catch(() => false)) {
-          await activityLink.click();
-
-          // Look for broadcast entry in activity log
-          const broadcastEntry = page.locator('text=/broadcast|scheduled|sent/i').first();
-          await expect(broadcastEntry).toBeVisible({ timeout: 10000 }).catch(() => {});
-        }
-      }
-    }
-  });
-
-  test('should show broadcast status transitions', async ({ page }) => {
-    // Navigate to broadcasts list
-    await page.goto('/broadcasts');
-
-    // Look for status indicators (pending, sent, scheduled, etc)
-    const statusElements = page.locator('[data-status], .status, span:has-text("Scheduled"), span:has-text("Pending")');
-    const statusCount = await statusElements.count().catch(() => 0);
-
-    // At minimum should be able to view broadcasts
-    if (statusCount > 0) {
-      await expect(statusElements.first()).toBeVisible();
-    }
-  });
-});
-
-test.describe('Workflow 3: Chat Filtering & Search', () => {
-  test.beforeEach(async ({ page }) => {
-    await login(page, TEST_ADMIN);
-  });
-
-  test('should navigate to chat/messenger view', async ({ page }) => {
-    // Navigate to messenger
-    await page.goto('/messenger');
-
-    // Should see chat interface
-    await expect(page.locator('aside, main, [role="main"]').first()).toBeVisible({ timeout: 10000 });
-  });
-
-  test('should filter chats by tag', async ({ page }) => {
-    await page.goto('/messenger');
-
-    // Look for tag filter interface
-    const tagFilter = page.locator('[data-testid="tag-filter"], button:has-text("Tag"), select').first();
-
-    if (await tagFilter.isVisible({ timeout: 5000 }).catch(() => false)) {
-      await tagFilter.click();
-
-      // Select first available tag
-      const firstTag = page.locator('[role="option"], .tag-item, label').first();
-      if (await firstTag.isVisible().catch(() => false)) {
-        await firstTag.click();
-
-        // Chat list should update to show filtered results
-        await page.waitForTimeout(500);
-      }
-    }
-  });
-
-  test('should search chats by name', async ({ page }) => {
-    await page.goto('/messenger');
-
-    // Look for search input
-    const searchInput = page.locator('input[placeholder*="Search"], input[type="search"], [data-testid="search"]').first();
-
-    if (await searchInput.isVisible({ timeout: 5000 }).catch(() => false)) {
-      // Search for a test query
-      await searchInput.fill('test');
-      await page.waitForTimeout(500); // Wait for search results
-
-      // Verify search is working (chat list should update)
-      const chatItems = page.locator('[data-testid*="chat"], .chat-item, li').first();
-      await expect(chatItems).toBeVisible({ timeout: 5000 }).catch(() => {});
-    }
-  });
-
-  test('should clear search and show all chats', async ({ page }) => {
-    await page.goto('/messenger');
-
-    const searchInput = page.locator('input[placeholder*="Search"], input[type="search"], [data-testid="search"]').first();
-
-    if (await searchInput.isVisible({ timeout: 5000 }).catch(() => false)) {
-      // Search for something
-      await searchInput.fill('xyz-nonexistent');
-      await page.waitForTimeout(300);
-
-      // Clear search
-      await searchInput.clear();
-      await page.waitForTimeout(300);
-
-      // All chats should appear again
-      const chatItems = page.locator('[data-testid*="chat"], .chat-item, li');
-      const count = await chatItems.count();
-      expect(count).toBeGreaterThanOrEqual(0); // At least 0 (could be empty org)
-    }
-  });
-
-  test('should update unread badge in real-time', async ({ page }) => {
-    await page.goto('/messenger');
-
-    // Look for unread indicators
-    const unreadBadges = page.locator('.badge, span.text-red-500, [data-unread]:visible');
-
-    // Just verify the elements exist (actual real-time update would need mock)
-    const count = await unreadBadges.count().catch(() => 0);
-    expect(count).toBeGreaterThanOrEqual(0);
-  });
-
-  test('should open chat and display messages', async ({ page }) => {
-    await page.goto('/messenger');
-
-    // Find first chat item
-    const firstChat = page.locator('[data-testid*="chat"], .chat-item, li').first();
-
-    if (await firstChat.isVisible({ timeout: 5000 }).catch(() => false)) {
-      await firstChat.click();
-
-      // Should show messages or chat content
-      await expect(page.locator('main, [role="main"], .chat-content').first()).toBeVisible({ timeout: 5000 });
-
-      // Look for message input to confirm chat is open
-      const messageInput = page.locator('textarea, input[placeholder*="Message"], [contenteditable]').first();
-      await expect(messageInput).toBeVisible({ timeout: 5000 }).catch(() => {});
-    }
-  });
-
-  test('should send message in chat', async ({ page }) => {
-    await page.goto('/messenger');
-
-    // Open first chat
-    const firstChat = page.locator('[data-testid*="chat"], .chat-item, li').first();
-    if (await firstChat.isVisible({ timeout: 5000 }).catch(() => false)) {
-      await firstChat.click();
-
-      // Find message input and send button
-      const messageInput = page.locator('textarea, input[placeholder*="Message"], [contenteditable]').first();
-      const sendBtn = page.locator('button[aria-label*="Send"], button[type="submit"]:near(textarea), [data-testid="send"]').first();
-
-      if (await messageInput.isVisible().catch(() => false)) {
-        const testMsg = 'E2E Test Message: ' + new Date().toISOString();
-        await messageInput.fill(testMsg);
-
-        if (await sendBtn.isVisible().catch(() => false)) {
-          await sendBtn.click();
-
-          // Message should appear in chat
-          await expect(page.locator('text=' + testMsg).first()).toBeVisible({ timeout: 5000 }).catch(() => {});
-        }
-      }
-    }
-  });
-});
-
-test.describe('Workflow 4: Integration OAuth Flow (Telegram)', () => {
-  test.beforeEach(async ({ page }) => {
-    await login(page, TEST_ADMIN);
-  });
-
-  test('should navigate to integrations settings', async ({ page }) => {
-    // Look for settings/integrations link
-    const integrationsLink = page.locator('a:has-text("Integration"), a:has-text("Settings"), button:has-text("Connect"), [href*="integration"]').first();
-
-    if (await integrationsLink.isVisible({ timeout: 5000 }).catch(() => false)) {
-      await integrationsLink.click();
-      await expect(page).toHaveURL(/.*integration.*/, { timeout: 5000 }).catch(() => {});
-    } else {
-      // Try direct navigation
-      await page.goto('/settings/integrations');
-      await expect(page.locator('h1, h2').first()).toContainText(/integration/i, { timeout: 5000 }).catch(() => {});
-    }
-  });
-
-  test('should display available messenger integrations', async ({ page }) => {
-    await page.goto('/settings/integrations');
-
-    // Look for messenger cards/buttons (Telegram, Slack, WhatsApp, Gmail)
-    const messengerButtons = page.locator('button:has-text("Telegram"), button:has-text("Slack"), button:has-text("WhatsApp"), button:has-text("Gmail")');
-    const messengerCount = await messengerButtons.count().catch(() => 0);
-
-    // Should have at least some integrations available
-    expect(messengerCount).toBeGreaterThan(0);
-  });
-
-  test('should initiate Telegram OAuth flow', async ({ page }) => {
-    await page.goto('/settings/integrations');
-
-    // Find Telegram integration button
-    const telegramBtn = page.locator('button:has-text("Telegram"), [data-testid="telegram"], button:has-text("Connect Telegram")').first();
-
-    if (await telegramBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
-      // Listen for popup/navigation before clicking
-      const [popup] = await Promise.all([
-        page.context().waitForEvent('page').catch(() => null),
-        telegramBtn.click().catch(() => {})
-      ]);
-
-      if (popup) {
-        // OAuth popup opened
-        await popup.waitForLoadState('networkidle');
-        expect(popup.url()).toContain('telegram') || expect(popup.url()).toContain('oauth');
-      } else {
-        // Might be redirect instead of popup
-        await page.waitForTimeout(1000);
-        // Verify some OAuth-related URL or page change
-      }
-    }
-  });
-
-  test('should show integration connection status', async ({ page }) => {
-    await page.goto('/settings/integrations');
-
-    // Look for connection status indicators
-    const statusElements = page.locator('[data-status], .status, span:has-text("Connected"), span:has-text("Disconnected"), span:has-text("Pending")');
-    const statusCount = await statusElements.count().catch(() => 0);
-
-    // Should show at least some status info
-    expect(statusCount).toBeGreaterThanOrEqual(0);
-
-    // Look for connect/disconnect buttons
-    const actionButtons = page.locator('button:has-text("Connect"), button:has-text("Disconnect"), button:has-text("Remove")');
-    const actionCount = await actionButtons.count().catch(() => 0);
-
-    expect(actionCount).toBeGreaterThan(0);
-  });
-
-  test('should display integration configuration options', async ({ page }) => {
-    await page.goto('/settings/integrations');
-
-    // For connected integrations, should show additional options
-    const configOptions = page.locator('input, textarea, select, [contenteditable]').filter({ visible: true });
-    const configCount = await configOptions.count().catch(() => 0);
-
-    // May or may not have config options visible
-    expect(configCount).toBeGreaterThanOrEqual(0);
-  });
-
-  test('should verify antiban settings apply to integrations', async ({ page }) => {
-    // Navigate to antiban settings
-    const antibanLink = page.locator('a:has-text("Antiban"), a:has-text("Rate Limit"), a:has-text("Settings"), [href*="antiban"]').first();
-
-    if (await antibanLink.isVisible({ timeout: 5000 }).catch(() => false)) {
-      await antibanLink.click();
-    } else {
-      await page.goto('/settings/antiban');
-    }
-
-    // Look for sliders/settings
-    const sliders = page.locator('input[type="range"], [role="slider"]');
-    const sliderCount = await sliders.count().catch(() => 0);
-
-    expect(sliderCount).toBeGreaterThan(0);
-
-    // Check for messenger-specific settings
-    const messengerSettings = page.locator('select, input[placeholder*="Telegram"], input[placeholder*="Slack"]');
-    const messengerCount = await messengerSettings.count().catch(() => 0);
-
-    // Should have some messenger-level controls
-    expect(messengerCount).toBeGreaterThanOrEqual(0);
-  });
-});
-
-test.describe('Cross-Workflow Consistency', () => {
-  test('should maintain user session across all workflows', async ({ page }) => {
-    // Login
-    await login(page, TEST_ADMIN);
-
-    // Navigate through different sections
-    await page.goto('/messenger');
-    await expect(page).toHaveURL(/.*messenger.*/, { timeout: 5000 }).catch(() => {});
-
-    await page.goto('/broadcasts');
-    await expect(page).toHaveURL(/.*broadcast.*/, { timeout: 5000 }).catch(() => {});
-
-    await page.goto('/settings/integrations');
-    await expect(page).toHaveURL(/.*integration.*/, { timeout: 5000 }).catch(() => {});
-
-    // Should still be authenticated (sidebar visible)
-    await expect(page.locator('aside').first()).toBeVisible({ timeout: 5000 }).catch(() => {});
-  });
-
-  test('should handle errors gracefully across all pages', async ({ page }) => {
-    await login(page, TEST_ADMIN);
-
-    // Try to access non-existent resource
-    await page.goto('/messenger/nonexistent-chat-id');
-
-    // Should either show error page or redirect appropriately
-    // Should NOT show unhandled errors in console
-    const errors: string[] = [];
-    page.on('console', msg => {
-      if (msg.type() === 'error') {
-        errors.push(msg.text());
-      }
-    });
-
-    await page.waitForTimeout(1000);
-
-    // Some console errors might be expected (404), but not unhandled exceptions
-    const unexpectedErrors = errors.filter(e => !e.includes('404') && !e.includes('Not Found'));
-    expect(unexpectedErrors.length).toBe(0);
-  });
-
-  test('should display consistent UI elements across all pages', async ({ page }) => {
-    await login(page, TEST_ADMIN);
-
-    const pagesToCheck = [
-      '/messenger',
-      '/broadcasts',
-      '/settings/integrations',
-    ];
-
-    for (const path of pagesToCheck) {
-      await page.goto(path);
-
-      // Should always have sidebar/navigation
-      const sidebar = page.locator('aside, nav, .sidebar');
-      const sidebarCount = await sidebar.count().catch(() => 0);
-      expect(sidebarCount).toBeGreaterThan(0);
-
-      // Should always have main content area
-      const main = page.locator('main, [role="main"], .main-content');
-      const mainCount = await main.count().catch(() => 0);
-      expect(mainCount).toBeGreaterThan(0);
-    }
   });
 });

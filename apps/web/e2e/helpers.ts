@@ -17,12 +17,12 @@ export const TEST_USER = {
  */
 export async function login(page: Page, credentials = TEST_ADMIN) {
   await page.goto('/login');
-  await page.fill('input[type="email"]', credentials.email);
-  await page.fill('input[type="password"]', credentials.password);
-  await page.click('button[type="submit"]');
-  // Wait for redirect to dashboard
-  // Wait for sidebar aside element to confirm we're on the dashboard
-  await expect(page.locator('aside').first()).toBeVisible({ timeout: 10000 });
+  await page.locator('input#email').fill(credentials.email);
+  await page.locator('input#password').fill(credentials.password);
+  await page.locator('button[type="submit"]').click();
+  // Wait for sidebar nav to appear — definitive signal that login succeeded
+  // Note: in dev mode, bcrypt(12) + Next.js SSR can make login slow
+  await expect(page.locator('aside nav').first()).toBeVisible({ timeout: 30000 });
 }
 
 /**
