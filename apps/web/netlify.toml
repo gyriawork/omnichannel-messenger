@@ -1,0 +1,7 @@
+[build]
+  command = "npm run build --workspace=apps/web"
+  publish = "apps/web/.next"
+
+[build.environment]
+  NODE_VERSION = "20"
+  NEXT_PUBLIC_API_URL = ""
