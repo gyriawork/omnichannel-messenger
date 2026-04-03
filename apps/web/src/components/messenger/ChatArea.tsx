@@ -46,6 +46,8 @@ import {
 } from '@/hooks/useChats';
 import { useReactions } from '@/hooks/useReactions';
 import { ReactionsBubble } from './ReactionsBubble';
+import TypingIndicator from './TypingIndicator';
+import { useSocket, getSocket } from '@/hooks/useSocket';
 import type { Chat, Message, MessengerType } from '@/types/chat';
 
 function getMessengerLabel(messenger: MessengerType): string {
@@ -643,6 +645,14 @@ function ComposeBar({ chatId }: { chatId: string }) {
   const replyingTo = useChatStore((s) => s.replyingTo);
   const setReplyingTo = useChatStore((s) => s.setReplyingTo);
   const { mutate: sendMessage, isPending } = useSendMessage();
+  const { sendTyping } = useSocket();
+
+  // Notify server when user is typing
+  useEffect(() => {
+    if (text.trim()) {
+      sendTyping(chatId);
+    }
+  }, [text, chatId, sendTyping]);
 
   const canSend = (text.trim().length > 0 || attachments.length > 0) && !isPending && !isUploading;
 
@@ -926,7 +936,47 @@ function MessageFeed({ chatId }: { chatId: string }) {
 export function ChatArea() {
   const activeChat = useChatStore((s) => s.activeChat);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [typingUsers, setTypingUsers] = useState<Array<{ userId: string; userName: string; timestamp: number }>>([]);
   const queryClient = useQueryClient();
+  const { joinChat, leaveChat } = useSocket();
+
+  // Join/leave WebSocket room when active chat changes
+  useEffect(() => {
+    if (!activeChat?.id) return;
+    joinChat(activeChat.id);
+    return () => leaveChat(activeChat.id);
+  }, [activeChat?.id, joinChat, leaveChat]);
+
+  // Listen for typing events for the active chat
+  useEffect(() => {
+    const s = getSocket();
+    if (!s || !activeChat?.id) return;
+
+    const handler = (data: { chatId: string; userId: string; userName: string }) => {
+      if (data.chatId !== activeChat.id) return;
+      setTypingUsers((prev) => {
+        const filtered = prev.filter((u) => u.userId !== data.userId);
+        return [...filtered, { userId: data.userId, userName: data.userName, timestamp: Date.now() }];
+      });
+    };
+
+    s.on('typing', handler);
+    return () => { s.off('typing', handler); };
+  }, [activeChat?.id]);
+
+  // Auto-expire typing indicators after 3 seconds
+  useEffect(() => {
+    if (typingUsers.length === 0) return;
+    const timer = setInterval(() => {
+      setTypingUsers((prev) => prev.filter((u) => Date.now() - u.timestamp < 3000));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [typingUsers.length]);
+
+  // Clear typing users when switching chats
+  useEffect(() => {
+    setTypingUsers([]);
+  }, [activeChat?.id]);
 
   // Close search when switching chats
   useEffect(() => {
@@ -961,6 +1011,7 @@ export function ChatArea() {
         />
       )}
       <MessageFeed chatId={activeChat.id} />
+      <TypingIndicator typingUsers={typingUsers} />
       <ComposeBar chatId={activeChat.id} />
     </div>
   );
