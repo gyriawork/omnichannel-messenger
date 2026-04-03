@@ -125,7 +125,8 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
       await getRedis().set(`oauth:slack:state:${state}`, stateData, 'EX', 600);
 
       // Build the Slack OAuth authorization URL
-      const scopes = [
+      // Bot scopes — needed for reading channels, history, and user info
+      const botScopes = [
         'channels:read',
         'chat:write',
         'users:read',
@@ -138,11 +139,26 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
         'mpim:history',
       ].join(',');
 
+      // User scopes — needed for sending messages AS the user (not the bot)
+      const userScopes = [
+        'chat:write',
+        'channels:read',
+        'channels:history',
+        'groups:read',
+        'groups:history',
+        'im:read',
+        'im:history',
+        'mpim:read',
+        'mpim:history',
+        'files:write',
+      ].join(',');
+
       const redirectUri = `${getApiUrl()}/api/oauth/slack/callback`;
 
       const slackAuthUrl = new URL('https://slack.com/oauth/v2/authorize');
       slackAuthUrl.searchParams.set('client_id', process.env.SLACK_CLIENT_ID!);
-      slackAuthUrl.searchParams.set('scope', scopes);
+      slackAuthUrl.searchParams.set('scope', botScopes);
+      slackAuthUrl.searchParams.set('user_scope', userScopes);
       slackAuthUrl.searchParams.set('redirect_uri', redirectUri);
       slackAuthUrl.searchParams.set('state', state);
 
@@ -239,9 +255,13 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
       }
 
       const botToken = tokenData.access_token;
+      const userToken = tokenData.authed_user?.access_token;
+
+      // Prefer user token for sending messages AS the user; fall back to bot token
+      const primaryToken = userToken || botToken;
 
       // Verify the token works by connecting with the adapter
-      const credentials = { token: botToken };
+      const credentials = { token: primaryToken };
       const adapter = await createAdapter('slack', credentials);
       try {
         await adapter.connect();
@@ -254,9 +274,11 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
         );
       }
 
-      // Encrypt and store credentials
+      // Encrypt and store credentials (keep both tokens for flexibility)
       const encryptedCredentials = encryptCredentials({
-        token: botToken,
+        token: primaryToken,
+        botToken,
+        userToken: userToken ?? null,
         team: tokenData.team,
         authedUser: tokenData.authed_user,
         oauthFlow: true, // Mark that this was connected via OAuth
