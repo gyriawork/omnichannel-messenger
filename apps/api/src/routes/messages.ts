@@ -265,10 +265,14 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
           deliveryStatus = 'delivered';
         }
       } catch (err) {
+        // Extract the real Slack/messenger API error from MessengerError wrapper
+        const originalErr = (err as { originalError?: unknown }).originalError;
+        const realError = originalErr instanceof Error ? originalErr.message : originalErr ? String(originalErr) : null;
         const errMsg = err instanceof Error ? err.message : String(err);
-        console.error(`Failed to send message to ${chat.messenger}:`, errMsg, err);
+        const fullError = realError ? `${errMsg}: ${realError}` : errMsg;
+        console.error(`Failed to send message to ${chat.messenger}:`, fullError, err);
         deliveryStatus = 'failed';
-        (message as Record<string, unknown>).deliveryError = errMsg;
+        (message as Record<string, unknown>).deliveryError = fullError;
       }
 
       // Update message with delivery result
