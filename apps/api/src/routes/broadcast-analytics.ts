@@ -1,6 +1,13 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import { z } from 'zod';
 import prisma from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
+
+const analyticsQuerySchema = z.object({
+  period: z.enum(['week', 'month', 'quarter']).optional().default('month'),
+  messenger: z.enum(['telegram', 'slack', 'whatsapp', 'gmail']).optional(),
+  createdBy: z.string().uuid().optional(),
+});
 
 function getDateFilter(period: string): { gte: Date } {
   const now = new Date();
@@ -20,11 +27,13 @@ export default async function broadcastAnalyticsRoutes(fastify: FastifyInstance)
     '/broadcasts/analytics',
     { preHandler: [authenticate] },
     async (request: FastifyRequest, reply: FastifyReply) => {
-      const { period, messenger, createdBy } = request.query as {
-        period?: string;
-        messenger?: string;
-        createdBy?: string;
-      };
+      const parsed = analyticsQuerySchema.safeParse(request.query);
+      if (!parsed.success) {
+        return reply.status(422).send({
+          error: { code: 'VALIDATION_ERROR', message: parsed.error.issues[0].message, statusCode: 422 },
+        });
+      }
+      const { period, messenger, createdBy } = parsed.data;
 
       const orgId = request.user.organizationId;
       if (!orgId) {
