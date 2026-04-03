@@ -19,54 +19,48 @@ export interface SaveIncomingMessageParams {
 }
 
 export async function saveIncomingMessage(params: SaveIncomingMessageParams) {
-  // Find the chat
-  const chat = await prisma.chat.findFirst({
-    where: {
-      externalChatId: params.externalChatId,
-      messenger: params.messenger,
-      organizationId: params.organizationId,
-    },
-  });
-
-  if (!chat) {
-    // Chat not imported — ignore
-    return null;
-  }
-
-  // Deduplication: skip if we already have this external message
-  if (params.externalMessageId) {
-    const existing = await prisma.message.findFirst({
+  // Find chat and check deduplication in parallel
+  const [chat, existingMessage] = await Promise.all([
+    prisma.chat.findFirst({
       where: {
-        chatId: chat.id,
-        externalMessageId: params.externalMessageId,
+        externalChatId: params.externalChatId,
+        messenger: params.messenger,
+        organizationId: params.organizationId,
       },
-      select: { id: true },
-    });
-    if (existing) return null;
-  }
+    }),
+    params.externalMessageId
+      ? prisma.message.findFirst({
+          where: { externalMessageId: params.externalMessageId },
+          select: { id: true },
+        })
+      : Promise.resolve(null),
+  ]);
 
-  // Save message
-  const message = await prisma.message.create({
-    data: {
-      chatId: chat.id,
-      senderName: params.senderName,
-      senderExternalId: params.senderExternalId,
-      isSelf: params.isSelf ?? false,
-      text: params.text || '',
-      externalMessageId: params.externalMessageId,
-      attachmentsLegacy: params.attachments ? JSON.parse(JSON.stringify(params.attachments)) : undefined,
-      ...(params.createdAt ? { createdAt: params.createdAt } : {}),
-    },
-  });
+  if (!chat) return null;
+  if (existingMessage) return null;
 
-  // Update chat lastActivityAt and messageCount
-  await prisma.chat.update({
-    where: { id: chat.id },
-    data: {
-      lastActivityAt: new Date(),
-      messageCount: { increment: 1 },
-    },
-  });
+  // Create message and update chat in a single transaction
+  const [message] = await prisma.$transaction([
+    prisma.message.create({
+      data: {
+        chatId: chat.id,
+        senderName: params.senderName,
+        senderExternalId: params.senderExternalId,
+        isSelf: params.isSelf ?? false,
+        text: params.text || '',
+        externalMessageId: params.externalMessageId,
+        attachmentsLegacy: params.attachments ? JSON.parse(JSON.stringify(params.attachments)) : undefined,
+        ...(params.createdAt ? { createdAt: params.createdAt } : {}),
+      },
+    }),
+    prisma.chat.update({
+      where: { id: chat.id },
+      data: {
+        lastActivityAt: new Date(),
+        messageCount: { increment: 1 },
+      },
+    }),
+  ]);
 
   // Emit real-time event via WebSocket
   try {

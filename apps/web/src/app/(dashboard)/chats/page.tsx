@@ -342,6 +342,7 @@ export default function ChatsPage() {
   const [showImport, setShowImport] = useState(false);
   const [sortBy, setSortBy] = useState<'lastActivityAt' | 'name' | 'messageCount' | 'chatType'>('lastActivityAt');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const [chatTypeFilter, setChatTypeFilter] = useState<string | null>(null);
 
   const { data: tagsData } = useTags();
 
@@ -357,7 +358,11 @@ export default function ChatsPage() {
   const total = data?.total ?? 0;
 
   const sorted = useMemo(() => {
-    return [...chats].sort((a, b) => {
+    let filtered = [...chats];
+    if (chatTypeFilter) {
+      filtered = filtered.filter((c) => c.chatType === chatTypeFilter);
+    }
+    return filtered.sort((a, b) => {
       let cmp = 0;
       if (sortBy === 'name') {
         cmp = a.name.localeCompare(b.name);
@@ -370,7 +375,7 @@ export default function ChatsPage() {
       }
       return sortDir === 'desc' ? -cmp : cmp;
     });
-  }, [chats, sortBy, sortDir]);
+  }, [chats, chatTypeFilter, sortBy, sortDir]);
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) =>
@@ -452,7 +457,7 @@ export default function ChatsPage() {
                     : 'text-slate-500 hover:bg-slate-100',
                 )}
               >
-                {cfg.abbr}
+                {cfg.label}
               </button>
             );
           })}
@@ -467,6 +472,18 @@ export default function ChatsPage() {
           <option value="">All statuses</option>
           <option value="active">Active</option>
           <option value="read-only">Read-only</option>
+        </select>
+
+        {/* Chat type filter */}
+        <select
+          value={chatTypeFilter ?? ''}
+          onChange={(e) => setChatTypeFilter(e.target.value || null)}
+          className="rounded border-[1.5px] border-slate-200 px-3 py-2 text-xs text-slate-600 focus:border-accent focus:outline-none"
+        >
+          <option value="">All types</option>
+          <option value="direct">Direct</option>
+          <option value="group">Group</option>
+          <option value="channel">Channel</option>
         </select>
 
         {/* Tag filter */}

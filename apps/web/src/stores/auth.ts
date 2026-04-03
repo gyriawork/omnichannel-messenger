@@ -9,6 +9,7 @@ interface User {
   name: string;
   role: string;
   organizationId: string | null;
+  avatar?: string | null;
 }
 
 interface AuthState {

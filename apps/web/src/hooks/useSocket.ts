@@ -19,6 +19,7 @@ export function useSocket() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const queryClient = useQueryClient();
   const connectedRef = useRef(false);
+  const chatUpdateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!isAuthenticated || !accessToken) {
@@ -98,9 +99,12 @@ export function useSocket() {
       queryClient.invalidateQueries({ queryKey: ['messages', data.chatId] });
     });
 
-    // Chat updated (new message count, last activity, etc.)
+    // Chat updated (new message count, last activity, etc.) — debounced
     socket.on('chat_updated', () => {
-      queryClient.invalidateQueries({ queryKey: ['chats'] });
+      if (chatUpdateTimer.current) clearTimeout(chatUpdateTimer.current);
+      chatUpdateTimer.current = setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['chats'] });
+      }, 2000);
     });
 
     // Broadcast status update
@@ -114,6 +118,7 @@ export function useSocket() {
     });
 
     return () => {
+      if (chatUpdateTimer.current) clearTimeout(chatUpdateTimer.current);
       if (socket) {
         socket.disconnect();
         socket = null;

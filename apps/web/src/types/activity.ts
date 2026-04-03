@@ -29,8 +29,8 @@ export interface ActivityFilters {
 }
 
 export interface WorkspaceSettings {
-  organizationName: string;
+  name: string;
   timezone: string;
-  language: string;
-  chatVisibility: boolean;
+  defaultLanguage: string;
+  chatVisibilityAll: boolean;
 }

@@ -499,20 +499,20 @@ export function WorkspaceTab() {
 
   useEffect(() => {
     if (settings) {
-      setOrgName(settings.organizationName || '');
+      setOrgName(settings.name || '');
       setTimezone(settings.timezone || 'UTC');
-      setLanguage(settings.language || 'en');
-      setChatVisibility(settings.chatVisibility ?? true);
+      setLanguage(settings.defaultLanguage || 'en');
+      setChatVisibility(settings.chatVisibilityAll ?? true);
     }
   }, [settings]);
 
   const handleSave = () => {
     updateMutation.mutate(
       {
-        organizationName: orgName,
+        name: orgName,
         timezone,
-        language,
-        chatVisibility,
+        defaultLanguage: language,
+        chatVisibilityAll: chatVisibility,
       },
       {
         onSuccess: () => toast.success('Workspace settings saved'),

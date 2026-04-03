@@ -54,6 +54,7 @@ function extractChatId(peerId: Api.TypePeer): string {
 
 export class TelegramConnectionManager {
   private clients = new Map<string, ActiveClient>();
+  private senderNameCache = new Map<string, { name: string; expiry: number }>();
 
   /**
    * On API startup, connect all Telegram integrations that are marked as connected.
@@ -201,18 +202,29 @@ export class TelegramConnectionManager {
       const isSelf = senderId === active.selfId;
       const text = msg.text || '';
 
-      // Resolve sender name
+      // Resolve sender name with caching and timeout
       let senderName = 'Unknown';
       if (msg.senderId) {
-        try {
-          const entity = await active.client.getEntity(msg.senderId);
-          if (entity instanceof Api.User) {
-            senderName = [entity.firstName, entity.lastName].filter(Boolean).join(' ') || 'Unknown';
-          } else if ('title' in entity) {
-            senderName = (entity as { title: string }).title || 'Unknown';
+        const cached = this.senderNameCache.get(senderId);
+        if (cached && cached.expiry > Date.now()) {
+          senderName = cached.name;
+        } else {
+          try {
+            const entityPromise = active.client.getEntity(msg.senderId);
+            const timeoutPromise = new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error('timeout')), 3000),
+            );
+            const entity = await Promise.race([entityPromise, timeoutPromise]);
+            if (entity instanceof Api.User) {
+              senderName = [entity.firstName, entity.lastName].filter(Boolean).join(' ') || 'Unknown';
+            } else if (entity && 'title' in (entity as unknown as Record<string, unknown>)) {
+              senderName = (entity as unknown as { title: string }).title || 'Unknown';
+            }
+            this.senderNameCache.set(senderId, { name: senderName, expiry: Date.now() + 600_000 });
+          } catch {
+            // Use stale cache or 'Unknown' — don't block message delivery
+            if (cached) senderName = cached.name;
           }
-        } catch {
-          // Entity resolution can fail for some users; use fallback
         }
       }
 
@@ -222,18 +234,21 @@ export class TelegramConnectionManager {
         select: { organizationId: true },
       });
 
-      for (const ic of importedChats) {
-        await saveIncomingMessage({
-          externalChatId,
-          messenger: 'telegram',
-          organizationId: ic.organizationId,
-          senderName,
-          senderExternalId: senderId,
-          text,
-          externalMessageId,
-          isSelf,
-        });
-      }
+      // Save to all orgs in parallel
+      await Promise.allSettled(
+        importedChats.map((ic) =>
+          saveIncomingMessage({
+            externalChatId,
+            messenger: 'telegram',
+            organizationId: ic.organizationId,
+            senderName,
+            senderExternalId: senderId,
+            text,
+            externalMessageId,
+            isSelf,
+          }),
+        ),
+      );
     } catch (err) {
       console.error('[TelegramManager] Error handling incoming message:', err);
     }

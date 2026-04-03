@@ -97,10 +97,47 @@ export function useSendMessage() {
         attachments,
       });
     },
-    onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: ['messages', variables.chatId],
-      });
+    onMutate: async (variables) => {
+      await queryClient.cancelQueries({ queryKey: ['messages', variables.chatId] });
+
+      const previousMessages = queryClient.getQueryData(['messages', variables.chatId]);
+
+      queryClient.setQueryData(
+        ['messages', variables.chatId],
+        (old: { pages: Array<{ messages: Message[]; nextCursor?: string }>; pageParams: unknown[] } | undefined) => {
+          if (!old?.pages) return old;
+          const optimisticMessage: Message = {
+            id: `optimistic-${Date.now()}`,
+            chatId: variables.chatId,
+            senderName: 'You',
+            isSelf: true,
+            text: variables.text,
+            isPinned: false,
+            deliveryStatus: 'sending',
+            createdAt: new Date().toISOString(),
+            replyToMessage: undefined,
+            attachments: [],
+          };
+          const firstPage = old.pages[0];
+          return {
+            ...old,
+            pages: [
+              { ...firstPage, messages: [optimisticMessage, ...firstPage.messages] },
+              ...old.pages.slice(1),
+            ],
+          };
+        },
+      );
+
+      return { previousMessages };
+    },
+    onError: (_err, variables, context) => {
+      if (context?.previousMessages) {
+        queryClient.setQueryData(['messages', variables.chatId], context.previousMessages);
+      }
+    },
+    onSettled: (_data, _error, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['messages', variables.chatId] });
       queryClient.invalidateQueries({ queryKey: ['chats'] });
     },
   });
