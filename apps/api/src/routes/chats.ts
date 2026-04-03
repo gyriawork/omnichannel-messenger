@@ -34,6 +34,7 @@ const updateChatBodySchema = z.object({
   ownerId: z.string().uuid().nullable().optional(),
   status: z.enum(['active', 'read-only']).optional(),
   tags: z.array(z.string().uuid()).optional(),
+  externalChatId: z.string().min(1).optional(),
 });
 
 const importChatsBodySchema = z.object({
@@ -213,7 +214,7 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
           await adapter.connect();
           const rawChats = await adapter.listChats();
           const chats = rawChats.map((c: Record<string, unknown>) => ({
-            externalId: c.externalChatId ?? c.externalId,
+            externalChatId: c.externalChatId ?? c.externalId,
             name: c.name,
             chatType: c.chatType ?? 'direct',
             memberCount: c.memberCount,
@@ -346,9 +347,9 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
       }
 
       const { id } = paramsParsed.data;
-      const { ownerId, status, tags } = bodyParsed.data;
+      const { ownerId, status, tags, externalChatId } = bodyParsed.data;
 
-      if (ownerId === undefined && status === undefined && tags === undefined) {
+      if (ownerId === undefined && status === undefined && tags === undefined && externalChatId === undefined) {
         return sendError(reply, 'VALIDATION_ERROR', 'At least one field must be provided for update', 422);
       }
 
@@ -389,6 +390,7 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
         const updateData: Record<string, unknown> = {};
         if (ownerId !== undefined) updateData.ownerId = ownerId;
         if (status !== undefined) updateData.status = status;
+        if (externalChatId !== undefined) updateData.externalChatId = externalChatId;
 
         const chat = await tx.chat.update({
           where: { id },
