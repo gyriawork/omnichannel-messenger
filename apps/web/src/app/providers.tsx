@@ -11,6 +11,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         defaultOptions: {
           queries: {
             staleTime: 30 * 1000,
+            gcTime: 5 * 60 * 1000, // Keep unused cache for 5 minutes
             retry: 1,
             refetchOnWindowFocus: false,
           },

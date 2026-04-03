@@ -3,6 +3,7 @@ import { z } from 'zod';
 import prisma from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
 import { requireMinRole, getOrgId } from '../middleware/rbac.js';
+import { cacheGet, cacheSet, cacheInvalidate, cacheKey } from '../lib/cache.js';
 type Messenger = 'telegram' | 'slack' | 'whatsapp' | 'gmail';
 
 const DEFAULT_ANTIBAN: Record<Messenger, {
@@ -136,6 +137,10 @@ export default async function settingsRoutes(fastify: FastifyInstance): Promise<
         return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
       }
 
+      const ck = cacheKey(organizationId, 'settings', 'antiban');
+      const cached = await cacheGet(ck);
+      if (cached) return reply.send(cached);
+
       const settings = await prisma.antibanSettings.findMany({
         where: { organizationId },
       });
@@ -172,6 +177,7 @@ export default async function settingsRoutes(fastify: FastifyInstance): Promise<
         }
       }
 
+      await cacheSet(ck, result, 300);
       return reply.send(result);
     },
   );
@@ -239,6 +245,8 @@ export default async function settingsRoutes(fastify: FastifyInstance): Promise<
           retryWindowHours: retryWindowHours ?? 6,
         },
       });
+
+      await cacheInvalidate(cacheKey(organizationId, 'settings', '*'));
 
       return reply.send({
         id: upserted.id,

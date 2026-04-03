@@ -4,6 +4,7 @@ import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
 import cookie from '@fastify/cookie';
 import multipart from '@fastify/multipart';
+import compress from '@fastify/compress';
 import prisma from './lib/prisma.js';
 import authRoutes from './routes/auth.js';
 import organizationRoutes from './routes/organizations.js';
@@ -65,6 +66,10 @@ await fastify.register(cors, {
 
 await fastify.register(helmet, {
   contentSecurityPolicy: false, // CSP handled by frontend
+});
+
+await fastify.register(compress, {
+  threshold: 1024, // Only compress responses > 1KB
 });
 
 await fastify.register(rateLimit, {

@@ -658,33 +658,24 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
         return sendError(reply, 'RESOURCE_NOT_FOUND', 'Message not found in this chat', 404);
       }
 
-      // Fetch all reactions for this message
-      const reactions = await prisma.reaction.findMany({
+      // Aggregate reactions on the database side
+      const reactions = await prisma.reaction.groupBy({
+        by: ['emoji'],
         where: { messageId },
-        select: { userId: true, emoji: true, createdAt: true },
-        orderBy: { createdAt: 'asc' },
+        _count: { emoji: true },
       });
 
-      // Group by emoji, count, and check if current user reacted
-      const grouped = reactions.reduce(
-        (acc, reaction) => {
-          const existing = acc.find((r) => r.emoji === reaction.emoji);
-          if (existing) {
-            existing.count += 1;
-            if (reaction.userId === request.user.id) {
-              existing.userReacted = true;
-            }
-          } else {
-            acc.push({
-              emoji: reaction.emoji,
-              count: 1,
-              userReacted: reaction.userId === request.user.id,
-            });
-          }
-          return acc;
-        },
-        [] as Array<{ emoji: string; count: number; userReacted: boolean }>,
-      );
+      const userReactions = await prisma.reaction.findMany({
+        where: { messageId, userId: request.user.id },
+        select: { emoji: true },
+      });
+      const userEmojiSet = new Set(userReactions.map((r) => r.emoji));
+
+      const grouped = reactions.map((r) => ({
+        emoji: r.emoji,
+        count: r._count.emoji,
+        userReacted: userEmojiSet.has(r.emoji),
+      }));
 
       return reply.status(200).send({ reactions: grouped });
     },

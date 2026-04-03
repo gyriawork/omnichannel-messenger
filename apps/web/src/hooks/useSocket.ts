@@ -86,7 +86,11 @@ export function useSocket() {
           },
         );
       }
-      queryClient.invalidateQueries({ queryKey: ['chats'] });
+      // Debounce chat list refresh — message is already optimistically inserted above
+      if (chatUpdateTimer.current) clearTimeout(chatUpdateTimer.current);
+      chatUpdateTimer.current = setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['chats'] });
+      }, 500);
     });
 
     // Message updated

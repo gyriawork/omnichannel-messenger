@@ -3,6 +3,7 @@ import { z } from 'zod';
 import prisma from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
 import { requireMinRole } from '../middleware/rbac.js';
+import { cacheGet, cacheSet, cacheInvalidate, cacheKey } from '../lib/cache.js';
 
 // ─── Zod Schemas ───
 
@@ -53,6 +54,12 @@ export default async function tagRoutes(fastify: FastifyInstance): Promise<void>
         return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
       }
 
+      const ck = cacheKey(organizationId, 'tags');
+      const cached = await cacheGet(ck);
+      if (cached) {
+        return reply.send(cached);
+      }
+
       const tags = await prisma.tag.findMany({
         where: { organizationId },
         include: {
@@ -71,7 +78,10 @@ export default async function tagRoutes(fastify: FastifyInstance): Promise<void>
         chatCount: tag._count.chats,
       }));
 
-      return reply.send({ tags: result });
+      const response = { tags: result };
+      await cacheSet(ck, response, 300);
+
+      return reply.send(response);
     },
   );
 
@@ -110,6 +120,8 @@ export default async function tagRoutes(fastify: FastifyInstance): Promise<void>
           organizationId,
         },
       });
+
+      await cacheInvalidate(cacheKey(organizationId, 'tags'));
 
       return reply.status(201).send({
         id: tag.id,
@@ -178,6 +190,8 @@ export default async function tagRoutes(fastify: FastifyInstance): Promise<void>
         data: updateData,
       });
 
+      await cacheInvalidate(cacheKey(organizationId, 'tags'));
+
       return reply.send({
         id: updated.id,
         name: updated.name,
@@ -213,6 +227,8 @@ export default async function tagRoutes(fastify: FastifyInstance): Promise<void>
 
       // ChatTag entries cascade-delete via Prisma schema (onDelete: Cascade)
       await prisma.tag.delete({ where: { id } });
+
+      await cacheInvalidate(cacheKey(organizationId, 'tags'));
 
       return reply.status(204).send();
     },

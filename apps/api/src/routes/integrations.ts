@@ -16,6 +16,7 @@ let startWhatsAppPairing: any, cancelPairing: any;
 
 import { getIO } from '../websocket/index.js';
 import { getTelegramManager } from '../services/telegram-connection-manager.js';
+import { cacheGet, cacheSet, cacheInvalidate, cacheKey } from '../lib/cache.js';
 
 // ─── Zod Schemas ───
 
@@ -157,14 +158,23 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
         return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
       }
 
+      const ck = cacheKey(organizationId, 'integrations');
+      const cached = await cacheGet(ck);
+      if (cached) {
+        return reply.send(cached);
+      }
+
       const integrations = await prisma.integration.findMany({
         where: { organizationId },
         orderBy: { createdAt: 'desc' },
       });
 
-      return reply.send({
+      const response = {
         integrations: integrations.map(sanitizeIntegration),
-      });
+      };
+      await cacheSet(ck, response, 300);
+
+      return reply.send(response);
     },
   );
 
@@ -266,6 +276,8 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
       // Adapter verification is done; disconnect it (persistent listeners use their own connections)
       try { await adapter.disconnect(); } catch (e) { request.log.warn(e, 'adapter disconnect error'); }
 
+      await cacheInvalidate(cacheKey(organizationId, 'integrations'));
+
       // Start persistent listener for Telegram
       if (messenger === 'telegram') {
         getTelegramManager().startListening(integration.id).catch((err) => {
@@ -328,6 +340,8 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
         where: { id: integration.id },
         data: { status: 'disconnected' },
       });
+
+      await cacheInvalidate(cacheKey(organizationId, 'integrations'));
 
       return reply.send({
         integration: sanitizeIntegration(updated),
@@ -416,6 +430,8 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
 
       // Adapter verification is done; disconnect it (persistent listeners use their own connections)
       try { await adapter.disconnect(); } catch (e) { request.log.warn(e, 'adapter disconnect error'); }
+
+      await cacheInvalidate(cacheKey(organizationId, 'integrations'));
 
       // Start persistent listener for Telegram
       if (messenger === 'telegram') {

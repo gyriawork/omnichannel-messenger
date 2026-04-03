@@ -4,6 +4,7 @@
 
 import prisma from '../lib/prisma.js';
 import { getIO } from '../websocket/index.js';
+import { cacheInvalidate, cacheKey } from '../lib/cache.js';
 
 export interface SaveIncomingMessageParams {
   externalChatId: string;
@@ -103,6 +104,9 @@ export async function saveIncomingMessage(params: SaveIncomingMessageParams) {
   } catch {
     // WebSocket might not be initialized in tests
   }
+
+  // Invalidate chat list cache since lastActivityAt / messageCount changed
+  await cacheInvalidate(cacheKey(params.organizationId, 'chats', '*'));
 
   return message;
 }

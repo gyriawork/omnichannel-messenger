@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
+import { createHash } from 'node:crypto';
 import prisma from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
 import { requireMinRole } from '../middleware/rbac.js';
@@ -7,6 +8,7 @@ import { decryptCredentials } from '../lib/crypto.js';
 import { createAdapter } from '../integrations/factory.js';
 import { MessengerError } from '../integrations/base.js';
 import { messageSyncQueue } from '../lib/queue.js';
+import { cacheGet, cacheSet, cacheInvalidate, cacheKey } from '../lib/cache.js';
 
 // ─── Zod Schemas ───
 
@@ -103,6 +105,17 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
         return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
       }
 
+      const queryHash = createHash('md5')
+        .update(JSON.stringify({ messenger, status, ownerId, search, tagId, page, limit, userId: request.user.id }))
+        .digest('hex')
+        .slice(0, 12);
+
+      const ck = cacheKey(organizationId, 'chats', queryHash);
+      const cached = await cacheGet<{ chats: unknown[]; total: number; page: number; limit: number }>(ck);
+      if (cached) {
+        return reply.send(cached);
+      }
+
       const where: Record<string, unknown> = { organizationId, deletedAt: null };
 
       if (messenger) where.messenger = messenger;
@@ -120,10 +133,10 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
           where,
           include: {
             tags: {
-              include: { tag: true },
+              select: { tag: { select: { id: true, name: true, color: true } } },
             },
             owner: {
-              select: { id: true, name: true, email: true },
+              select: { id: true, name: true },
             },
             messages: {
               take: 1,
@@ -133,6 +146,7 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
             preferences: {
               where: { userId: request.user.id },
               take: 1,
+              select: { pinned: true, favorite: true, muted: true, unread: true },
             },
           },
           orderBy: { lastActivityAt: 'desc' },
@@ -152,7 +166,7 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
         organizationId: chat.organizationId,
         ownerId: chat.ownerId,
         owner: chat.owner
-          ? { id: chat.owner.id, name: chat.owner.name, email: chat.owner.email }
+          ? { id: chat.owner.id, name: chat.owner.name }
           : null,
         importedById: chat.importedById,
         messageCount: chat.messageCount,
@@ -175,7 +189,9 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
         updatedAt: chat.updatedAt,
       }));
 
-      return reply.send({ chats: result, total, page, limit });
+      const response = { chats: result, total, page, limit };
+      await cacheSet(ck, response, 60);
+      return reply.send(response);
     },
   );
 
@@ -425,6 +441,8 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
         },
       });
 
+      await cacheInvalidate(cacheKey(organizationId, 'chats', '*'));
+
       return reply.send({
         id: updated.id,
         name: updated.name,
@@ -475,6 +493,8 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
 
       // Soft delete: set deletedAt instead of hard deleting
       await prisma.chat.update({ where: { id }, data: { deletedAt: new Date() } });
+
+      await cacheInvalidate(cacheKey(organizationId, 'chats', '*'));
 
       return reply.status(204).send();
     },
@@ -555,6 +575,8 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
         }
       }
 
+      await cacheInvalidate(cacheKey(organizationId, 'chats', '*'));
+
       return reply.status(201).send({
         imported: newChats.length,
         skipped: chatsToImport.length - newChats.length,
@@ -595,6 +617,8 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
         },
         data: { ownerId },
       });
+
+      await cacheInvalidate(cacheKey(organizationId, 'chats', '*'));
 
       return reply.send({ updated: result.count });
     },
@@ -646,6 +670,8 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
           },
         });
       }
+
+      await cacheInvalidate(cacheKey(organizationId, 'chats', '*'));
 
       return reply.send({ updated: validChatIds.length });
     },
@@ -708,6 +734,8 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
           organizationId,
         },
       });
+
+      await cacheInvalidate(cacheKey(organizationId, 'chats', '*'));
 
       return reply.send({ deleted: result.count });
     },

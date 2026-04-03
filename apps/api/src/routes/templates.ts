@@ -4,6 +4,7 @@ import prisma from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
 import { requireMinRole, getOrgId } from '../middleware/rbac.js';
 import { logActivity } from '../lib/activity-logger.js';
+import { cacheGet, cacheSet, cacheInvalidate, cacheKey } from '../lib/cache.js';
 
 // ─── Zod Schemas ───
 
@@ -58,6 +59,13 @@ export default async function templateRoutes(fastify: FastifyInstance): Promise<
       }
 
       const { search, page, limit } = parsed.data;
+
+      const ck = cacheKey(organizationId, 'templates', `p${page}`, `l${limit}`, search ?? '');
+      const cached = await cacheGet(ck);
+      if (cached) {
+        return reply.send(cached);
+      }
+
       const skip = (page - 1) * limit;
 
       const where: Record<string, unknown> = { organizationId };
@@ -81,7 +89,7 @@ export default async function templateRoutes(fastify: FastifyInstance): Promise<
         prisma.template.count({ where }),
       ]);
 
-      return reply.send({
+      const response = {
         templates,
         pagination: {
           page,
@@ -89,7 +97,10 @@ export default async function templateRoutes(fastify: FastifyInstance): Promise<
           total,
           totalPages: Math.ceil(total / limit),
         },
-      });
+      };
+      await cacheSet(ck, response, 300);
+
+      return reply.send(response);
     },
   );
 
@@ -122,6 +133,8 @@ export default async function templateRoutes(fastify: FastifyInstance): Promise<
           createdBy: { select: { id: true, name: true } },
         },
       });
+
+      await cacheInvalidate(cacheKey(organizationId, 'templates') + '*');
 
       await logActivity({
         category: 'templates',
@@ -190,6 +203,8 @@ export default async function templateRoutes(fastify: FastifyInstance): Promise<
         },
       });
 
+      await cacheInvalidate(cacheKey(organizationId, 'templates') + '*');
+
       await logActivity({
         category: 'templates',
         action: 'updated',
@@ -236,6 +251,8 @@ export default async function templateRoutes(fastify: FastifyInstance): Promise<
       }
 
       await prisma.template.delete({ where: { id } });
+
+      await cacheInvalidate(cacheKey(organizationId, 'templates') + '*');
 
       await logActivity({
         category: 'templates',
@@ -288,6 +305,8 @@ export default async function templateRoutes(fastify: FastifyInstance): Promise<
           createdBy: { select: { id: true, name: true } },
         },
       });
+
+      await cacheInvalidate(cacheKey(organizationId, 'templates') + '*');
 
       await logActivity({
         category: 'templates',
