@@ -9,21 +9,25 @@ import type {
 } from '@/types/activity';
 
 interface ActivityResponse {
-  entries: ActivityEntry[];
-  total: number;
-  nextCursor?: string;
+  data: ActivityEntry[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
 }
 
-export function useActivity(filters?: ActivityFilters, cursor?: string) {
+export function useActivity(filters?: ActivityFilters, page: number = 1) {
   return useQuery({
-    queryKey: ['activity', filters, cursor],
+    queryKey: ['activity', filters, page],
     queryFn: async () => {
       const params = new URLSearchParams();
       if (filters?.category) params.set('category', filters.category);
       if (filters?.userId) params.set('userId', filters.userId);
-      if (filters?.dateFrom) params.set('dateFrom', filters.dateFrom);
-      if (filters?.dateTo) params.set('dateTo', filters.dateTo);
-      if (cursor) params.set('cursor', cursor);
+      if (filters?.dateFrom) params.set('startDate', filters.dateFrom);
+      if (filters?.dateTo) params.set('endDate', filters.dateTo);
+      params.set('page', String(page));
       params.set('limit', '20');
       const query = params.toString();
       return api.get<ActivityResponse>(

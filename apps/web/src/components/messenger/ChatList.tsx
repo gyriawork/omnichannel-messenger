@@ -3,7 +3,6 @@
 import { useMemo, useState, useRef, useEffect } from 'react';
 import {
   Search,
-  Plus,
   Pin,
   PinOff,
   Volume2,
@@ -13,44 +12,17 @@ import {
 import { cn } from '@/lib/utils';
 import { useChatStore } from '@/stores/chat';
 import { useChats, useChatPreferences } from '@/hooks/useChats';
-import { ImportChatsModal } from './ImportChatsModal';
 import type { Chat, MessengerType } from '@/types/chat';
 
 const MESSENGER_FILTERS: Array<{
   key: MessengerType;
   label: string;
   dotColor: string;
-  bgClass: string;
-  textClass: string;
 }> = [
-  {
-    key: 'telegram',
-    label: 'TG',
-    dotColor: '#0088cc',
-    bgClass: 'bg-messenger-tg-bg',
-    textClass: 'text-messenger-tg-text',
-  },
-  {
-    key: 'slack',
-    label: 'SL',
-    dotColor: '#611f69',
-    bgClass: 'bg-messenger-sl-bg',
-    textClass: 'text-messenger-sl-text',
-  },
-  {
-    key: 'whatsapp',
-    label: 'WA',
-    dotColor: '#25D366',
-    bgClass: 'bg-messenger-wa-bg',
-    textClass: 'text-messenger-wa-text',
-  },
-  {
-    key: 'gmail',
-    label: 'GM',
-    dotColor: '#EA4335',
-    bgClass: 'bg-messenger-gm-bg',
-    textClass: 'text-messenger-gm-text',
-  },
+  { key: 'telegram', label: 'Telegram', dotColor: '#0088cc' },
+  { key: 'slack', label: 'Slack', dotColor: '#611f69' },
+  { key: 'whatsapp', label: 'WhatsApp', dotColor: '#25D366' },
+  { key: 'gmail', label: 'Gmail', dotColor: '#EA4335' },
 ];
 
 function getMessengerDotColor(messenger: MessengerType): string {
@@ -258,7 +230,7 @@ function ChatItem({ chat, isActive }: { chat: Chat; isActive: boolean }) {
 }
 
 export function ChatList() {
-  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [sortBy, setSortBy] = useState<'lastActivityAt' | 'lastMessageDate' | 'name' | 'messageCount'>('lastActivityAt');
   const {
     activeChat,
     searchQuery,
@@ -275,24 +247,25 @@ export function ChatList() {
   const chats = data?.chats ?? [];
 
   const sortedChats = useMemo(() => {
-    const pinned = chats
-      .filter((c) => c.preferences?.pinned)
-      .sort((a, b) => {
-        const aTime = new Date(a.lastActivityAt || a.lastMessage?.createdAt || 0).getTime();
-        const bTime = new Date(b.lastActivityAt || b.lastMessage?.createdAt || 0).getTime();
-        return bTime - aTime; // DESC (most recent first)
-      });
+    const sortFn = (a: Chat, b: Chat): number => {
+      if (sortBy === 'name') return a.name.localeCompare(b.name);
+      if (sortBy === 'messageCount') return (b.messageCount ?? 0) - (a.messageCount ?? 0);
+      if (sortBy === 'lastMessageDate') {
+        const aTime = a.lastMessage?.createdAt ? new Date(a.lastMessage.createdAt).getTime() : 0;
+        const bTime = b.lastMessage?.createdAt ? new Date(b.lastMessage.createdAt).getTime() : 0;
+        return bTime - aTime;
+      }
+      // lastActivityAt (default)
+      const aTime = new Date(a.lastActivityAt || a.lastMessage?.createdAt || 0).getTime();
+      const bTime = new Date(b.lastActivityAt || b.lastMessage?.createdAt || 0).getTime();
+      return bTime - aTime;
+    };
 
-    const unpinned = chats
-      .filter((c) => !c.preferences?.pinned)
-      .sort((a, b) => {
-        const aTime = new Date(a.lastActivityAt || a.lastMessage?.createdAt || 0).getTime();
-        const bTime = new Date(b.lastActivityAt || b.lastMessage?.createdAt || 0).getTime();
-        return bTime - aTime; // DESC (most recent first)
-      });
+    const pinned = chats.filter((c) => c.preferences?.pinned).sort(sortFn);
+    const unpinned = chats.filter((c) => !c.preferences?.pinned).sort(sortFn);
 
     return [...pinned, ...unpinned];
-  }, [chats]);
+  }, [chats, sortBy]);
 
   return (
     <>
@@ -301,13 +274,6 @@ export function ChatList() {
         <div className="flex-shrink-0 border-b border-slate-100 px-4 pb-3 pt-4">
           <div className="flex items-center justify-between">
             <h2 className="text-base font-semibold text-slate-800">Chats</h2>
-            <button
-              onClick={() => setImportModalOpen(true)}
-              className="flex items-center gap-1 rounded-lg bg-accent px-2.5 py-1.5 text-xs font-medium text-white shadow-accent-sm transition-colors hover:bg-accent-hover"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              Add Chat
-            </button>
           </div>
 
           {/* Search */}
@@ -322,35 +288,28 @@ export function ChatList() {
             />
           </div>
 
-          {/* Filter pills */}
-          <div className="mt-2.5 flex items-center gap-1.5">
-            <button
-              onClick={() => setMessengerFilter(null)}
-              className={cn(
-                'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
-                messengerFilter === null
-                  ? 'bg-accent text-white'
-                  : 'bg-slate-100 text-slate-500 hover:bg-slate-200',
-              )}
+          {/* Filters */}
+          <div className="mt-2.5 flex items-center gap-2">
+            <select
+              value={messengerFilter ?? ''}
+              onChange={(e) => setMessengerFilter((e.target.value as MessengerType) || null)}
+              className="flex-1 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-600 outline-none transition-colors focus:border-accent focus:bg-white"
             >
-              All
-            </button>
-            {MESSENGER_FILTERS.map((f) => (
-              <button
-                key={f.key}
-                onClick={() =>
-                  setMessengerFilter(messengerFilter === f.key ? null : f.key)
-                }
-                className={cn(
-                  'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
-                  messengerFilter === f.key
-                    ? `${f.bgClass} ${f.textClass}`
-                    : 'bg-slate-100 text-slate-500 hover:bg-slate-200',
-                )}
-              >
-                {f.label}
-              </button>
-            ))}
+              <option value="">All Messengers</option>
+              {MESSENGER_FILTERS.map((f) => (
+                <option key={f.key} value={f.key}>{f.label}</option>
+              ))}
+            </select>
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+              className="flex-1 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-600 outline-none transition-colors focus:border-accent focus:bg-white"
+            >
+              <option value="lastActivityAt">Last Active</option>
+              <option value="lastMessageDate">Last Message</option>
+              <option value="name">Name</option>
+              <option value="messageCount">Messages</option>
+            </select>
           </div>
         </div>
 
@@ -395,11 +354,6 @@ export function ChatList() {
           )}
         </div>
       </div>
-
-      <ImportChatsModal
-        open={importModalOpen}
-        onClose={() => setImportModalOpen(false)}
-      />
     </>
   );
 }

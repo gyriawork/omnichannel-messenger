@@ -27,7 +27,7 @@ export const ReactionsBubble: React.FC<ReactionsBubbleProps> = ({
   }
 
   return (
-    <div className="flex flex-wrap gap-1.5 mt-1.5 items-center">
+    <div className="mt-1 flex flex-wrap items-center gap-1">
       {reactions.map((reaction) => (
         <button
           key={reaction.emoji}
@@ -40,17 +40,17 @@ export const ReactionsBubble: React.FC<ReactionsBubbleProps> = ({
           }}
           disabled={isLoading}
           className={`
-            px-2 py-1 rounded-full text-sm font-medium transition-all
+            inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium transition-all
             ${
               reaction.userReacted
-                ? 'bg-blue-100 dark:bg-blue-900 text-blue-900 dark:text-blue-100 ring-1 ring-blue-300 dark:ring-blue-700'
-                : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600'
+                ? 'bg-accent/10 text-accent ring-1 ring-accent/30'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
             }
             disabled:opacity-50 disabled:cursor-not-allowed
           `}
           title={reaction.userReacted ? 'Remove reaction' : 'Add reaction'}
         >
-          <span className="mr-1">{reaction.emoji}</span>
+          <span>{reaction.emoji}</span>
           <span>{reaction.count}</span>
         </button>
       ))}

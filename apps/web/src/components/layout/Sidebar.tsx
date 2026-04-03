@@ -18,9 +18,9 @@ import { useAuthStore } from '@/stores/auth';
 import { cn } from '@/lib/utils';
 
 const baseNavItems = [
-  { icon: MessageSquare, href: '/messenger', label: 'Messenger' },
-  { icon: Inbox, href: '/chats', label: 'Chats' },
   { icon: LayoutDashboard, href: '/', label: 'Dashboard' },
+  { icon: Inbox, href: '/chats', label: 'Chats' },
+  { icon: MessageSquare, href: '/messenger', label: 'Messenger' },
   { icon: Send, href: '/broadcast', label: 'Broadcast' },
   { icon: FileText, href: '/templates', label: 'Templates' },
   { icon: Tag, href: '/tags', label: 'Tags' },
@@ -77,7 +77,7 @@ export function Sidebar() {
             >
               <Icon className="h-5 w-5" strokeWidth={active ? 2 : 1.5} />
               {/* Tooltip */}
-              <span className="pointer-events-none absolute left-full ml-3 whitespace-nowrap rounded-lg bg-slate-800 px-2.5 py-1.5 text-xs font-medium text-white opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
+              <span className="pointer-events-none absolute left-full z-50 ml-3 whitespace-nowrap rounded-lg bg-slate-800 px-2.5 py-1.5 text-xs font-medium text-white opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
                 {label}
               </span>
             </Link>
@@ -99,7 +99,7 @@ export function Sidebar() {
           className="group relative flex h-10 w-10 items-center justify-center rounded-lg text-white/40 transition-all hover:bg-white/5 hover:text-white/60"
         >
           <LogOut className="h-5 w-5" strokeWidth={1.5} />
-          <span className="pointer-events-none absolute left-full ml-3 whitespace-nowrap rounded-lg bg-slate-800 px-2.5 py-1.5 text-xs font-medium text-white opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
+          <span className="pointer-events-none absolute left-full z-50 ml-3 whitespace-nowrap rounded-lg bg-slate-800 px-2.5 py-1.5 text-xs font-medium text-white opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
             Sign out
           </span>
         </button>

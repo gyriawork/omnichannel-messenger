@@ -340,7 +340,7 @@ export default function ChatsPage() {
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [showImport, setShowImport] = useState(false);
-  const [sortBy, setSortBy] = useState<'lastActivityAt' | 'name' | 'messageCount' | 'chatType'>('lastActivityAt');
+  const [sortBy, setSortBy] = useState<'lastActivityAt' | 'name' | 'messageCount' | 'chatType' | 'tags' | 'lastMessageDate'>('lastActivityAt');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [chatTypeFilter, setChatTypeFilter] = useState<string | null>(null);
 
@@ -370,6 +370,17 @@ export default function ChatsPage() {
         cmp = (a.messageCount ?? 0) - (b.messageCount ?? 0);
       } else if (sortBy === 'chatType') {
         cmp = (a.chatType ?? '').localeCompare(b.chatType ?? '');
+      } else if (sortBy === 'tags') {
+        const aTag = a.tags?.[0]?.name;
+        const bTag = b.tags?.[0]?.name;
+        if (!aTag && !bTag) cmp = 0;
+        else if (!aTag) cmp = 1;
+        else if (!bTag) cmp = -1;
+        else cmp = aTag.localeCompare(bTag);
+      } else if (sortBy === 'lastMessageDate') {
+        const aDate = a.lastMessage?.createdAt ? new Date(a.lastMessage.createdAt).getTime() : 0;
+        const bDate = b.lastMessage?.createdAt ? new Date(b.lastMessage.createdAt).getTime() : 0;
+        cmp = aDate - bDate;
       } else {
         cmp = new Date(a.lastActivityAt ?? 0).getTime() - new Date(b.lastActivityAt ?? 0).getTime();
       }
@@ -434,34 +445,16 @@ export default function ChatsPage() {
         </div>
 
         {/* Messenger filter */}
-        <div className="flex items-center gap-1 rounded-lg border border-slate-200 p-1">
-          <button
-            onClick={() => setMessengerFilter(null)}
-            className={cn(
-              'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
-              !messengerFilter ? 'bg-accent text-white' : 'text-slate-500 hover:bg-slate-100',
-            )}
-          >
-            All
-          </button>
-          {(Object.keys(messengerConfig) as MessengerType[]).map((m) => {
-            const cfg = messengerConfig[m];
-            return (
-              <button
-                key={m}
-                onClick={() => setMessengerFilter(messengerFilter === m ? null : m)}
-                className={cn(
-                  'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
-                  messengerFilter === m
-                    ? cn(cfg.bgClass, cfg.textClass)
-                    : 'text-slate-500 hover:bg-slate-100',
-                )}
-              >
-                {cfg.label}
-              </button>
-            );
-          })}
-        </div>
+        <select
+          value={messengerFilter ?? ''}
+          onChange={(e) => setMessengerFilter((e.target.value as MessengerType) || null)}
+          className="rounded border-[1.5px] border-slate-200 px-3 py-2 text-xs text-slate-600 focus:border-accent focus:outline-none"
+        >
+          <option value="">All Messengers</option>
+          {(Object.keys(messengerConfig) as MessengerType[]).map((m) => (
+            <option key={m} value={m}>{messengerConfig[m].label}</option>
+          ))}
+        </select>
 
         {/* Status filter */}
         <select
@@ -513,9 +506,11 @@ export default function ChatsPage() {
           className="rounded border-[1.5px] border-slate-200 px-3 py-2 text-xs text-slate-600 focus:border-accent focus:outline-none"
         >
           <option value="lastActivityAt">Sort: Last Active</option>
+          <option value="lastMessageDate">Sort: Last Message</option>
           <option value="name">Sort: Name</option>
           <option value="messageCount">Sort: Messages</option>
           <option value="chatType">Sort: Type</option>
+          <option value="tags">Sort: Tags</option>
         </select>
 
         {/* Sort direction toggle */}

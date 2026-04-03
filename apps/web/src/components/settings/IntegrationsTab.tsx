@@ -148,11 +148,6 @@ const slackSchema = z.object({
   botToken: z.string().min(1, 'Bot Token is required').startsWith('xoxb-', 'Must start with xoxb-'),
 });
 
-const gmailSchema = z.object({
-  clientId: z.string().min(1, 'Client ID is required'),
-  clientSecret: z.string().min(1, 'Client Secret is required'),
-  refreshToken: z.string().min(1, 'Refresh Token is required'),
-});
 
 // ---------- Connect modals ----------
 
@@ -632,22 +627,11 @@ function WhatsAppConnectForm({ onClose }: { onClose: () => void }) {
   );
 }
 
-function GmailConnectForm({
-  onSubmit,
-  isPending,
-}: {
-  onSubmit: (data: z.infer<typeof gmailSchema>) => void;
+function GmailConnectForm({}: {
+  onSubmit: (data: Record<string, string>) => void;
   isPending: boolean;
 }) {
   const { data: oauthData, isLoading: oauthLoading } = useGmailOAuthAvailable();
-  const [showManualForm, setShowManualForm] = useState(false);
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-  } = useForm<z.infer<typeof gmailSchema>>({
-    resolver: zodResolver(gmailSchema),
-  });
 
   const oauthAvailable = oauthData?.available ?? false;
 
@@ -665,123 +649,37 @@ function GmailConnectForm({
     );
   }
 
+  if (!oauthAvailable) {
+    return (
+      <div className="space-y-3">
+        <div className="flex items-start gap-2 rounded-lg bg-amber-50 p-3">
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+          <p className="text-xs text-amber-700">
+            Gmail integration is not configured yet. Please contact your administrator
+            to set up Google OAuth credentials on the server.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
-      {/* OAuth connect button — shown when Gmail OAuth is configured on the server */}
-      {oauthAvailable && (
-        <>
-          <div className="flex items-start gap-2 rounded-lg bg-blue-50 p-3">
-            <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-500" />
-            <p className="text-xs text-blue-700">
-              Click the button below to authorize with Google. You will be redirected to
-              Google to grant Gmail access, then returned here automatically.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={handleOAuthConnect}
-            className="flex w-full items-center justify-center gap-2 rounded bg-[#4285F4] px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-[#3367D6] hover:-translate-y-px"
-          >
-            <ExternalLink className="h-4 w-4" />
-            Connect with Google
-          </button>
-
-          {/* Expandable manual credentials section */}
-          <div className="border-t border-slate-100 pt-3">
-            <button
-              type="button"
-              onClick={() => setShowManualForm(!showManualForm)}
-              className="flex w-full items-center gap-2 text-xs font-medium text-slate-500 transition-colors hover:text-slate-700"
-            >
-              <ChevronDown
-                className={cn(
-                  'h-3.5 w-3.5 transition-transform duration-200',
-                  showManualForm && 'rotate-180',
-                )}
-              />
-              Advanced: Enter Credentials Manually
-            </button>
-          </div>
-        </>
-      )}
-
-      {/* Manual credentials form — shown when OAuth is not configured, or user expands advanced section */}
-      {(!oauthAvailable || showManualForm) && (
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-          {oauthAvailable && (
-            <p className="text-xs text-slate-500">
-              If you prefer, you can manually enter your own Google OAuth credentials instead of using the built-in OAuth flow.
-            </p>
-          )}
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-slate-700">
-              Client ID
-            </label>
-            <input
-              {...register('clientId')}
-              placeholder="your-client-id.apps.googleusercontent.com"
-              className={cn(
-                'w-full rounded border-[1.5px] border-slate-200 px-3 py-2 text-sm transition-colors',
-                'placeholder:text-slate-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15',
-                errors.clientId && 'border-red-300 focus:border-red-400 focus:ring-red-100',
-              )}
-            />
-            {errors.clientId && (
-              <p className="mt-1 text-xs text-red-500">{errors.clientId.message}</p>
-            )}
-          </div>
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-slate-700">
-              Client Secret
-            </label>
-            <input
-              {...register('clientSecret')}
-              type="password"
-              placeholder="Enter your Client Secret"
-              className={cn(
-                'w-full rounded border-[1.5px] border-slate-200 px-3 py-2 text-sm transition-colors',
-                'placeholder:text-slate-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15',
-                errors.clientSecret && 'border-red-300 focus:border-red-400 focus:ring-red-100',
-              )}
-            />
-            {errors.clientSecret && (
-              <p className="mt-1 text-xs text-red-500">{errors.clientSecret.message}</p>
-            )}
-          </div>
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-slate-700">
-              Refresh Token
-            </label>
-            <input
-              {...register('refreshToken')}
-              type="password"
-              placeholder="Enter your Refresh Token"
-              className={cn(
-                'w-full rounded border-[1.5px] border-slate-200 px-3 py-2 text-sm transition-colors',
-                'placeholder:text-slate-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15',
-                errors.refreshToken && 'border-red-300 focus:border-red-400 focus:ring-red-100',
-              )}
-            />
-            {errors.refreshToken && (
-              <p className="mt-1 text-xs text-red-500">
-                {errors.refreshToken.message}
-              </p>
-            )}
-          </div>
-          <button
-            type="submit"
-            disabled={isPending}
-            className="flex w-full items-center justify-center gap-2 rounded bg-accent px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px disabled:opacity-50"
-          >
-            {isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Plug className="h-4 w-4" />
-            )}
-            Connect with Credentials
-          </button>
-        </form>
-      )}
+      <div className="flex items-start gap-2 rounded-lg bg-blue-50 p-3">
+        <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-500" />
+        <p className="text-xs text-blue-700">
+          Click the button below to authorize with Google. You will be redirected to
+          Google to grant Gmail access, then returned here automatically.
+        </p>
+      </div>
+      <button
+        type="button"
+        onClick={handleOAuthConnect}
+        className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#4285F4] px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-[#3367D6] hover:-translate-y-px"
+      >
+        <ExternalLink className="h-4 w-4" />
+        Connect with Google
+      </button>
     </div>
   );
 }

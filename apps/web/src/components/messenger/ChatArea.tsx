@@ -345,10 +345,10 @@ function MessageBubble({
 
       <div
         className={cn(
-          'relative rounded-[18px] px-3.5 py-2 text-sm leading-relaxed',
+          'relative rounded-2xl px-4 py-2.5 text-sm leading-relaxed',
           isSelf
-            ? 'rounded-br-[4px] bg-accent text-white'
-            : 'rounded-bl-[4px] bg-white text-slate-800 shadow-xs',
+            ? 'rounded-br-md bg-accent text-white'
+            : 'rounded-bl-md bg-white text-slate-800 shadow-sm ring-1 ring-slate-100',
         )}
       >
         {/* Sender name for incoming */}
@@ -455,15 +455,16 @@ function MessageBubble({
           )}
         </div>
 
-        {/* Emoji reactions */}
-        <ReactionsBubble
-          reactions={reactions}
-          onAddReaction={addReaction}
-          onRemoveReaction={removeReaction}
-          isLoading={isAddingReaction || isRemovingReaction}
-          showPicker={isSelf}
-        />
       </div>
+
+      {/* Emoji reactions — outside bubble */}
+      <ReactionsBubble
+        reactions={reactions}
+        onAddReaction={addReaction}
+        onRemoveReaction={removeReaction}
+        isLoading={isAddingReaction || isRemovingReaction}
+        showPicker
+      />
     </div>
   );
 }

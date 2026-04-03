@@ -50,26 +50,26 @@ const CATEGORY_BG: Record<ActivityCategory, string> = {
 
 export default function ActivityPage() {
   const [filters, setFilters] = useState<ActivityFilters>({});
-  const [pages, setPages] = useState<string[]>([]);
+  const [page, setPage] = useState(1);
 
-  const currentCursor = pages.length > 0 ? pages[pages.length - 1] : undefined;
-  const { data, isLoading } = useActivity(filters, currentCursor);
+  const { data, isLoading } = useActivity(filters, page);
 
-  const entries = data?.entries || [];
+  const entries = data?.data || [];
+  const pagination = data?.pagination;
 
   const handleFilterChange = useCallback(
     (update: Partial<ActivityFilters>) => {
       setFilters((prev) => ({ ...prev, ...update }));
-      setPages([]);
+      setPage(1);
     },
     [],
   );
 
   const handleLoadMore = useCallback(() => {
-    if (data?.nextCursor) {
-      setPages((prev) => [...prev, data.nextCursor!]);
+    if (pagination && page < pagination.totalPages) {
+      setPage((prev) => prev + 1);
     }
-  }, [data?.nextCursor]);
+  }, [pagination, page]);
 
   const inputClass = cn(
     'rounded-lg border-[1.5px] border-slate-200 bg-white px-3 py-2 text-sm text-slate-700',
@@ -156,7 +156,7 @@ export default function ActivityPage() {
           <button
             onClick={() => {
               setFilters({});
-              setPages([]);
+              setPage(1);
             }}
             className="text-sm font-medium text-accent hover:text-accent-hover"
           >
@@ -230,20 +230,26 @@ export default function ActivityPage() {
             ))}
           </div>
 
-          {/* Load more */}
-          {data?.nextCursor && (
-            <div className="mt-6 flex justify-center">
+          {/* Pagination */}
+          {pagination && pagination.totalPages > 1 && (
+            <div className="mt-6 flex items-center justify-center gap-3">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page <= 1 || isLoading}
+                className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 shadow-xs transition-all hover:bg-slate-50 disabled:opacity-50"
+              >
+                Previous
+              </button>
+              <span className="text-sm text-slate-500">
+                Page {page} of {pagination.totalPages}
+              </span>
               <button
                 onClick={handleLoadMore}
-                disabled={isLoading}
-                className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-5 py-2.5 text-sm font-medium text-slate-600 shadow-xs transition-all hover:bg-slate-50 hover:-translate-y-px disabled:opacity-50"
+                disabled={page >= pagination.totalPages || isLoading}
+                className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 shadow-xs transition-all hover:bg-slate-50 disabled:opacity-50"
               >
-                {isLoading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Activity className="h-4 w-4" />
-                )}
-                Load more
+                {isLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+                Next
               </button>
             </div>
           )}
