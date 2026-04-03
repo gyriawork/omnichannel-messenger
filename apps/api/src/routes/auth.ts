@@ -332,4 +332,79 @@ export default async function authRoutes(fastify: FastifyInstance): Promise<void
       return reply.status(200).send({ success: true });
     },
   );
+
+  // ── POST /forgot-password ──
+
+  fastify.post(
+    '/forgot-password',
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const schema = z.object({ email: z.string().email() });
+      const parsed = schema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.status(422).send({ error: { code: 'VALIDATION_ERROR', message: 'Invalid email', statusCode: 422 } });
+      }
+
+      const user = await prisma.user.findUnique({ where: { email: parsed.data.email } });
+
+      // Always return success to prevent email enumeration
+      if (!user) {
+        return reply.status(200).send({ message: 'If the email exists, a reset link has been sent' });
+      }
+
+      const token = randomUUID();
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+      await prisma.passwordResetToken.create({
+        data: { token, userId: user.id, expiresAt },
+      });
+
+      // TODO: Send email with reset link (integrate email service)
+      console.log(`[DEV] Password reset token for ${user.email}: ${token}`);
+
+      return reply.status(200).send({ message: 'If the email exists, a reset link has been sent' });
+    },
+  );
+
+  // ── POST /reset-password ──
+
+  fastify.post(
+    '/reset-password',
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const schema = z.object({
+        token: z.string().uuid(),
+        newPassword: z.string().min(8),
+      });
+      const parsed = schema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.status(422).send({ error: { code: 'VALIDATION_ERROR', message: 'Invalid input', statusCode: 422 } });
+      }
+
+      const resetToken = await prisma.passwordResetToken.findUnique({
+        where: { token: parsed.data.token },
+      });
+
+      if (!resetToken || resetToken.usedAt || resetToken.expiresAt < new Date()) {
+        return reply.status(400).send({ error: { code: 'AUTH_INVALID_CREDENTIALS', message: 'Invalid or expired reset token', statusCode: 400 } });
+      }
+
+      const hashedPassword = await bcrypt.hash(parsed.data.newPassword, 12);
+
+      await prisma.$transaction([
+        prisma.user.update({
+          where: { id: resetToken.userId },
+          data: { passwordHash: hashedPassword },
+        }),
+        prisma.passwordResetToken.update({
+          where: { id: resetToken.id },
+          data: { usedAt: new Date() },
+        }),
+        // Invalidate all refresh tokens
+        prisma.refreshToken.deleteMany({
+          where: { userId: resetToken.userId },
+        }),
+      ]);
+
+      return reply.status(200).send({ message: 'Password reset successfully' });
+    },
+  );
 }
