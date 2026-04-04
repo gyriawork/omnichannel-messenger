@@ -23,7 +23,7 @@ const {
 
 import { Boom } from '@hapi/boom';
 import { EventEmitter } from 'node:events';
-import type { MessengerAdapter } from './base.js';
+import type { MessengerAdapter, GetMessagesResult, HistoryMessage } from './base.js';
 import { MessengerError } from './base.js';
 import pino from 'pino';
 
@@ -495,6 +495,78 @@ export class WhatsAppAdapter implements MessengerAdapter {
       } as Parameters<WASocket['sendMessage']>[1]);
     } catch (err) {
       throw new MessengerError('whatsapp', err, 'Failed to delete WhatsApp message');
+    }
+  }
+
+  async getMessages(
+    externalChatId: string,
+    limit = 100,
+    cursor?: string,
+  ): Promise<GetMessagesResult> {
+    this.ensureConnected();
+
+    try {
+      const jid = this.normalizeJid(externalChatId);
+
+      // Check if fetchMessageHistory is available
+      if (typeof (this.sock as any)?.fetchMessageHistory !== 'function') {
+        console.warn('WhatsApp fetchMessageHistory not available in this Baileys version');
+        return { messages: [], hasMore: false };
+      }
+
+      // Baileys uses message key for cursor-based pagination
+      let cursorMsg;
+      try {
+        cursorMsg = cursor ? JSON.parse(cursor) : undefined;
+      } catch {
+        cursorMsg = undefined; // restart from beginning if cursor is corrupted
+      }
+      const rawMessages = await (this.sock as any).fetchMessageHistory(
+        limit,
+        jid,
+        cursorMsg,
+      );
+
+      if (!rawMessages || rawMessages.length === 0) {
+        return { messages: [], hasMore: false };
+      }
+
+      const historyMessages: HistoryMessage[] = rawMessages
+        .filter((m: any) => m.message)
+        .map((m: any) => {
+          const text =
+            m.message?.conversation ??
+            m.message?.extendedTextMessage?.text ??
+            m.message?.imageMessage?.caption ??
+            m.message?.videoMessage?.caption ??
+            m.message?.documentMessage?.fileName ??
+            '';
+
+          return {
+            id: m.key.id ?? `wa_${Date.now()}_${Math.random()}`,
+            text,
+            senderId: m.key.participant ?? m.key.remoteJid ?? '',
+            date: new Date((m.messageTimestamp as number) * 1000),
+            isSelf: m.key.fromMe ?? false,
+          };
+        })
+        .reverse(); // oldest first
+
+      // Use the oldest message key as cursor for next batch
+      const oldestMsg = rawMessages[rawMessages.length - 1];
+      const nextCursorKey = oldestMsg?.key ? JSON.stringify(oldestMsg.key) : undefined;
+
+      return {
+        messages: historyMessages,
+        nextCursor: nextCursorKey,
+        hasMore: rawMessages.length >= limit,
+      };
+    } catch (err) {
+      // WhatsApp history may not be available — treat as empty, not error
+      if (String(err).includes('not available') || String(err).includes('Bad Request')) {
+        return { messages: [], hasMore: false };
+      }
+      throw new MessengerError('whatsapp', err, 'Failed to get WhatsApp messages');
     }
   }
 

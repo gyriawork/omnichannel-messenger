@@ -5,7 +5,7 @@
 import { TelegramClient, Api } from 'telegram';
 import { StringSession } from 'telegram/sessions/index.js';
 import IORedis from 'ioredis';
-import type { MessengerAdapter } from './base.js';
+import type { MessengerAdapter, GetMessagesResult, HistoryMessage } from './base.js';
 import { MessengerError } from './base.js';
 
 // ─── Types ───
@@ -300,34 +300,48 @@ export class TelegramAdapter implements MessengerAdapter {
   }
 
   /**
-   * Fetch message history from a chat. Returns messages oldest-first.
+   * Fetch message history from a chat with cursor-based pagination.
+   * Returns messages oldest-first.
    */
   async getMessages(
     externalChatId: string,
     limit = 100,
-  ): Promise<Array<{
-    id: string;
-    text: string;
-    senderId: string;
-    date: Date;
-    out: boolean;
-  }>> {
+    cursor?: string,
+  ): Promise<GetMessagesResult> {
     this.ensureConnected();
 
     try {
       const peer = await this.resolvePeer(externalChatId);
-      const messages = await this.client!.getMessages(peer, { limit });
+      const params: Record<string, unknown> = { limit };
 
-      return messages
+      // cursor is the offsetId (oldest message ID from previous batch)
+      if (cursor) {
+        params.offsetId = parseInt(cursor, 10);
+      }
+
+      const rawMessages = await this.client!.getMessages(peer, params);
+
+      const messages: HistoryMessage[] = rawMessages
         .filter((m) => m.id !== undefined)
         .map((m) => ({
           id: m.id.toString(),
           text: m.text || '',
           senderId: m.senderId ? m.senderId.toString() : '',
           date: new Date((m.date ?? 0) * 1000),
-          out: m.out ?? false,
+          isSelf: m.out ?? false,
         }))
         .reverse(); // oldest first
+
+      // Determine next cursor: the oldest message ID in this batch
+      const oldestId = rawMessages.length > 0
+        ? rawMessages.reduce((min, m) => (m.id !== undefined && m.id < min ? m.id : min), rawMessages[0]!.id)
+        : undefined;
+
+      return {
+        messages,
+        nextCursor: oldestId !== undefined ? oldestId.toString() : undefined,
+        hasMore: rawMessages.length >= limit,
+      };
     } catch (err) {
       throw new MessengerError('telegram', err, 'Failed to get Telegram messages');
     }

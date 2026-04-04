@@ -4,7 +4,7 @@
 
 import { google } from 'googleapis';
 import type { gmail_v1 } from 'googleapis';
-import type { MessengerAdapter } from './base.js';
+import type { MessengerAdapter, GetMessagesResult, HistoryMessage } from './base.js';
 import { MessengerError } from './base.js';
 
 interface GmailCredentials {
@@ -290,6 +290,60 @@ export class GmailAdapter implements MessengerAdapter {
     } catch (err) {
       this.handleGmailError(err);
       throw new MessengerError('gmail', err, 'Failed to delete Gmail message');
+    }
+  }
+
+  async getMessages(
+    externalChatId: string,
+    limit = 50,
+    cursor?: string,
+  ): Promise<GetMessagesResult> {
+    this.ensureConnected();
+
+    try {
+      // externalChatId IS the thread ID for Gmail — fetch only this thread
+      const threadResult = await this.gmail!.users.threads.get({
+        userId: 'me',
+        id: externalChatId,
+        format: 'metadata',
+        metadataHeaders: ['From', 'Subject', 'Date'],
+      });
+
+      const allMessages = threadResult.data.messages ?? [];
+      if (allMessages.length === 0) {
+        return { messages: [], hasMore: false };
+      }
+
+      // Simple index-based pagination (threads.get returns all messages at once)
+      const startIndex = cursor ? parseInt(cursor, 10) : 0;
+      const slice = allMessages.slice(startIndex, startIndex + limit);
+
+      const historyMessages: HistoryMessage[] = slice
+        .filter((msg) => msg.id)
+        .map((msg) => {
+          const headers = msg.payload?.headers ?? [];
+          const from = headers.find((h) => h.name === 'From')?.value ?? '';
+          const dateStr = headers.find((h) => h.name === 'Date')?.value ?? '';
+
+          return {
+            id: msg.id!,
+            text: msg.snippet ?? '',
+            senderId: from,
+            senderName: from.replace(/<.*>/, '').trim(),
+            date: dateStr ? new Date(dateStr) : new Date(),
+            isSelf: msg.labelIds?.includes('SENT') ?? false,
+          };
+        });
+
+      const nextIndex = startIndex + limit;
+      return {
+        messages: historyMessages, // already oldest-first in thread
+        nextCursor: nextIndex < allMessages.length ? nextIndex.toString() : undefined,
+        hasMore: nextIndex < allMessages.length,
+      };
+    } catch (err) {
+      this.handleGmailError(err);
+      throw new MessengerError('gmail', err, 'Failed to get Gmail messages');
     }
   }
 

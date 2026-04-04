@@ -101,6 +101,8 @@ model Chat {
   importedBy       User     @relation("ChatImporter", fields: [importedById], references: [id])
   messageCount     Int      @default(0)
   lastActivityAt   DateTime?
+  syncStatus       String   @default("pending") // pending | syncing | synced | failed
+  syncCursor       String?  // adapter-specific pagination cursor for resumable sync
   deletedAt        DateTime?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt

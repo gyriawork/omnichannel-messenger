@@ -263,4 +263,14 @@ npx prisma studio              # Visual DB browser
 
 # Database
 npx prisma db push             # Push schema without migration (dev only)
+
+# Deployment
+netlify deploy --prod           # Deploy frontend to Netlify (from apps/web)
+railway up                      # Deploy backend to Railway (from apps/api or apps/worker)
 ```
+
+## Deployment
+
+- **Netlify CLI** and **Railway CLI** are installed globally
+- Frontend (`apps/web`) deploys via **Netlify**
+- Backend (`apps/api`) and worker (`apps/worker`) deploy via **Railway**

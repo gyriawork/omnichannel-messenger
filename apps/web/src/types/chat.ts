@@ -11,6 +11,7 @@ export interface Chat {
   ownerId?: string;
   ownerName?: string;
   messageCount: number;
+  syncStatus?: string; // pending | syncing | synced | failed
   createdAt?: string;
   lastActivityAt?: string;
   externalChatId?: string;

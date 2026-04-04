@@ -8,6 +8,7 @@ import {
   Volume2,
   VolumeX,
   Star,
+  Loader2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getMessengerDotColor, getAvatarColor, getInitials } from '@/lib/chat-utils';
@@ -98,6 +99,12 @@ const ChatItem = React.memo(function ChatItem({ chat, isActive }: { chat: Chat; 
           className="absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full border-2 border-white"
           style={{ backgroundColor: getMessengerDotColor(chat.messenger) }}
         />
+        {/* Sync indicator */}
+        {chat.syncStatus && chat.syncStatus !== 'synced' && (
+          <span className="absolute -top-0.5 -left-0.5">
+            <Loader2 className="h-3 w-3 animate-spin text-accent" />
+          </span>
+        )}
       </div>
 
       {/* Content */}
@@ -110,6 +117,9 @@ const ChatItem = React.memo(function ChatItem({ chat, isActive }: { chat: Chat; 
             )}
           >
             {chat.name}
+            {chat.syncStatus && chat.syncStatus !== 'synced' && (
+              <span className="ml-1 text-[10px] text-accent">Syncing...</span>
+            )}
           </span>
           <div className="flex flex-shrink-0 items-center gap-1">
             {isPinned && (

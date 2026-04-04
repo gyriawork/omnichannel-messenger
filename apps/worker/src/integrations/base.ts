@@ -35,6 +35,30 @@ export interface MessengerAdapter {
 
   /** Get the current connection status. */
   getStatus(): 'connected' | 'disconnected' | 'token_expired' | 'session_expired';
+
+  /** Fetch message history from a chat with pagination. Returns messages oldest-first. */
+  getMessages?(
+    externalChatId: string,
+    limit: number,
+    cursor?: string,
+  ): Promise<GetMessagesResult>;
+}
+
+/** Standard message shape returned by getMessages */
+export interface HistoryMessage {
+  id: string;
+  text: string;
+  senderId: string;
+  senderName?: string;
+  date: Date;
+  isSelf: boolean;
+}
+
+/** Result of a paginated getMessages call */
+export interface GetMessagesResult {
+  messages: HistoryMessage[];
+  nextCursor?: string;
+  hasMore: boolean;
 }
 
 /** Typed error for messenger adapter failures. */

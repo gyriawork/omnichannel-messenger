@@ -171,6 +171,7 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
         importedById: chat.importedById,
         messageCount: chat.messageCount,
         lastActivityAt: chat.lastActivityAt,
+        syncStatus: chat.syncStatus,
         tags: chat.tags.map((ct) => ({
           id: ct.tag.id,
           name: ct.tag.name,
@@ -331,6 +332,7 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
         importedById: chat.importedById,
         messageCount: chat.messageCount,
         lastActivityAt: chat.lastActivityAt,
+        syncStatus: chat.syncStatus,
         tags: chat.tags.map((ct) => ({
           id: ct.tag.id,
           name: ct.tag.name,

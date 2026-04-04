@@ -3,7 +3,7 @@
 // Requires a bot or user OAuth token with appropriate scopes.
 
 import { WebClient } from '@slack/web-api';
-import type { MessengerAdapter } from './base.js';
+import type { MessengerAdapter, GetMessagesResult, HistoryMessage } from './base.js';
 import { MessengerError } from './base.js';
 
 interface SlackCredentials {
@@ -14,6 +14,7 @@ export class SlackAdapter implements MessengerAdapter {
   private client: WebClient | null = null;
   private status: 'connected' | 'disconnected' | 'token_expired' | 'session_expired' = 'disconnected';
   private token: string;
+  private userId: string = '';
 
   constructor(credentials: SlackCredentials) {
     this.token = credentials.token;
@@ -29,6 +30,7 @@ export class SlackAdapter implements MessengerAdapter {
         throw new Error('Slack auth.test failed');
       }
 
+      this.userId = result.user_id ?? '';
       this.status = 'connected';
     } catch (err) {
       this.status = 'disconnected';
@@ -190,6 +192,49 @@ export class SlackAdapter implements MessengerAdapter {
     } catch (err) {
       this.handleSlackError(err);
       throw new MessengerError('slack', err, 'Failed to delete Slack message');
+    }
+  }
+
+  async getMessages(
+    externalChatId: string,
+    limit = 200,
+    cursor?: string,
+  ): Promise<GetMessagesResult> {
+    this.ensureConnected();
+
+    try {
+      const params: Record<string, unknown> = {
+        channel: externalChatId,
+        limit,
+      };
+      if (cursor) {
+        params.cursor = cursor;
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const result = await this.client!.conversations.history(params as any);
+
+      const messages: HistoryMessage[] = (result.messages ?? [])
+        .filter((m) => m.ts && m.type === 'message')
+        .map((m) => ({
+          id: m.ts!,
+          text: m.text ?? '',
+          senderId: m.user ?? m.bot_id ?? '',
+          date: new Date(parseFloat(m.ts!) * 1000),
+          isSelf: (m.user ?? '') === this.userId,
+        }))
+        .reverse(); // oldest first
+
+      const nextCursor = result.response_metadata?.next_cursor || undefined;
+
+      return {
+        messages,
+        nextCursor: nextCursor && nextCursor.length > 0 ? nextCursor : undefined,
+        hasMore: result.has_more ?? false,
+      };
+    } catch (err) {
+      this.handleSlackError(err);
+      throw new MessengerError('slack', err, 'Failed to get Slack messages');
     }
   }
 
