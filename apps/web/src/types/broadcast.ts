@@ -58,18 +58,17 @@ export interface BroadcastFilters {
 }
 
 export interface BroadcastAnalytics {
-  totalBroadcasts: number;
-  totalMessagesSent: number;
-  averageDeliveryRate: number;
+  totalSent: number;
   totalFailed: number;
-  perDay: Array<{ date: string; sent: number; failed: number }>;
-  perMessenger: Array<{
-    messenger: string;
+  total: number;
+  deliveryRate: number;
+  perMessenger: Record<string, {
     sent: number;
     failed: number;
+    total: number;
     deliveryRate: number;
   }>;
-  topFailReasons: Array<{ reason: string; count: number }>;
+  dailyCounts: Array<{ date: string; sent: number; failed: number }>;
 }
 
 export interface BroadcastAttachment {

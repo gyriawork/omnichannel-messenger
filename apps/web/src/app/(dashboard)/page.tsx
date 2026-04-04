@@ -7,7 +7,6 @@ import {
   Send,
   TrendingUp,
   Plus,
-  Import,
   FileText,
   Clock,
 } from 'lucide-react';
@@ -108,14 +107,7 @@ export default function DashboardPage() {
             <Plus className="h-4 w-4" />
             New Broadcast
           </button>
-          <button
-            onClick={() => router.push('/messenger')}
-            className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-xs transition-all hover:bg-slate-50 hover:-translate-y-px"
-          >
-            <Import className="h-4 w-4" />
-            Import Chats
-          </button>
-          <button
+<button
             onClick={() => router.push('/templates')}
             className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-xs transition-all hover:bg-slate-50 hover:-translate-y-px"
           >

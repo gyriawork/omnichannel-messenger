@@ -50,6 +50,14 @@ export default function BroadcastAnalyticsPage() {
   const [period, setPeriod] = useState<'7d' | '30d' | '90d'>('30d');
   const { data, isLoading } = useBroadcastAnalytics(period);
 
+  // Convert perMessenger record to array for table rendering
+  const messengerRows = data?.perMessenger
+    ? Object.entries(data.perMessenger).map(([messenger, stats]) => ({
+        messenger,
+        ...stats,
+      }))
+    : [];
+
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
       {/* Header */}
@@ -98,18 +106,18 @@ export default function BroadcastAnalyticsPage() {
           <div className="mb-8 grid grid-cols-4 gap-4">
             <SummaryCard
               icon={<Radio className="h-5 w-5 text-accent" />}
-              label="Total Broadcasts"
-              value={String(data?.totalBroadcasts ?? 0)}
+              label="Total Messages"
+              value={String(data?.total ?? 0)}
             />
             <SummaryCard
               icon={<Send className="h-5 w-5 text-emerald-500" />}
               label="Messages Sent"
-              value={formatNumber(data?.totalMessagesSent ?? 0)}
+              value={formatNumber(data?.totalSent ?? 0)}
             />
             <SummaryCard
               icon={<TrendingUp className="h-5 w-5 text-blue-500" />}
-              label="Avg Delivery Rate"
-              value={`${Math.round(data?.averageDeliveryRate ?? 0)}%`}
+              label="Delivery Rate"
+              value={`${Math.round((data?.deliveryRate ?? 0) * 100)}%`}
             />
             <SummaryCard
               icon={<AlertTriangle className="h-5 w-5 text-red-500" />}
@@ -123,8 +131,8 @@ export default function BroadcastAnalyticsPage() {
             <h3 className="mb-4 text-sm font-semibold text-slate-900">
               Messages Sent Over Time
             </h3>
-            {data?.perDay && data.perDay.length > 0 ? (
-              <BarChartPlaceholder data={data.perDay} />
+            {data?.dailyCounts && data.dailyCounts.length > 0 ? (
+              <BarChartPlaceholder data={data.dailyCounts} />
             ) : (
               <div className="flex h-48 items-center justify-center text-sm text-slate-400">
                 <div className="flex flex-col items-center gap-2">
@@ -140,7 +148,7 @@ export default function BroadcastAnalyticsPage() {
             <h3 className="mb-4 text-sm font-semibold text-slate-900">
               Per-Messenger Breakdown
             </h3>
-            {data?.perMessenger && data.perMessenger.length > 0 ? (
+            {messengerRows.length > 0 ? (
               <div className="overflow-hidden rounded-lg border border-slate-200">
                 <table className="w-full text-left text-sm">
                   <thead>
@@ -160,8 +168,9 @@ export default function BroadcastAnalyticsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {data.perMessenger.map((row) => {
+                    {messengerRows.map((row) => {
                       const meta = messengerMeta[row.messenger];
+                      const ratePercent = Math.round(row.deliveryRate * 100);
                       return (
                         <tr
                           key={row.messenger}
@@ -188,14 +197,14 @@ export default function BroadcastAnalyticsPage() {
                             <span
                               className={cn(
                                 'font-medium',
-                                row.deliveryRate >= 95
+                                ratePercent >= 95
                                   ? 'text-emerald-600'
-                                  : row.deliveryRate >= 80
+                                  : ratePercent >= 80
                                     ? 'text-amber-600'
                                     : 'text-red-600',
                               )}
                             >
-                              {Math.round(row.deliveryRate)}%
+                              {ratePercent}%
                             </span>
                           </td>
                         </tr>
@@ -207,44 +216,6 @@ export default function BroadcastAnalyticsPage() {
             ) : (
               <p className="py-8 text-center text-sm text-slate-400">
                 No messenger data available
-              </p>
-            )}
-          </div>
-
-          {/* Top Fail Reasons */}
-          <div className="rounded-lg bg-white p-6 shadow-xs">
-            <h3 className="mb-4 text-sm font-semibold text-slate-900">
-              Top Failure Reasons
-            </h3>
-            {data?.topFailReasons && data.topFailReasons.length > 0 ? (
-              <div className="space-y-3">
-                {data.topFailReasons.map((reason, i) => {
-                  const maxCount = data.topFailReasons[0].count;
-                  const pct =
-                    maxCount > 0
-                      ? Math.round((reason.count / maxCount) * 100)
-                      : 0;
-                  return (
-                    <div key={i}>
-                      <div className="mb-1 flex items-center justify-between text-sm">
-                        <span className="text-slate-700">{reason.reason}</span>
-                        <span className="font-medium text-slate-900">
-                          {reason.count}
-                        </span>
-                      </div>
-                      <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-                        <div
-                          className="h-full rounded-full bg-red-400"
-                          style={{ width: `${pct}%` }}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className="py-8 text-center text-sm text-slate-400">
-                No failures recorded
               </p>
             )}
           </div>

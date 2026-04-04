@@ -1,7 +1,9 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { authenticate } from '../middleware/auth.js';
 import { requireOrganization, getOrgId } from '../middleware/rbac.js';
-import { uploadFile, getSignedDownloadUrl, deleteFile } from '../lib/storage.js';
+import { uploadFile, getSignedDownloadUrl, deleteFile, useLocalStorage, getLocalFilePath } from '../lib/storage.js';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 
 /** Validate that an upload key belongs to the given org and has no path traversal */
 function validateUploadKey(key: string, organizationId: string | null): boolean {
@@ -104,6 +106,53 @@ export default async function uploadRoutes(fastify: FastifyInstance): Promise<vo
       }
     },
   );
+
+  // GET /uploads/files/:orgId/:filename — serve locally stored files (dev mode)
+  if (useLocalStorage) {
+    fastify.get(
+      '/uploads/files/:orgId/:filename',
+      { preHandler: [authenticate] },
+      async (request: FastifyRequest, reply: FastifyReply) => {
+        const { orgId, filename } = request.params as { orgId: string; filename: string };
+        const key = `${orgId}/${filename}`;
+
+        // Prevent path traversal
+        const normalized = key.replace(/\\/g, '/');
+        if (normalized.includes('..') || normalized.startsWith('/')) {
+          return reply.status(403).send({
+            error: { code: 'AUTH_INSUFFICIENT_PERMISSIONS', message: 'Access denied', statusCode: 403 },
+          });
+        }
+
+        const filePath = getLocalFilePath(key);
+
+        try {
+          const stat = await fs.stat(filePath);
+          if (!stat.isFile()) throw new Error('Not a file');
+
+          const ext = path.extname(filename).toLowerCase();
+          const mimeMap: Record<string, string> = {
+            '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
+            '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml',
+            '.pdf': 'application/pdf', '.txt': 'text/plain', '.csv': 'text/csv',
+            '.mp4': 'video/mp4', '.mp3': 'audio/mpeg',
+            '.doc': 'application/msword', '.zip': 'application/zip',
+          };
+          const contentType = mimeMap[ext] || 'application/octet-stream';
+
+          const fileBuffer = await fs.readFile(filePath);
+          return reply
+            .header('Content-Type', contentType)
+            .header('Cache-Control', 'public, max-age=31536000')
+            .send(fileBuffer);
+        } catch {
+          return reply.status(404).send({
+            error: { code: 'RESOURCE_NOT_FOUND', message: 'File not found', statusCode: 404 },
+          });
+        }
+      },
+    );
+  }
 
   // DELETE /uploads — delete a file
   fastify.delete(

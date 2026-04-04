@@ -245,7 +245,7 @@ export default function BroadcastPage() {
                           )}
                           {broadcast.deliveryRate != null && (
                             <span className="font-medium text-slate-600">
-                              {Math.round(broadcast.deliveryRate)}% delivered
+                              {Math.round((broadcast.deliveryRate ?? 0) * 100)}% delivered
                             </span>
                           )}
                           <span>
