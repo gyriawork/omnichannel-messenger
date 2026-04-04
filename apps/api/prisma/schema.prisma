@@ -186,14 +186,17 @@ model Message {
 // ─── REACTIONS ───
 
 model Reaction {
-  id        String   @id @default(uuid())
-  messageId String
-  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
-  userId    String
-  emoji     String   // Unicode emoji character
-  createdAt DateTime @default(now())
+  id              String   @id @default(uuid())
+  messageId       String
+  message         Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId          String
+  emoji           String   // Unicode emoji character
+  externalSynced  Boolean  @default(false)
+  externalUserId  String?
+  createdAt       DateTime @default(now())
 
   @@unique([messageId, userId, emoji])
+  @@unique([messageId, externalUserId, emoji])
   @@index([messageId])
   @@index([userId])
 }
