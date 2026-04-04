@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -13,6 +14,8 @@ import {
   Inbox,
   Tag,
   ShieldCheck,
+  ChevronsLeft,
+  ChevronsRight,
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth';
 import { cn } from '@/lib/utils';
@@ -31,6 +34,7 @@ export function Sidebar() {
   const pathname = usePathname();
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
+  const [collapsed, setCollapsed] = useState(false);
 
   const isActive = (href: string) => {
     if (href === '/') return pathname === '/';
@@ -47,14 +51,44 @@ export function Sidebar() {
     : '?';
 
   return (
-    <aside className="flex h-screen w-14 flex-col items-center bg-gradient-to-b from-[#1e1b4b] to-[#312e81] py-3">
-      {/* Logo */}
-      <div className="mb-6 flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-accent to-purple-500">
-        <span className="text-sm font-bold text-white">O</span>
+    <aside
+      className={cn(
+        'flex h-screen flex-col bg-gradient-to-b from-[#1e1b4b] to-[#312e81] py-4 transition-all duration-200',
+        collapsed ? 'w-14 items-center px-1.5' : 'w-56 px-3',
+      )}
+    >
+      {/* Logo + Collapse toggle */}
+      <div className={cn('mb-6 flex items-center', collapsed ? 'justify-center' : 'justify-between px-2')}>
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-accent to-purple-500">
+            <span className="text-sm font-bold text-white">O</span>
+          </div>
+          {!collapsed && <span className="text-sm font-semibold text-white">Omni</span>}
+        </div>
+        {!collapsed && (
+          <button
+            onClick={() => setCollapsed(true)}
+            className="rounded-md p-1 text-white/40 transition-colors hover:bg-white/5 hover:text-white/70"
+            title="Collapse sidebar"
+          >
+            <ChevronsLeft className="h-4 w-4" />
+          </button>
+        )}
       </div>
 
+      {/* Expand button when collapsed */}
+      {collapsed && (
+        <button
+          onClick={() => setCollapsed(false)}
+          className="mb-3 flex h-8 w-8 items-center justify-center rounded-lg text-white/40 transition-colors hover:bg-white/5 hover:text-white/70"
+          title="Expand sidebar"
+        >
+          <ChevronsRight className="h-4 w-4" />
+        </button>
+      )}
+
       {/* Navigation */}
-      <nav className="flex flex-1 flex-col items-center gap-1">
+      <nav className={cn('flex flex-1 flex-col gap-0.5', collapsed && 'items-center')}>
         {[
           ...baseNavItems,
           ...(user?.role === 'superadmin'
@@ -67,42 +101,68 @@ export function Sidebar() {
             <Link
               key={href}
               href={href}
-              title={label}
+              title={collapsed ? label : undefined}
               className={cn(
-                'group relative flex h-10 w-10 items-center justify-center rounded-lg transition-all',
+                'group relative flex items-center rounded-lg transition-all',
+                collapsed
+                  ? 'h-10 w-10 justify-center'
+                  : 'gap-3 px-2.5 py-2 text-sm',
                 active
-                  ? 'bg-white/15 text-white'
-                  : 'text-white/40 hover:text-white/60 hover:bg-white/5',
+                  ? 'bg-white/15 font-medium text-white'
+                  : 'text-white/50 hover:bg-white/5 hover:text-white/80',
               )}
             >
-              <Icon className="h-5 w-5" strokeWidth={active ? 2 : 1.5} />
-              {/* Tooltip */}
-              <span className="pointer-events-none absolute left-full z-50 ml-3 whitespace-nowrap rounded-lg bg-slate-800 px-2.5 py-1.5 text-xs font-medium text-white opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
-                {label}
-              </span>
+              <Icon className="h-[18px] w-[18px] shrink-0" strokeWidth={active ? 2 : 1.5} />
+              {!collapsed && label}
+              {collapsed && (
+                <span className="pointer-events-none absolute left-full z-50 ml-3 whitespace-nowrap rounded-lg bg-slate-800 px-2.5 py-1.5 text-xs font-medium text-white opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
+                  {label}
+                </span>
+              )}
             </Link>
           );
         })}
       </nav>
 
-      {/* Bottom: Avatar + Logout */}
-      <div className="flex flex-col items-center gap-2">
+      {/* Bottom: User info + Logout */}
+      <div
+        className={cn(
+          'flex items-center border-t border-white/10 pt-3',
+          collapsed ? 'flex-col gap-2' : 'gap-2',
+        )}
+      >
         <div
-          title={user?.name || 'User'}
-          className="flex h-8 w-8 items-center justify-center rounded-avatar bg-white/15 text-xs font-medium text-white"
+          title={collapsed ? (user?.name || 'User') : undefined}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-avatar bg-white/15 text-xs font-medium text-white"
         >
           {initials}
         </div>
-        <button
-          onClick={logout}
-          title="Sign out"
-          className="group relative flex h-10 w-10 items-center justify-center rounded-lg text-white/40 transition-all hover:bg-white/5 hover:text-white/60"
-        >
-          <LogOut className="h-5 w-5" strokeWidth={1.5} />
-          <span className="pointer-events-none absolute left-full z-50 ml-3 whitespace-nowrap rounded-lg bg-slate-800 px-2.5 py-1.5 text-xs font-medium text-white opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
-            Sign out
-          </span>
-        </button>
+        {!collapsed && (
+          <>
+            <span className="min-w-0 flex-1 truncate text-xs text-white/60">
+              {user?.email || user?.name || 'User'}
+            </span>
+            <button
+              onClick={logout}
+              title="Sign out"
+              className="shrink-0 rounded-md p-1 text-white/40 transition-colors hover:bg-white/5 hover:text-white/60"
+            >
+              <LogOut className="h-4 w-4" strokeWidth={1.5} />
+            </button>
+          </>
+        )}
+        {collapsed && (
+          <button
+            onClick={logout}
+            title="Sign out"
+            className="group relative flex h-8 w-8 items-center justify-center rounded-lg text-white/40 transition-colors hover:bg-white/5 hover:text-white/60"
+          >
+            <LogOut className="h-4 w-4" strokeWidth={1.5} />
+            <span className="pointer-events-none absolute left-full z-50 ml-3 whitespace-nowrap rounded-lg bg-slate-800 px-2.5 py-1.5 text-xs font-medium text-white opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
+              Sign out
+            </span>
+          </button>
+        )}
       </div>
     </aside>
   );
