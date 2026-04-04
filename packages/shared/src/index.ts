@@ -108,3 +108,7 @@ export const ERROR_CODES = {
 } as const;
 
 export type ErrorCode = keyof typeof ERROR_CODES;
+
+// ─── EMOJI MAP ───
+
+export { TELEGRAM_ALLOWED_EMOJI, getReactionSupport } from './emoji-map';
