@@ -755,7 +755,15 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
         // WebSocket not initialized yet — non-fatal
       }
 
-      return reply.status(201).send({ ...reaction, ...(syncWarning ? { syncWarning } : {}) });
+      return reply.status(201).send({
+        ...reaction,
+        ...(syncWarning ? { syncWarning } : {}),
+        _debug: {
+          externalMessageId: msg?.externalMessageId ?? null,
+          messenger: msg?.chat?.messenger ?? null,
+          hasIntegration: !!(msg?.externalMessageId && msg.chat),
+        },
+      });
     },
   );
 
