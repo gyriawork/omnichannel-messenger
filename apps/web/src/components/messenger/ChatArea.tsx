@@ -281,7 +281,8 @@ function MessageBubble({
 
   const handleEmojiSelect = useCallback(
     (emoji: string) => {
-      if (messenger === 'telegram' && !TELEGRAM_ALLOWED_EMOJI.includes(emoji)) {
+      const normalize = (e: string) => e.replace(/\uFE0F/g, '');
+      if (messenger === 'telegram' && !TELEGRAM_ALLOWED_EMOJI.some(a => normalize(a) === normalize(emoji))) {
         toast.error('This emoji is not supported in Telegram');
         return;
       }

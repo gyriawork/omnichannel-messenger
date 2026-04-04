@@ -283,7 +283,7 @@ export default function TagsPage() {
   const tags = data?.tags ?? [];
 
   return (
-    <div className="p-6">
+    <div className="mx-auto max-w-4xl px-6 py-8">
       {/* Header */}
       <div className="mb-6 flex items-center justify-between">
         <div>

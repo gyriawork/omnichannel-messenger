@@ -6,6 +6,7 @@ ALTER TABLE "Chat" ADD COLUMN IF NOT EXISTS "deletedAt" TIMESTAMP(3);
 ALTER TABLE "Message" ADD COLUMN IF NOT EXISTS "deletedAt" TIMESTAMP(3);
 ALTER TABLE "Broadcast" ADD COLUMN IF NOT EXISTS "deletedAt" TIMESTAMP(3);
 ALTER TABLE "BroadcastChat" ADD COLUMN IF NOT EXISTS "deletedAt" TIMESTAMP(3);
+ALTER TABLE "Template" ADD COLUMN IF NOT EXISTS "deletedAt" TIMESTAMP(3);
 
 -- CreateTable for Attachment (was in schema but never migrated)
 CREATE TABLE IF NOT EXISTS "Attachment" (
