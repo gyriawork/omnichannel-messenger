@@ -218,15 +218,41 @@ export class TelegramAdapter implements MessengerAdapter {
   async sendMessage(
     externalChatId: string,
     text: string,
-    options?: { replyToExternalId?: string },
+    options?: {
+      replyToExternalId?: string;
+      attachments?: Array<{ url: string; filename: string; mimeType: string; size: number }>;
+    },
   ): Promise<{ externalMessageId: string }> {
     this.ensureConnected();
 
     try {
       const peer = await this.resolvePeer(externalChatId);
+      const replyTo = options?.replyToExternalId ? parseInt(options.replyToExternalId, 10) : undefined;
+
+      // Send attachments first (if any)
+      if (options?.attachments && options.attachments.length > 0) {
+        for (const attachment of options.attachments) {
+          try {
+            const response = await fetch(attachment.url);
+            const buffer = Buffer.from(await response.arrayBuffer());
+            // gramjs expects a Buffer with a .name property for the filename
+            const namedBuffer = Object.assign(Buffer.from(buffer), { name: attachment.filename });
+            await this.client!.sendFile(peer, {
+              file: namedBuffer,
+              caption: '',
+              replyTo,
+            });
+          } catch (fileErr) {
+            // Log but don't fail the whole message for one attachment
+            console.warn(`Failed to send attachment ${attachment.filename}:`, fileErr);
+          }
+        }
+      }
+
+      // Send the text message
       const result = await this.client!.sendMessage(peer, {
         message: text,
-        replyTo: options?.replyToExternalId ? parseInt(options.replyToExternalId, 10) : undefined,
+        replyTo,
       });
 
       return { externalMessageId: result.id.toString() };

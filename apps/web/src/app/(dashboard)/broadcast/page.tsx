@@ -250,7 +250,7 @@ export default function BroadcastPage() {
                           )}
                           <span>
                             {new Date(broadcast.createdAt).toLocaleDateString(
-                              'en-US',
+                              'en-GB',
                               {
                                 month: 'short',
                                 day: 'numeric',
@@ -263,7 +263,7 @@ export default function BroadcastPage() {
                             <span>
                               Sent{' '}
                               {new Date(broadcast.sentAt).toLocaleDateString(
-                                'en-US',
+                                'en-GB',
                                 {
                                   month: 'short',
                                   day: 'numeric',

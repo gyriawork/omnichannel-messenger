@@ -395,23 +395,54 @@ export class WhatsAppAdapter implements MessengerAdapter {
   async sendMessage(
     externalChatId: string,
     text: string,
-    options?: { replyToExternalId?: string },
+    options?: {
+      replyToExternalId?: string;
+      attachments?: Array<{ url: string; filename: string; mimeType: string; size: number }>;
+    },
   ): Promise<{ externalMessageId: string }> {
     this.ensureConnected();
 
     try {
       const jid = this.normalizeJid(externalChatId);
 
-      const sendOptions: Record<string, unknown> = { text };
+      const quoted = options?.replyToExternalId
+        ? { key: { remoteJid: jid, id: options.replyToExternalId }, message: {} }
+        : undefined;
 
-      if (options?.replyToExternalId) {
-        sendOptions.quoted = {
-          key: {
-            remoteJid: jid,
-            id: options.replyToExternalId,
-          },
-          message: {},
-        };
+      // Send attachments first (if any)
+      if (options?.attachments && options.attachments.length > 0) {
+        for (const attachment of options.attachments) {
+          try {
+            const response = await fetch(attachment.url);
+            const buffer = Buffer.from(await response.arrayBuffer());
+            const mime = attachment.mimeType;
+
+            let msgContent: Record<string, unknown>;
+            if (mime.startsWith('image/')) {
+              msgContent = { image: buffer, caption: '', fileName: attachment.filename };
+            } else if (mime.startsWith('video/')) {
+              msgContent = { video: buffer, caption: '', fileName: attachment.filename };
+            } else if (mime.startsWith('audio/')) {
+              msgContent = { audio: buffer, mimetype: mime, fileName: attachment.filename };
+            } else {
+              msgContent = { document: buffer, mimetype: mime, fileName: attachment.filename };
+            }
+
+            if (quoted) {
+              msgContent.quoted = quoted;
+            }
+
+            await this.sock!.sendMessage(jid, msgContent as Parameters<WASocket['sendMessage']>[1]);
+          } catch (fileErr) {
+            console.warn(`Failed to send WhatsApp attachment ${attachment.filename}:`, fileErr);
+          }
+        }
+      }
+
+      // Send the text message
+      const sendOptions: Record<string, unknown> = { text };
+      if (quoted) {
+        sendOptions.quoted = quoted;
       }
 
       const msg = await this.sock!.sendMessage(jid, sendOptions as Parameters<WASocket['sendMessage']>[1]);

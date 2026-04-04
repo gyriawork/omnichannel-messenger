@@ -123,9 +123,10 @@ export function BroadcastDetail({ id }: BroadcastDetailProps) {
   }
 
   const config = statusConfig[broadcast.status];
-  const total = broadcast.chatCount || 0;
-  const sent = broadcast.sentCount || 0;
-  const failed = broadcast.failedCount || 0;
+  const stats = (broadcast as unknown as Record<string, unknown>).stats as { total?: number; sent?: number; failed?: number; pending?: number } | undefined;
+  const total = stats?.total || broadcast.chatCount || 0;
+  const sent = stats?.sent || broadcast.sentCount || 0;
+  const failed = stats?.failed || broadcast.failedCount || 0;
   const progress = total > 0 ? Math.round((sent / total) * 100) : 0;
 
   // Group chats by messenger for per-messenger breakdown
@@ -166,7 +167,7 @@ export function BroadcastDetail({ id }: BroadcastDetailProps) {
           </div>
           <p className="mt-1 text-sm text-slate-500">
             Created{' '}
-            {new Date(broadcast.createdAt).toLocaleString('en-US', {
+            {new Date(broadcast.createdAt).toLocaleString('en-GB', {
               month: 'long',
               day: 'numeric',
               year: 'numeric',
@@ -465,7 +466,7 @@ function buildTimeline(broadcast: Broadcast) {
       label: 'Created',
       completed: true,
       active: false,
-      time: new Date(broadcast.createdAt).toLocaleString('en-US', {
+      time: new Date(broadcast.createdAt).toLocaleString('en-GB', {
         month: 'short',
         day: 'numeric',
         hour: '2-digit',
@@ -477,7 +478,7 @@ function buildTimeline(broadcast: Broadcast) {
       completed: currentIndex >= 1 || broadcast.status === 'sending' || broadcast.status === 'sent' || isFailed,
       active: broadcast.status === 'scheduled',
       time: broadcast.scheduledAt
-        ? new Date(broadcast.scheduledAt).toLocaleString('en-US', {
+        ? new Date(broadcast.scheduledAt).toLocaleString('en-GB', {
             month: 'short',
             day: 'numeric',
             hour: '2-digit',
@@ -500,7 +501,7 @@ function buildTimeline(broadcast: Broadcast) {
       completed: broadcast.status === 'sent',
       active: isFailed,
       time: broadcast.sentAt
-        ? new Date(broadcast.sentAt).toLocaleString('en-US', {
+        ? new Date(broadcast.sentAt).toLocaleString('en-GB', {
             month: 'short',
             day: 'numeric',
             hour: '2-digit',

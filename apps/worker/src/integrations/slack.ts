@@ -98,11 +98,36 @@ export class SlackAdapter implements MessengerAdapter {
   async sendMessage(
     externalChatId: string,
     text: string,
-    options?: { replyToExternalId?: string },
+    options?: {
+      replyToExternalId?: string;
+      attachments?: Array<{ url: string; filename: string; mimeType: string; size: number }>;
+    },
   ): Promise<{ externalMessageId: string }> {
     this.ensureConnected();
 
     try {
+      // Upload attachments first (if any)
+      if (options?.attachments && options.attachments.length > 0) {
+        for (const attachment of options.attachments) {
+          try {
+            const response = await fetch(attachment.url);
+            const buffer = Buffer.from(await response.arrayBuffer());
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const uploadArgs: any = {
+              channel_id: externalChatId,
+              file: buffer,
+              filename: attachment.filename,
+            };
+            if (options?.replyToExternalId) {
+              uploadArgs.thread_ts = options.replyToExternalId;
+            }
+            await this.client!.filesUploadV2(uploadArgs);
+          } catch (fileErr) {
+            console.warn(`Failed to upload Slack attachment ${attachment.filename}:`, fileErr);
+          }
+        }
+      }
+
       const result = await this.client!.chat.postMessage({
         channel: externalChatId,
         text,

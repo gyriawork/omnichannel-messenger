@@ -146,6 +146,7 @@ async function sendMessengerBatch(
   messengerChats: Array<{ id: string; chatId: string; chat: { externalChatId: string; messenger: string }; retryCount: number }>,
   antibanConfig: AntibanConfig,
   isRetry: boolean,
+  attachments?: Array<{ url: string; filename: string; mimeType: string; size: number }>,
 ): Promise<{ sent: number; failed: number }> {
   const messenger = messengerChats[0]?.chat.messenger;
   if (!messenger || messengerChats.length === 0) return { sent: 0, failed: 0 };
@@ -227,7 +228,9 @@ async function sendMessengerBatch(
     }
 
     try {
-      await adapter.sendMessage(bc.chat.externalChatId, messageText);
+      await adapter.sendMessage(bc.chat.externalChatId, messageText, {
+        attachments: attachments && attachments.length > 0 ? attachments : undefined,
+      });
 
       await prisma.broadcastChat.update({
         where: { id: bc.id },
@@ -387,6 +390,11 @@ async function processBroadcastSend(job: Job<BroadcastSendPayload>): Promise<voi
     const antibanConfig = await getAntibanSettings(messenger, organizationId);
     log.info(`Sending ${chats.length} messages via ${messenger}`, { broadcastId });
 
+    // Parse attachments from broadcast JSON field
+    const broadcastAttachments = Array.isArray(broadcast.attachments)
+      ? (broadcast.attachments as Array<{ url: string; filename: string; mimeType: string; size: number }>)
+      : undefined;
+
     await sendMessengerBatch(
       broadcastId,
       organizationId,
@@ -399,6 +407,7 @@ async function processBroadcastSend(job: Job<BroadcastSendPayload>): Promise<voi
       })),
       antibanConfig,
       false,
+      broadcastAttachments,
     );
   }
 
@@ -471,6 +480,10 @@ async function processBroadcastRetry(job: Job<BroadcastSendPayload>): Promise<vo
     if (retriable.length > 0) {
       log.info(`Retrying ${retriable.length} messages via ${messenger}`, { broadcastId });
 
+      const retryAttachments = Array.isArray(broadcast.attachments)
+        ? (broadcast.attachments as Array<{ url: string; filename: string; mimeType: string; size: number }>)
+        : undefined;
+
       await sendMessengerBatch(
         broadcastId,
         organizationId,
@@ -483,6 +496,7 @@ async function processBroadcastRetry(job: Job<BroadcastSendPayload>): Promise<vo
         })),
         antibanConfig,
         true,
+        retryAttachments,
       );
     }
   }

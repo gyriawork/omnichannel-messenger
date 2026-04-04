@@ -248,7 +248,7 @@ export function BroadcastWizard() {
           messageText: data.messageText,
           chatIds: data.chatIds,
           scheduledAt:
-            data.scheduleType === 'later' ? data.scheduledAt : undefined,
+            data.scheduleType === 'later' && data.scheduledAt ? new Date(data.scheduledAt).toISOString() : undefined,
           attachments: broadcastAttachments.length > 0 ? broadcastAttachments : undefined,
         });
         toast.success('Broadcast updated');
@@ -258,7 +258,7 @@ export function BroadcastWizard() {
           messageText: data.messageText,
           chatIds: data.chatIds,
           scheduledAt:
-            data.scheduleType === 'later' ? data.scheduledAt : undefined,
+            data.scheduleType === 'later' && data.scheduledAt ? new Date(data.scheduledAt).toISOString() : undefined,
           attachments: broadcastAttachments.length > 0 ? broadcastAttachments : undefined,
         });
         toast.success('Broadcast saved as draft');
@@ -279,7 +279,7 @@ export function BroadcastWizard() {
           messageText: data.messageText,
           chatIds: data.chatIds,
           scheduledAt:
-            data.scheduleType === 'later' ? data.scheduledAt : undefined,
+            data.scheduleType === 'later' && data.scheduledAt ? new Date(data.scheduledAt).toISOString() : undefined,
           attachments: broadcastAttachments.length > 0 ? broadcastAttachments : undefined,
         });
       } else {
@@ -288,7 +288,7 @@ export function BroadcastWizard() {
           messageText: data.messageText,
           chatIds: data.chatIds,
           scheduledAt:
-            data.scheduleType === 'later' ? data.scheduledAt : undefined,
+            data.scheduleType === 'later' && data.scheduledAt ? new Date(data.scheduledAt).toISOString() : undefined,
           attachments: broadcastAttachments.length > 0 ? broadcastAttachments : undefined,
         });
         broadcastId = created.id;
@@ -763,13 +763,13 @@ export function BroadcastWizard() {
                 <input
                   type="datetime-local"
                   {...register('scheduledAt')}
-                  min={new Date().toISOString().slice(0, 16)}
+                  min={(() => { const now = new Date(); return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16); })()}
                   className="w-full rounded-lg border-[1.5px] border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-shadow focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15"
                 />
                 {scheduledAt && (
                   <p className="mt-2 text-sm text-slate-500">
                     Scheduled for{' '}
-                    {new Date(scheduledAt).toLocaleString('en-US', {
+                    {new Date(scheduledAt).toLocaleString('en-GB', {
                       weekday: 'long',
                       month: 'long',
                       day: 'numeric',
@@ -955,7 +955,7 @@ export function BroadcastWizard() {
                   ? 'Send immediately'
                   : scheduledAt
                     ? `Scheduled for ${new Date(scheduledAt).toLocaleString(
-                        'en-US',
+                        'en-GB',
                         {
                           weekday: 'long',
                           month: 'long',
