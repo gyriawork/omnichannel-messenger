@@ -28,6 +28,7 @@ import {
   Trash2,
   Clock,
   AlertCircle,
+  Smile,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -44,11 +45,36 @@ import {
   useSearchMessages,
   type MessageAttachment,
 } from '@/hooks/useChats';
+import EmojiPicker, { Theme } from 'emoji-picker-react';
 import { useReactions } from '@/hooks/useReactions';
+
 import { ReactionsBubble } from './ReactionsBubble';
 import TypingIndicator from './TypingIndicator';
 import { useSocket, getSocket } from '@/hooks/useSocket';
 import type { Chat, Message, MessengerType } from '@/types/chat';
+
+// Telegram allows only a specific set of emoji for message reactions.
+const TELEGRAM_ALLOWED_EMOJI: string[] = [
+  '👍', '👎', '❤️', '🔥', '🥰', '👏', '😁', '🤔', '🤯', '😱',
+  '🤬', '😢', '🎉', '🤩', '🤮', '💩', '🙏', '👌', '🕊', '🤡',
+  '🥱', '🥴', '😍', '🐳', '❤️‍🔥', '🌚', '🌭', '💯', '🤣', '⚡',
+  '🍌', '🏆', '💔', '🤨', '😐', '🍓', '🍾', '💋', '🖕', '😈',
+  '😴', '😭', '🤓', '👻', '👨‍💻', '👀', '🎃', '🙈', '😇', '😨',
+  '🤝', '✍️', '🤗', '🫡', '🎅', '🎄', '☃️', '💅', '🤪', '🗿',
+  '🆒', '💘', '🙉', '🦄', '😘', '💊', '🙊', '😎', '👾', '🤷',
+  '🤷‍♂️', '🤷‍♀️', '😡',
+];
+
+function getReactionSupport(messenger: string): 'full' | 'limited' | 'none' {
+  switch (messenger) {
+    case 'telegram':
+      return 'limited';
+    case 'slack':
+      return 'full';
+    default:
+      return 'none';
+  }
+}
 
 function getMessengerLabel(messenger: MessengerType): string {
   const map: Record<MessengerType, string> = {
@@ -125,16 +151,21 @@ function DeliveryIcon({ status }: { status?: string }) {
 
 function MessageBubble({
   message,
+  messenger,
   onReply,
 }: {
   message: Message;
+  messenger?: string;
   onReply: (message: Message) => void;
 }) {
   const isSelf = message.isSelf;
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(message.text);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const editRef = useRef<HTMLTextAreaElement>(null);
+  const emojiPickerRef = useRef<HTMLDivElement>(null);
+  const emojiButtonRef = useRef<HTMLButtonElement>(null);
 
   const { mutate: editMessage, isPending: isEditPending } = useEditMessage();
   const { mutate: deleteMessage, isPending: isDeletePending } = useDeleteMessage();
@@ -231,6 +262,35 @@ function MessageBubble({
     });
   }, [message.id, deleteMessage]);
 
+  // Close emoji picker on outside click
+  useEffect(() => {
+    if (!showEmojiPicker) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (
+        emojiPickerRef.current &&
+        !emojiPickerRef.current.contains(e.target as Node) &&
+        emojiButtonRef.current &&
+        !emojiButtonRef.current.contains(e.target as Node)
+      ) {
+        setShowEmojiPicker(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showEmojiPicker]);
+
+  const handleEmojiSelect = useCallback(
+    (emoji: string) => {
+      if (messenger === 'telegram' && !TELEGRAM_ALLOWED_EMOJI.includes(emoji)) {
+        toast.error('This emoji is not supported in Telegram');
+        return;
+      }
+      addReaction(emoji);
+      setShowEmojiPicker(false);
+    },
+    [addReaction, messenger],
+  );
+
   return (
     <div
       className={cn(
@@ -241,7 +301,8 @@ function MessageBubble({
       {/* Hover action bar */}
       <div
         className={cn(
-          'absolute -top-3 z-10 flex items-center gap-0.5 rounded-lg border border-slate-200 bg-white px-1 py-0.5 shadow-sm opacity-0 transition-opacity group-hover:opacity-100',
+          'absolute -top-3 z-10 flex items-center gap-0.5 rounded-lg border border-slate-200 bg-white px-1 py-0.5 shadow-sm transition-opacity',
+          showEmojiPicker ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
           isSelf ? 'right-0' : 'left-0',
         )}
       >
@@ -272,6 +333,36 @@ function MessageBubble({
             <Pin className="h-3.5 w-3.5" />
           )}
         </button>
+        {getReactionSupport(messenger ?? '') !== 'none' && (
+          <div className="relative">
+            <button
+              ref={emojiButtonRef}
+              onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+              disabled={isAddingReaction || isRemovingReaction}
+              className="flex h-6 w-6 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-600 disabled:opacity-40"
+              title="Add reaction"
+            >
+              <Smile className="h-3.5 w-3.5" />
+            </button>
+            {showEmojiPicker && (
+              <div
+                ref={emojiPickerRef}
+                className={cn(
+                  'absolute bottom-full mb-2 z-50 shadow-lg rounded-lg overflow-hidden',
+                  isSelf ? 'right-0' : 'left-0',
+                )}
+              >
+                <EmojiPicker
+                  onEmojiClick={(emojiData) => handleEmojiSelect(emojiData.emoji)}
+                  theme={Theme.LIGHT}
+                  width={350}
+                  height={400}
+                  searchPlaceHolder="Search emoji..."
+                />
+              </div>
+            )}
+          </div>
+        )}
         {isSelf && (
           <button
             onClick={() => setShowDeleteConfirm(true)}
@@ -448,7 +539,7 @@ function MessageBubble({
         onAddReaction={addReaction}
         onRemoveReaction={removeReaction}
         isLoading={isAddingReaction || isRemovingReaction}
-        showPicker
+        showPicker={false}
       />
     </div>
   );
@@ -823,7 +914,7 @@ function ComposeBar({ chatId }: { chatId: string }) {
   );
 }
 
-function MessageFeed({ chatId }: { chatId: string }) {
+function MessageFeed({ chatId, messenger }: { chatId: string; messenger?: string }) {
   const feedRef = useRef<HTMLDivElement>(null);
   const setReplyingTo = useChatStore((s) => s.setReplyingTo);
   const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } =
@@ -923,6 +1014,7 @@ function MessageFeed({ chatId }: { chatId: string }) {
               <MessageBubble
                 key={msg.id}
                 message={msg}
+                messenger={messenger}
                 onReply={setReplyingTo}
               />
             ))}
@@ -1010,7 +1102,7 @@ export function ChatArea() {
           onClose={() => setSearchOpen(false)}
         />
       )}
-      <MessageFeed chatId={activeChat.id} />
+      <MessageFeed chatId={activeChat.id} messenger={activeChat.messenger} />
       <TypingIndicator typingUsers={typingUsers} />
       <ComposeBar chatId={activeChat.id} />
     </div>
