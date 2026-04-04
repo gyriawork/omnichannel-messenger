@@ -47,12 +47,17 @@ model User {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
+  deletedAt        DateTime?
+
   ownedChats       Chat[]   @relation("ChatOwner")
   importedChats    Chat[]   @relation("ChatImporter")
   broadcasts       Broadcast[]
   templates        Template[]
   refreshTokens    RefreshToken[]
   chatPreferences  ChatPreference[]
+  passwordResetTokens PasswordResetToken[]
+
+  @@index([organizationId])
 }
 
 model RefreshToken {
@@ -62,6 +67,21 @@ model RefreshToken {
   user      User     @relation(fields: [userId], references: [id])
   expiresAt DateTime
   createdAt DateTime @default(now())
+
+  @@index([expiresAt])
+}
+
+model PasswordResetToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([token])
+  @@index([userId])
 }
 
 // ─── CHATS ───
@@ -81,6 +101,9 @@ model Chat {
   importedBy       User     @relation("ChatImporter", fields: [importedById], references: [id])
   messageCount     Int      @default(0)
   lastActivityAt   DateTime?
+  syncStatus       String   @default("pending") // pending | syncing | synced | failed
+  syncCursor       String?  // adapter-specific pagination cursor for resumable sync
+  deletedAt        DateTime?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -92,6 +115,7 @@ model Chat {
 
   @@unique([externalChatId, messenger, organizationId])
   @@index([organizationId])
+  @@index([organizationId, lastActivityAt])
   @@index([ownerId])
   @@index([importedById])
 }
@@ -103,6 +127,7 @@ model ChatTag {
   tag     Tag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
 
   @@id([chatId, tagId])
+  @@index([tagId])
 }
 
 model ChatPreference {
@@ -128,6 +153,7 @@ model ChatParticipant {
   role           String? // admin | member
 
   @@unique([chatId, externalUserId])
+  @@index([chatId])
 }
 
 // ─── MESSAGES ───
@@ -147,10 +173,34 @@ model Message {
   replies          Message[] @relation("MessageReply")
   isPinned         Boolean  @default(false)
   deliveryStatus   String?  // sent | delivered | read | failed
-  attachments      Json?    // [{url, filename, mimeType, size}]
+  attachmentsLegacy Json?   @map("attachments") // legacy JSON field, use attachmentFiles relation instead
+  deletedAt        DateTime?
   createdAt        DateTime @default(now())
 
+  attachmentFiles  Attachment[]
+  reactions        Reaction[]
+
+  @@unique([chatId, externalMessageId])
   @@index([chatId, createdAt])
+  @@index([externalMessageId])
+}
+
+// ─── REACTIONS ───
+
+model Reaction {
+  id              String   @id @default(uuid())
+  messageId       String
+  message         Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId          String
+  emoji           String   // Unicode emoji character
+  externalSynced  Boolean  @default(false)
+  externalUserId  String?
+  createdAt       DateTime @default(now())
+
+  @@unique([messageId, userId, emoji])
+  @@unique([messageId, externalUserId, emoji])
+  @@index([messageId])
+  @@index([userId])
 }
 
 // ─── BROADCASTS ───
@@ -169,6 +219,7 @@ model Broadcast {
   createdById      String
   createdBy        User     @relation(fields: [createdById], references: [id])
   templateId       String?
+  deletedAt        DateTime?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -189,6 +240,8 @@ model BroadcastChat {
   sentAt        DateTime?
 
   @@unique([broadcastId, chatId])
+  @@index([status])
+  @@index([broadcastId, status])
 }
 
 // ─── TEMPLATES ───
@@ -202,8 +255,11 @@ model Template {
   organization   Organization @relation(fields: [organizationId], references: [id])
   createdById    String
   createdBy      User     @relation(fields: [createdById], references: [id])
+  deletedAt      DateTime?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+
+  @@index([organizationId])
 }
 
 // ─── TAGS ───
@@ -235,6 +291,7 @@ model Integration {
   updatedAt      DateTime @updatedAt
 
   @@unique([messenger, organizationId, userId])
+  @@index([organizationId])
 }
 
 // ─── ANTIBAN ───
@@ -273,5 +330,34 @@ model ActivityLog {
   createdAt      DateTime @default(now())
 
   @@index([organizationId, createdAt])
+  @@index([organizationId, userId, createdAt])
   @@index([category])
+}
+
+// ─── INCOMING WEBHOOKS ───
+
+model IncomingWebhook {
+  id             String    @id @default(uuid())
+  source         String    // telegram | slack | whatsapp | gmail
+  payload        Json
+  processedAt    DateTime?
+  error          String?
+  createdAt      DateTime  @default(now())
+
+  @@index([source, createdAt])
+}
+
+// ─── ATTACHMENTS ───
+
+model Attachment {
+  id           String   @id @default(uuid())
+  messageId    String
+  message      Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  url          String
+  filename     String
+  mimeType     String
+  size         Int
+  createdAt    DateTime @default(now())
+
+  @@index([messageId])
 }
