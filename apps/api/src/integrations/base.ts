@@ -28,6 +28,12 @@ export interface MessengerAdapter {
   /** Delete an existing message. */
   deleteMessage(externalChatId: string, externalMessageId: string): Promise<void>;
 
+  /** Add an emoji reaction to a message. Optional — not all messengers support reactions. */
+  addReaction?(externalChatId: string, externalMessageId: string, emoji: string): Promise<void>;
+
+  /** Remove an emoji reaction. options.remainingEmoji used by Telegram (replace-all semantics). */
+  removeReaction?(externalChatId: string, externalMessageId: string, emoji: string, options?: { remainingEmoji?: string[] }): Promise<void>;
+
   /** Get the current connection status. */
   getStatus(): 'connected' | 'disconnected' | 'token_expired' | 'session_expired';
 }
