@@ -9,8 +9,8 @@ import { requireRole } from '../middleware/rbac.js';
 import { encryptCredentials } from '../lib/crypto.js';
 import { getPlatformCredentials, invalidatePlatformCache } from '../lib/platform-credentials.js';
 import { logActivity } from '../lib/activity-logger.js';
-import { MESSENGERS, MESSENGER_PLATFORM_FIELDS, MESSENGER_ENV_VARS } from '@omnichannel/shared';
-import type { Messenger } from '@omnichannel/shared';
+import { MESSENGERS, MESSENGER_PLATFORM_FIELDS, MESSENGER_ENV_VARS } from '../lib/platform-constants.js';
+import type { Messenger } from '../lib/platform-constants.js';
 
 // ─── Schemas ───
 

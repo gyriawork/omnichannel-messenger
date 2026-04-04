@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "postinstall": "prisma generate",
-    "build": "cd ../../packages/shared && npx tsc && cd ../../apps/api && tsc",
+    "build": "tsc",
     "start": "prisma migrate deploy && node dist/index.js",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
@@ -40,8 +40,7 @@
     "socket.io": "^4.7.0",
     "telegram": "^2.22.0",
     "uuid": "^11.1.0",
-    "zod": "^3.23.0",
-    "@omnichannel/shared": "*"
+    "zod": "^3.23.0"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

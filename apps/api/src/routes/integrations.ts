@@ -18,7 +18,7 @@ import { getIO } from '../websocket/index.js';
 import { getTelegramManager } from '../services/telegram-connection-manager.js';
 import { cacheGet, cacheSet, cacheInvalidate, cacheKey } from '../lib/cache.js';
 import { getPlatformCredentials } from '../lib/platform-credentials.js';
-import { MESSENGERS } from '@omnichannel/shared';
+import { MESSENGERS } from '../lib/platform-constants.js';
 
 // ─── Zod Schemas ───
 

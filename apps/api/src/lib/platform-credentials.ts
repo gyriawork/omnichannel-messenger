@@ -5,8 +5,8 @@
 
 import prisma from './prisma.js';
 import { decryptCredentials } from './crypto.js';
-import { MESSENGER_ENV_VARS } from '@omnichannel/shared';
-import type { Messenger } from '@omnichannel/shared';
+import { MESSENGER_ENV_VARS } from './platform-constants.js';
+import type { Messenger } from './platform-constants.js';
 
 interface CacheEntry {
   data: Record<string, string> | null;
