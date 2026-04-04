@@ -227,8 +227,13 @@ export function BroadcastWizard() {
       setIsUploading(true);
       try {
         for (const file of files) {
-          const result = await api.upload<{ file: BroadcastAttachment }>('/api/uploads', file);
-          setBroadcastAttachments((prev) => [...prev, result.file]);
+          const result = await api.upload<{ file: { key: string; url: string; size: number; mimeType: string; originalName: string } }>('/api/uploads', file);
+          setBroadcastAttachments((prev) => [...prev, {
+            url: result.file.url,
+            filename: result.file.originalName,
+            mimeType: result.file.mimeType,
+            size: result.file.size,
+          }]);
         }
       } catch {
         toast.error('Failed to upload file');
