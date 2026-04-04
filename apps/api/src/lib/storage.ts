@@ -83,7 +83,7 @@ export async function uploadFile(
       Body: buffer,
       ContentType: mimeType,
       Metadata: {
-        'original-name': originalName,
+        'original-name': encodeURIComponent(originalName),
         'organization-id': organizationId,
       },
     }),
