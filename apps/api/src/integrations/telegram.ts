@@ -384,6 +384,52 @@ export class TelegramAdapter implements MessengerAdapter {
     }
   }
 
+  async addReaction(
+    externalChatId: string,
+    externalMessageId: string,
+    emoji: string,
+  ): Promise<void> {
+    this.ensureConnected();
+
+    try {
+      const peer = await this.resolvePeer(externalChatId);
+      await this.client!.invoke(
+        new Api.messages.SendReaction({
+          peer,
+          msgId: parseInt(externalMessageId, 10),
+          reaction: [new Api.ReactionEmoji({ emoticon: emoji })],
+        }),
+      );
+    } catch (err) {
+      throw new MessengerError('telegram', err, 'Failed to add reaction in Telegram');
+    }
+  }
+
+  async removeReaction(
+    externalChatId: string,
+    externalMessageId: string,
+    _emoji: string,
+    options?: { remainingEmoji?: string[] },
+  ): Promise<void> {
+    this.ensureConnected();
+
+    try {
+      const peer = await this.resolvePeer(externalChatId);
+      const reaction = (options?.remainingEmoji ?? []).map(
+        (e) => new Api.ReactionEmoji({ emoticon: e }),
+      );
+      await this.client!.invoke(
+        new Api.messages.SendReaction({
+          peer,
+          msgId: parseInt(externalMessageId, 10),
+          reaction,
+        }),
+      );
+    } catch (err) {
+      throw new MessengerError('telegram', err, 'Failed to remove reaction in Telegram');
+    }
+  }
+
   getStatus(): 'connected' | 'disconnected' | 'token_expired' | 'session_expired' {
     return this.status;
   }
