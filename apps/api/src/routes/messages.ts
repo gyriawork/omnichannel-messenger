@@ -703,10 +703,14 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
 
       let syncWarning: string | undefined;
 
+      console.log(`[Reaction sync] messageId=${messageId} externalMessageId=${msg?.externalMessageId ?? 'NULL'} messenger=${msg?.chat?.messenger ?? 'NULL'} orgId=${msg?.chat?.organizationId ?? 'NULL'}`);
+
       if (msg?.externalMessageId && msg.chat) {
         const integration = await prisma.integration.findFirst({
           where: { messenger: msg.chat.messenger, organizationId: msg.chat.organizationId, status: 'connected' },
         });
+
+        console.log(`[Reaction sync] integration found=${!!integration} status=${integration?.status ?? 'N/A'} hasCreds=${!!integration?.credentials}`);
 
         if (integration?.credentials) {
           const creds = decryptCredentials(integration.credentials as string);
@@ -727,6 +731,7 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
               }
             } catch (err) {
               syncWarning = 'Reaction saved locally but failed to sync to messenger';
+              console.error(`[Reaction sync] FAILED: ${err instanceof Error ? err.message : String(err)}`, err);
               request.log.warn({ err, messageId, emoji }, syncWarning);
             } finally {
               try { await adapter.disconnect(); } catch { /* non-critical */ }
