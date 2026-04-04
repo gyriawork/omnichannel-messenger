@@ -692,6 +692,49 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
         },
       });
 
+      // ── Sync to messenger ──
+      const msg = await prisma.message.findUnique({
+        where: { id: messageId },
+        select: {
+          externalMessageId: true,
+          chat: { select: { externalChatId: true, messenger: true, organizationId: true } },
+        },
+      });
+
+      let syncWarning: string | undefined;
+
+      if (msg?.externalMessageId && msg.chat) {
+        const integration = await prisma.integration.findFirst({
+          where: { messenger: msg.chat.messenger, organizationId: msg.chat.organizationId, status: 'connected' },
+        });
+
+        if (integration?.credentials) {
+          const creds = decryptCredentials(integration.credentials as string);
+          const adapter = await createAdapter(msg.chat.messenger, creds);
+          if (adapter.addReaction) {
+            try {
+              await adapter.connect();
+              await adapter.addReaction(msg.chat.externalChatId, msg.externalMessageId, emoji);
+              // Re-check: reaction may have been deleted while adapter call was in-flight
+              const current = await prisma.reaction.findUnique({
+                where: { messageId_userId_emoji: { messageId, userId: request.user.id, emoji } },
+              });
+              if (current) {
+                await prisma.reaction.update({ where: { id: current.id }, data: { externalSynced: true } });
+              } else if (adapter.removeReaction) {
+                // User deleted while we were syncing — remove from messenger
+                await adapter.removeReaction(msg.chat.externalChatId, msg.externalMessageId, emoji);
+              }
+            } catch (err) {
+              syncWarning = 'Reaction saved locally but failed to sync to messenger';
+              request.log.warn({ err, messageId, emoji }, syncWarning);
+            } finally {
+              try { await adapter.disconnect(); } catch { /* non-critical */ }
+            }
+          }
+        }
+      }
+
       // Emit WebSocket event
       try {
         getIO().to(`chat:${chatId}`).emit('reaction_added', {
@@ -707,7 +750,7 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
         // WebSocket not initialized yet — non-fatal
       }
 
-      return reply.status(201).send(reaction);
+      return reply.status(201).send({ ...reaction, ...(syncWarning ? { syncWarning } : {}) });
     },
   );
 
@@ -789,6 +832,48 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
 
       if (deleted.count === 0) {
         return sendError(reply, 'RESOURCE_NOT_FOUND', 'Reaction not found', 404);
+      }
+
+      // ── Sync removal to messenger ──
+      const msg = await prisma.message.findUnique({
+        where: { id: messageId },
+        select: {
+          externalMessageId: true,
+          chat: { select: { externalChatId: true, messenger: true, organizationId: true } },
+        },
+      });
+
+      if (msg?.externalMessageId && msg.chat) {
+        const integration = await prisma.integration.findFirst({
+          where: { messenger: msg.chat.messenger, organizationId: msg.chat.organizationId, status: 'connected' },
+        });
+
+        if (integration?.credentials) {
+          const creds = decryptCredentials(integration.credentials as string);
+          const adapter = await createAdapter(msg.chat.messenger, creds);
+          if (adapter.removeReaction) {
+            try {
+              await adapter.connect();
+              // For Telegram: query remaining reactions (replace-all semantics)
+              const remaining = msg.chat.messenger === 'telegram'
+                ? await prisma.reaction.findMany({
+                    where: { messageId, userId: request.user.id },
+                    select: { emoji: true },
+                  })
+                : [];
+              const remainingEmoji = remaining.map((r) => r.emoji);
+
+              await adapter.removeReaction(
+                msg.chat.externalChatId, msg.externalMessageId, emoji,
+                { remainingEmoji },
+              );
+            } catch (err) {
+              request.log.warn({ err, messageId, emoji }, 'Failed to remove reaction from messenger');
+            } finally {
+              try { await adapter.disconnect(); } catch { /* non-critical */ }
+            }
+          }
+        }
       }
 
       // Emit WebSocket event
