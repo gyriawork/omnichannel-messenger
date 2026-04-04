@@ -3,8 +3,23 @@
 // Requires a bot or user OAuth token with appropriate scopes.
 
 import { WebClient } from '@slack/web-api';
+import * as nodeEmoji from 'node-emoji';
 import type { MessengerAdapter } from './base.js';
 import { MessengerError } from './base.js';
+
+/** Convert Unicode emoji to Slack shortcode name. E.g. '👍' → 'thumbsup' */
+export function emojiToSlackName(emoji: string): string {
+  const result = nodeEmoji.find(emoji);
+  if (result?.key) return result.key;
+  // Fallback: return as-is (Slack may accept some Unicode directly)
+  return emoji;
+}
+
+/** Convert Slack shortcode name to Unicode emoji. E.g. 'thumbsup' → '👍' */
+export function slackNameToEmoji(name: string): string {
+  const emoji = nodeEmoji.get(name);
+  return emoji ?? name;
+}
 
 interface SlackCredentials {
   token: string;
@@ -201,6 +216,38 @@ export class SlackAdapter implements MessengerAdapter {
     } catch (err) {
       this.handleSlackError(err);
       throw new MessengerError('slack', err, 'Failed to delete Slack message');
+    }
+  }
+
+  async addReaction(
+    externalChatId: string,
+    externalMessageId: string,
+    emoji: string,
+  ): Promise<void> {
+    try {
+      await this.client!.reactions.add({
+        channel: externalChatId,
+        timestamp: externalMessageId,
+        name: emojiToSlackName(emoji),
+      });
+    } catch (err) {
+      throw new MessengerError('slack', err, 'Failed to add reaction in Slack');
+    }
+  }
+
+  async removeReaction(
+    externalChatId: string,
+    externalMessageId: string,
+    emoji: string,
+  ): Promise<void> {
+    try {
+      await this.client!.reactions.remove({
+        channel: externalChatId,
+        timestamp: externalMessageId,
+        name: emojiToSlackName(emoji),
+      });
+    } catch (err) {
+      throw new MessengerError('slack', err, 'Failed to remove reaction in Slack');
     }
   }
 
