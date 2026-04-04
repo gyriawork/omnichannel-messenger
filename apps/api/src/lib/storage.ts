@@ -89,9 +89,15 @@ export async function uploadFile(
     }),
   );
 
-  const url = R2_PUBLIC_URL
-    ? `${R2_PUBLIC_URL}/${key}`
-    : `/${R2_BUCKET}/${key}`;
+  // Generate a URL that can be fetched externally
+  let url: string;
+  if (R2_PUBLIC_URL) {
+    url = `${R2_PUBLIC_URL}/${key}`;
+  } else {
+    // No public URL configured — generate a long-lived signed URL (7 days)
+    const command = new GetObjectCommand({ Bucket: R2_BUCKET, Key: key });
+    url = await getSignedUrl(s3, command, { expiresIn: 604800 });
+  }
 
   return {
     key,

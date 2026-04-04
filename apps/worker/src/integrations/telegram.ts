@@ -233,7 +233,11 @@ export class TelegramAdapter implements MessengerAdapter {
       if (options?.attachments && options.attachments.length > 0) {
         for (const attachment of options.attachments) {
           try {
-            const response = await fetch(attachment.url);
+            const fileUrl = attachment.url.startsWith('http')
+              ? attachment.url
+              : `${process.env.API_URL || process.env.APP_URL || 'http://localhost:3000'}${attachment.url}`;
+            const response = await fetch(fileUrl);
+            if (!response.ok) throw new Error(`Failed to download attachment: ${response.status}`);
             const buffer = Buffer.from(await response.arrayBuffer());
             // gramjs expects a Buffer with a .name property for the filename
             const namedBuffer = Object.assign(Buffer.from(buffer), { name: attachment.filename });

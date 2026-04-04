@@ -110,7 +110,11 @@ export class SlackAdapter implements MessengerAdapter {
       if (options?.attachments && options.attachments.length > 0) {
         for (const attachment of options.attachments) {
           try {
-            const response = await fetch(attachment.url);
+            const fileUrl = attachment.url.startsWith('http')
+              ? attachment.url
+              : `${process.env.API_URL || process.env.APP_URL || 'http://localhost:3000'}${attachment.url}`;
+            const response = await fetch(fileUrl);
+            if (!response.ok) throw new Error(`Failed to download attachment: ${response.status}`);
             const buffer = Buffer.from(await response.arrayBuffer());
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const uploadArgs: any = {
