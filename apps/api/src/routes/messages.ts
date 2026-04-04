@@ -48,7 +48,7 @@ const searchMessagesQuerySchema = z.object({
 });
 
 const addReactionBodySchema = z.object({
-  emoji: z.string().min(1).max(2), // Single emoji (may be 1-2 UTF-16 chars)
+  emoji: z.string().min(1).max(20), // Emoji can be 1-20 UTF-16 chars (skin tones, flags, compound)
 });
 
 // ─── Helpers ───
