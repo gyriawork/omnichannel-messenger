@@ -1,7 +1,8 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import prisma from '../lib/prisma.js';
-import { saveIncomingMessage } from '../services/message-service.js';
+import { saveIncomingMessage, ingestReaction } from '../services/message-service.js';
+import { slackNameToEmoji } from '../integrations/slack.js';
 
 // ─── Webhook secret verification ───
 
@@ -134,7 +135,30 @@ export default async function webhookRoutes(fastify: FastifyInstance): Promise<v
       }
 
       const event = body.event as Record<string, unknown>;
-      if (!event || event.type !== 'message' || event.subtype) {
+      if (!event) {
+        return reply.send({ ok: true });
+      }
+
+      // Handle reaction events
+      if (event.type === 'reaction_added' || event.type === 'reaction_removed') {
+        const emoji = slackNameToEmoji(event.reaction as string);
+        const externalMessageId = (event.item as Record<string, unknown>)?.ts as string | undefined;
+        const externalUserId = event.user as string | undefined;
+
+        if (externalMessageId && externalUserId && emoji) {
+          await ingestReaction({
+            externalMessageId,
+            messenger: 'slack',
+            externalUserId,
+            emoji,
+            action: event.type === 'reaction_added' ? 'add' : 'remove',
+          });
+        }
+
+        return reply.send({ ok: true });
+      }
+
+      if (event.type !== 'message' || event.subtype) {
         return reply.send({ ok: true }); // Not a regular message
       }
 
