@@ -5,10 +5,10 @@
 
 import { TelegramClient, Api } from 'telegram';
 import { StringSession } from 'telegram/sessions/index.js';
-import { NewMessage, type NewMessageEvent } from 'telegram/events/index.js';
+import { NewMessage, type NewMessageEvent, Raw } from 'telegram/events/index.js';
 import prisma from '../lib/prisma.js';
 import { decryptCredentials } from '../lib/crypto.js';
-import { saveIncomingMessage } from './message-service.js';
+import { saveIncomingMessage, ingestReaction } from './message-service.js';
 
 interface ActiveClient {
   client: TelegramClient;
@@ -146,6 +146,12 @@ export class TelegramConnectionManager {
         new NewMessage({}),
       );
 
+      // Register UpdateMessageReactions event handler for incoming reactions
+      client.addEventHandler(
+        (update: Api.TypeUpdate) => this.handleReactionUpdate(update, activeClient),
+        new Raw({ types: [Api.UpdateMessageReactions] }),
+      );
+
       this.clients.set(integrationId, activeClient);
       console.log(`[TelegramManager] Listening on integration ${integrationId} (selfId: ${selfId})`);
     } catch (err) {
@@ -251,6 +257,77 @@ export class TelegramConnectionManager {
       );
     } catch (err) {
       console.error('[TelegramManager] Error handling incoming message:', err);
+    }
+  }
+
+  private async handleReactionUpdate(update: Api.TypeUpdate, active: ActiveClient): Promise<void> {
+    try {
+      if (!(update instanceof Api.UpdateMessageReactions)) return;
+
+      const msgId = update.msgId.toString();
+      const peerId = update.peer;
+      const externalChatId = extractChatId(peerId);
+      if (!externalChatId) return;
+
+      const reactions = update.reactions;
+      if (!reactions) return;
+
+      // Telegram sends current state, not diffs. Diff against DB to detect adds and removes.
+      const recentReactions = reactions.recentReactions ?? [];
+
+      // Build set of current reactions from the update
+      const incomingReactions = new Map<string, string[]>(); // senderId -> emoji[]
+      for (const recent of recentReactions) {
+        if (!(recent.reaction instanceof Api.ReactionEmoji)) continue;
+        const senderId = recent.peerId instanceof Api.PeerUser
+          ? recent.peerId.userId.toString()
+          : '';
+        if (!senderId || senderId === active.selfId) continue;
+
+        if (!incomingReactions.has(senderId)) incomingReactions.set(senderId, []);
+        incomingReactions.get(senderId)!.push(recent.reaction.emoticon);
+      }
+
+      // For each external user in the update, diff against DB
+      for (const [senderId, emojis] of incomingReactions) {
+        const existing = await prisma.reaction.findMany({
+          where: {
+            message: { externalMessageId: msgId },
+            externalUserId: senderId,
+          },
+          select: { emoji: true },
+        });
+        const existingEmojis = new Set(existing.map((r) => r.emoji));
+        const incomingEmojis = new Set(emojis);
+
+        // Add new reactions
+        for (const emoji of incomingEmojis) {
+          if (!existingEmojis.has(emoji)) {
+            await ingestReaction({
+              externalMessageId: msgId,
+              messenger: 'telegram',
+              externalUserId: senderId,
+              emoji,
+              action: 'add',
+            });
+          }
+        }
+
+        // Remove reactions no longer present
+        for (const emoji of existingEmojis) {
+          if (!incomingEmojis.has(emoji)) {
+            await ingestReaction({
+              externalMessageId: msgId,
+              messenger: 'telegram',
+              externalUserId: senderId,
+              emoji,
+              action: 'remove',
+            });
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[TelegramManager] Error handling reaction update:', err);
     }
   }
 
