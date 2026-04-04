@@ -12,14 +12,15 @@ import type {
   SignalKeyStore,
 } from '@whiskeysockets/baileys';
 
-// Handle ESM/CJS interop: baileys default export may be the function or module
-const makeWASocket = (typeof baileys === 'function' ? baileys : (baileys as any).default ?? (baileys as any).makeWASocket) as typeof baileys;
-const {
-  DisconnectReason,
-  fetchLatestBaileysVersion,
-  makeCacheableSignalKeyStore,
-  initAuthCreds,
-} = baileys as any;
+// Handle ESM/CJS interop: baileys default export may be the function or the whole module
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const _mod: any = baileys;
+const _ns = (typeof _mod === 'function' ? _mod : null) ? { default: _mod } : _mod;
+const makeWASocket = (_ns.default ?? _ns.makeWASocket) as typeof baileys;
+const DisconnectReason = _ns.DisconnectReason ?? (_ns.default?.DisconnectReason);
+const fetchLatestBaileysVersion = _ns.fetchLatestBaileysVersion ?? (_ns.default?.fetchLatestBaileysVersion);
+const makeCacheableSignalKeyStore = _ns.makeCacheableSignalKeyStore ?? (_ns.default?.makeCacheableSignalKeyStore);
+const initAuthCreds = _ns.initAuthCreds ?? (_ns.default?.initAuthCreds);
 
 import { Boom } from '@hapi/boom';
 import { EventEmitter } from 'node:events';
@@ -65,6 +66,10 @@ function useMemoryAuthState(serialized?: string): {
   let creds: AuthenticationCreds;
   const keys: KeyStore = {};
 
+  const createCreds = typeof initAuthCreds === 'function'
+    ? initAuthCreds
+    : () => ({} as AuthenticationCreds);
+
   if (serialized) {
     try {
       const parsed: SerializedAuthState = JSON.parse(serialized);
@@ -75,10 +80,10 @@ function useMemoryAuthState(serialized?: string): {
         }
       }
     } catch {
-      creds = initAuthCreds();
+      creds = createCreds();
     }
   } else {
-    creds = initAuthCreds();
+    creds = createCreds();
   }
 
   const keyStore: SignalKeyStore = {
@@ -163,23 +168,25 @@ export async function startWhatsAppPairing(sessionKey: string): Promise<EventEmi
   try {
     const FALLBACK_VERSION: [number, number, number] = [2, 3000, 1015901307];
     let version: [number, number, number] = FALLBACK_VERSION;
-    try {
-      const result = await Promise.race([
-        fetchLatestBaileysVersion(),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('version fetch timeout')), 5000),
-        ),
-      ]);
-      version = result.version;
-    } catch {
-      // Use fallback version silently
+    if (typeof fetchLatestBaileysVersion === 'function') {
+      try {
+        const result = await Promise.race([
+          fetchLatestBaileysVersion(),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('version fetch timeout')), 5000),
+          ),
+        ]);
+        version = result.version;
+      } catch {
+        // Use fallback version silently
+      }
     }
 
     sock = makeWASocket({
       version,
       auth: {
         creds: state.creds,
-        keys: makeCacheableSignalKeyStore(state.keys, logger),
+        keys: typeof makeCacheableSignalKeyStore === 'function' ? makeCacheableSignalKeyStore(state.keys, logger) : state.keys,
       },
       logger,
       printQRInTerminal: false,
@@ -286,23 +293,25 @@ export class WhatsAppAdapter implements MessengerAdapter {
       const { state, saveCreds, getSerializedState } = useMemoryAuthState(creds.authState);
       const FALLBACK_VERSION: [number, number, number] = [2, 3000, 1015901307];
       let version: [number, number, number] = FALLBACK_VERSION;
-      try {
-        const result = await Promise.race([
-          fetchLatestBaileysVersion(),
-          new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error('version fetch timeout')), 5000),
-          ),
-        ]);
-        version = result.version;
-      } catch {
-        // Use fallback version silently
+      if (typeof fetchLatestBaileysVersion === 'function') {
+        try {
+          const result = await Promise.race([
+            fetchLatestBaileysVersion(),
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error('version fetch timeout')), 5000),
+            ),
+          ]);
+          version = result.version;
+        } catch {
+          // Use fallback version silently
+        }
       }
 
       this.sock = makeWASocket({
         version,
         auth: {
           creds: state.creds,
-          keys: makeCacheableSignalKeyStore(state.keys, this.logger),
+          keys: typeof makeCacheableSignalKeyStore === 'function' ? makeCacheableSignalKeyStore(state.keys, this.logger) : state.keys,
         },
         logger: this.logger,
         printQRInTerminal: false,

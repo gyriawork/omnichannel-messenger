@@ -17,6 +17,8 @@ let startWhatsAppPairing: any, cancelPairing: any;
 import { getIO } from '../websocket/index.js';
 import { getTelegramManager } from '../services/telegram-connection-manager.js';
 import { cacheGet, cacheSet, cacheInvalidate, cacheKey } from '../lib/cache.js';
+import { getPlatformCredentials } from '../lib/platform-credentials.js';
+import { MESSENGERS } from '@omnichannel/shared';
 
 // ─── Zod Schemas ───
 
@@ -53,8 +55,6 @@ const updateSettingsSchema = z.object({
 // ─── Telegram multi-step auth schemas ───
 
 const telegramSendCodeSchema = z.object({
-  apiId: z.coerce.number().int().positive(),
-  apiHash: z.string().min(1),
   phoneNumber: z.string().min(1, 'Phone number is required'),
 });
 
@@ -145,6 +145,31 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
   }
 
   const authPreHandlers = [authenticate];
+
+  // ─── GET /integrations/available ───
+  // Returns which messengers are available (platform credentials configured) vs unavailable.
+
+  fastify.get(
+    '/integrations/available',
+    { preHandler: authPreHandlers },
+    async (_request: FastifyRequest, reply: FastifyReply) => {
+      const available: string[] = [];
+      const unavailable: string[] = [];
+
+      await Promise.all(
+        MESSENGERS.map(async (messenger) => {
+          const result = await getPlatformCredentials(messenger);
+          if (result.source === 'none_required' || result.credentials !== null) {
+            available.push(messenger);
+          } else {
+            unavailable.push(messenger);
+          }
+        }),
+      );
+
+      return reply.send({ available, unavailable });
+    },
+  );
 
   // ─── GET /integrations ───
   // List all integrations for the current organization.
@@ -464,7 +489,20 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
         );
       }
 
-      const { apiId, apiHash, phoneNumber } = bodyParsed.data;
+      const { phoneNumber } = bodyParsed.data;
+
+      // Resolve platform credentials (apiId, apiHash)
+      const platformResult = await getPlatformCredentials('telegram');
+      if (!platformResult.credentials) {
+        return sendError(
+          reply,
+          'VALIDATION_ERROR',
+          'Telegram is not configured. Ask your administrator to set up Telegram API credentials.',
+          400,
+        );
+      }
+      const apiId = Number(platformResult.credentials.apiId);
+      const apiHash = platformResult.credentials.apiHash;
 
       let client;
       try {
@@ -578,10 +616,9 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
         // Clean up pending auth
         await removePendingAuth(request.user.id, phoneNumber);
 
-        // Store credentials encrypted in DB
+        // Store only user-level credentials (session + phone).
+        // Platform credentials (apiId/apiHash) are resolved at runtime via getPlatformCredentials.
         const credentials = {
-          apiId,
-          apiHash,
           session: sessionString,
           phoneNumber,
         };

@@ -294,6 +294,18 @@ model Integration {
   @@index([organizationId])
 }
 
+// ─── PLATFORM CONFIG ───
+
+model PlatformConfig {
+  id          String   @id @default(uuid())
+  messenger   String   @unique // telegram | slack | gmail | whatsapp
+  credentials Json     // encrypted via AES-256-GCM
+  enabled     Boolean  @default(true)
+  updatedBy   String?  // userId of last superadmin who modified
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
 // ─── ANTIBAN ───
 
 model AntibanSettings {

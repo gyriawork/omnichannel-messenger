@@ -14,6 +14,7 @@ import {
   Inbox,
   Tag,
   ShieldCheck,
+  Shield,
   ChevronsLeft,
   ChevronsRight,
 } from 'lucide-react';
@@ -92,7 +93,10 @@ export function Sidebar() {
         {[
           ...baseNavItems,
           ...(user?.role === 'superadmin'
-            ? [{ icon: ShieldCheck, href: '/admin', label: 'Admin' }]
+            ? [
+                { icon: ShieldCheck, href: '/admin', label: 'Admin' },
+                { icon: Shield, href: '/admin/platform', label: 'Platform' },
+              ]
             : []),
           { icon: Settings, href: '/settings', label: 'Settings' },
         ].map(({ icon: Icon, href, label }) => {

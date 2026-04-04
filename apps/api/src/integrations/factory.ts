@@ -4,6 +4,7 @@
 
 import type { MessengerAdapter } from './base.js';
 import { MessengerError } from './base.js';
+import { getPlatformCredentials } from '../lib/platform-credentials.js';
 
 const SUPPORTED_MESSENGERS = ['telegram', 'slack', 'whatsapp', 'gmail'] as const;
 type SupportedMessenger = (typeof SUPPORTED_MESSENGERS)[number];
@@ -19,7 +20,19 @@ export async function createAdapter(
   switch (messenger as SupportedMessenger) {
     case 'telegram': {
       const { TelegramAdapter } = await import('./telegram.js');
-      return new TelegramAdapter(credentials as { apiId: number; apiHash: string; session?: string });
+      const tgCreds = credentials as { apiId?: number; apiHash?: string; session?: string };
+      // If apiId/apiHash not in user credentials, resolve from platform config
+      let apiId = tgCreds.apiId;
+      let apiHash = tgCreds.apiHash;
+      if (!apiId || !apiHash) {
+        const platform = await getPlatformCredentials('telegram');
+        if (!platform.credentials) {
+          throw new MessengerError('telegram', null, 'Telegram platform credentials not configured');
+        }
+        apiId = Number(platform.credentials.apiId);
+        apiHash = platform.credentials.apiHash;
+      }
+      return new TelegramAdapter({ apiId, apiHash, session: tgCreds.session });
     }
     case 'slack': {
       const { SlackAdapter } = await import('./slack.js');
@@ -31,9 +44,19 @@ export async function createAdapter(
     }
     case 'gmail': {
       const { GmailAdapter } = await import('./gmail.js');
-      return new GmailAdapter(
-        credentials as { clientId: string; clientSecret: string; refreshToken: string },
-      );
+      const gmailCreds = credentials as { clientId?: string; clientSecret?: string; refreshToken: string };
+      // If clientId/clientSecret not in user credentials, resolve from platform config
+      let clientId = gmailCreds.clientId;
+      let clientSecret = gmailCreds.clientSecret;
+      if (!clientId || !clientSecret) {
+        const platform = await getPlatformCredentials('gmail');
+        if (!platform.credentials) {
+          throw new MessengerError('gmail', null, 'Gmail platform credentials not configured');
+        }
+        clientId = platform.credentials.clientId;
+        clientSecret = platform.credentials.clientSecret;
+      }
+      return new GmailAdapter({ clientId, clientSecret, refreshToken: gmailCreds.refreshToken });
     }
     default:
       throw new MessengerError(

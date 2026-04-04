@@ -108,12 +108,10 @@ interface TelegramCheckSessionResponse {
 
 export function useTelegramSendCode() {
   return useMutation({
-    mutationFn: async (payload: { apiId: string; apiHash: string; phoneNumber: string }) => {
+    mutationFn: async (payload: { phoneNumber: string }) => {
       return api.post<TelegramSendCodeResponse>(
         '/api/integrations/telegram/send-code',
         {
-          apiId: parseInt(payload.apiId, 10),
-          apiHash: payload.apiHash,
           phoneNumber: payload.phoneNumber,
         },
       );

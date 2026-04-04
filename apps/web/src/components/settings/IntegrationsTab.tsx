@@ -33,6 +33,7 @@ import {
   useTelegramVerifyCode,
 } from '@/hooks/useIntegrations';
 import { useWhatsAppPairing, type WhatsAppPairingStatus } from '@/hooks/useWhatsAppPairing';
+import { useAvailableIntegrations } from '@/hooks/useAvailableIntegrations';
 import type { Integration, IntegrationStatus, MessengerType } from '@/types/integration';
 
 // ---------- Messenger metadata ----------
@@ -135,8 +136,6 @@ function formatDate(iso?: string) {
 // ---------- Zod schemas for connect forms ----------
 
 const telegramStep1Schema = z.object({
-  apiId: z.string().min(1, 'API ID is required'),
-  apiHash: z.string().min(1, 'API Hash is required'),
   phoneNumber: z.string().min(1, 'Phone number is required'),
 });
 
@@ -157,10 +156,9 @@ function TelegramConnectForm({
 }: {
   onSuccess: () => void;
 }) {
-  const [step, setStep] = useState<'credentials' | 'code' | 'done'>('credentials');
+  const [step, setStep] = useState<'phone' | 'code' | 'done'>('phone');
   const [phoneCodeHash, setPhoneCodeHash] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
-  const [apiCredentials, setApiCredentials] = useState<{ apiId: string; apiHash: string }>({ apiId: '', apiHash: '' });
   const [needs2FA, setNeeds2FA] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -177,11 +175,10 @@ function TelegramConnectForm({
 
   const handleStep1 = (data: z.infer<typeof telegramStep1Schema>) => {
     setErrorMessage(null);
-    setApiCredentials({ apiId: data.apiId, apiHash: data.apiHash });
     setPhoneNumber(data.phoneNumber);
 
     sendCodeMutation.mutate(
-      { apiId: data.apiId, apiHash: data.apiHash, phoneNumber: data.phoneNumber },
+      { phoneNumber: data.phoneNumber },
       {
         onSuccess: (res) => {
           setPhoneCodeHash(res.phoneCodeHash);
@@ -223,41 +220,10 @@ function TelegramConnectForm({
     );
   };
 
-  // ── Step 1: API credentials + phone number ──
-  if (step === 'credentials') {
+  // ── Step 1: Phone number ──
+  if (step === 'phone') {
     return (
       <form onSubmit={step1Form.handleSubmit(handleStep1)} className="space-y-4">
-        <div>
-          <label className="mb-1.5 block text-sm font-medium text-slate-700">API ID</label>
-          <input
-            {...step1Form.register('apiId')}
-            placeholder="Enter your Telegram API ID"
-            className={cn(
-              'w-full rounded border-[1.5px] border-slate-200 px-3 py-2 text-sm transition-colors',
-              'placeholder:text-slate-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15',
-              step1Form.formState.errors.apiId && 'border-red-300 focus:border-red-400 focus:ring-red-100',
-            )}
-          />
-          {step1Form.formState.errors.apiId && (
-            <p className="mt-1 text-xs text-red-500">{step1Form.formState.errors.apiId.message}</p>
-          )}
-        </div>
-        <div>
-          <label className="mb-1.5 block text-sm font-medium text-slate-700">API Hash</label>
-          <input
-            {...step1Form.register('apiHash')}
-            type="password"
-            placeholder="Enter your Telegram API Hash"
-            className={cn(
-              'w-full rounded border-[1.5px] border-slate-200 px-3 py-2 text-sm transition-colors',
-              'placeholder:text-slate-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15',
-              step1Form.formState.errors.apiHash && 'border-red-300 focus:border-red-400 focus:ring-red-100',
-            )}
-          />
-          {step1Form.formState.errors.apiHash && (
-            <p className="mt-1 text-xs text-red-500">{step1Form.formState.errors.apiHash.message}</p>
-          )}
-        </div>
         <div>
           <label className="mb-1.5 block text-sm font-medium text-slate-700">Phone Number</label>
           <input
@@ -366,7 +332,7 @@ function TelegramConnectForm({
           <button
             type="button"
             onClick={() => {
-              setStep('credentials');
+              setStep('phone');
               setErrorMessage(null);
               setNeeds2FA(false);
             }}
@@ -1059,16 +1025,11 @@ const faqItems: FaqItem[] = [
     bgClass: 'bg-messenger-tg-bg',
     textClass: 'text-messenger-tg-text',
     steps: [
-      {
-        text: 'Go to my.telegram.org and log in with your phone number.',
-        link: { url: 'https://my.telegram.org', label: 'my.telegram.org' },
-      },
-      { text: 'Select "API development tools".' },
-      { text: 'Fill in the form: App title (any name) and Short name (any, e.g. "omnichannel").' },
-      { text: 'Click "Create application". You will see your API ID (number) and API Hash (long string).' },
-      { text: 'Copy the API ID and API Hash.' },
-      { text: 'Go back to this page, click "Connect" on the Telegram card, and paste both values.' },
-      { text: 'After connecting, you will be asked to enter your phone number and a verification code from Telegram to authorize the session.' },
+      { text: 'Click "Connect" on the Telegram card above.' },
+      { text: 'Enter your phone number (with country code, e.g. +1234567890).' },
+      { text: 'A verification code will be sent to your Telegram app. Enter it on the next screen.' },
+      { text: 'If you have two-factor authentication enabled, you will also need to enter your 2FA password.' },
+      { text: 'Once verified, your Telegram account will be connected and ready to use.' },
     ],
   },
   {
@@ -1239,6 +1200,7 @@ function FaqSection() {
 
 export function IntegrationsTab() {
   const { data, isLoading } = useIntegrations();
+  const { data: availableData } = useAvailableIntegrations();
   const [connectingMessenger, setConnectingMessenger] =
     useState<MessengerInfo | null>(null);
   const [settingsMessenger, setSettingsMessenger] =
@@ -1250,6 +1212,12 @@ export function IntegrationsTab() {
     acc[int.messenger] = int;
     return acc;
   }, {});
+
+  // Show messengers that are available (platform configured) or already connected
+  const availableSet = new Set(availableData?.available ?? []);
+  const visibleMessengers = messengers.filter(
+    (m) => availableSet.has(m.key) || integrationsByMessenger[m.key],
+  );
 
   if (isLoading) {
     return (
@@ -1272,8 +1240,17 @@ export function IntegrationsTab() {
           </p>
         </div>
 
+        {visibleMessengers.length === 0 && (
+          <div className="rounded-lg bg-amber-50 p-4 text-center">
+            <p className="text-sm text-amber-700">
+              No messenger integrations are available yet. Please contact your
+              administrator to configure platform credentials.
+            </p>
+          </div>
+        )}
+
         <div className="grid gap-4 sm:grid-cols-2">
-          {messengers.map((m) => (
+          {visibleMessengers.map((m) => (
             <IntegrationCard
               key={m.key}
               info={m}

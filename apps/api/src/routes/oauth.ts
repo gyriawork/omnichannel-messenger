@@ -7,6 +7,7 @@ import { encryptCredentials } from '../lib/crypto.js';
 import { authenticate } from '../middleware/auth.js';
 import { createAdapter } from '../integrations/factory.js';
 import { MessengerError } from '../integrations/base.js';
+import { getPlatformCredentials } from '../lib/platform-credentials.js';
 
 // ─── Redis client for OAuth state storage ───
 
@@ -39,8 +40,12 @@ function getApiUrl(): string {
   return process.env.API_URL ?? `http://localhost:${process.env.PORT ?? '3001'}`;
 }
 
-function slackOAuthConfigured(): boolean {
-  return !!(process.env.SLACK_CLIENT_ID && process.env.SLACK_CLIENT_SECRET);
+async function getSlackPlatformCreds(): Promise<{ clientId: string; clientSecret: string } | null> {
+  const result = await getPlatformCredentials('slack');
+  if (!result.credentials) return null;
+  const { clientId, clientSecret } = result.credentials;
+  if (!clientId || !clientSecret) return null;
+  return { clientId, clientSecret };
 }
 
 /**
@@ -65,16 +70,11 @@ async function authenticateOAuthRedirect(
   return authenticate(request, reply);
 }
 
-function gmailOAuthConfigured(): boolean {
-  return !!(
-    (process.env.GMAIL_CLIENT_ID ?? process.env.GOOGLE_CLIENT_ID) &&
-    (process.env.GMAIL_CLIENT_SECRET ?? process.env.GOOGLE_CLIENT_SECRET)
-  );
-}
-
-function getGmailOAuthConfig(): { clientId: string; clientSecret: string; redirectUri: string } {
-  const clientId = process.env.GMAIL_CLIENT_ID ?? process.env.GOOGLE_CLIENT_ID!;
-  const clientSecret = process.env.GMAIL_CLIENT_SECRET ?? process.env.GOOGLE_CLIENT_SECRET!;
+async function getGmailPlatformCreds(): Promise<{ clientId: string; clientSecret: string; redirectUri: string } | null> {
+  const result = await getPlatformCredentials('gmail');
+  if (!result.credentials) return null;
+  const { clientId, clientSecret } = result.credentials;
+  if (!clientId || !clientSecret) return null;
   const redirectUri =
     process.env.GMAIL_REDIRECT_URI ?? `${getApiUrl()}/api/oauth/gmail/callback`;
   return { clientId, clientSecret, redirectUri };
@@ -101,7 +101,8 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
     '/oauth/slack/authorize',
     { preHandler: [authenticateOAuthRedirect] },
     async (request: FastifyRequest, reply: FastifyReply) => {
-      if (!slackOAuthConfigured()) {
+      const slackCreds = await getSlackPlatformCreds();
+      if (!slackCreds) {
         return reply.redirect(
           `${getAppUrl()}/settings?integration=slack&status=error&error=oauth_not_configured`,
         );
@@ -156,7 +157,7 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
       const redirectUri = `${getApiUrl()}/api/oauth/slack/callback`;
 
       const slackAuthUrl = new URL('https://slack.com/oauth/v2/authorize');
-      slackAuthUrl.searchParams.set('client_id', process.env.SLACK_CLIENT_ID!);
+      slackAuthUrl.searchParams.set('client_id', slackCreds.clientId);
       slackAuthUrl.searchParams.set('scope', botScopes);
       slackAuthUrl.searchParams.set('user_scope', userScopes);
       slackAuthUrl.searchParams.set('redirect_uri', redirectUri);
@@ -216,6 +217,14 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
 
       const { userId, organizationId } = stateData;
 
+      // Resolve platform credentials for token exchange
+      const slackCreds = await getSlackPlatformCreds();
+      if (!slackCreds) {
+        return reply.redirect(
+          `${appUrl}/settings?integration=slack&status=error&error=oauth_not_configured`,
+        );
+      }
+
       // Exchange the authorization code for an access token
       const redirectUri = `${getApiUrl()}/api/oauth/slack/callback`;
 
@@ -225,8 +234,8 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
           body: new URLSearchParams({
-            client_id: process.env.SLACK_CLIENT_ID!,
-            client_secret: process.env.SLACK_CLIENT_SECRET!,
+            client_id: slackCreds.clientId,
+            client_secret: slackCreds.clientSecret,
             code,
             redirect_uri: redirectUri,
           }),
@@ -331,8 +340,9 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
     '/oauth/slack/status',
     { preHandler: [authenticate] },
     async (_request: FastifyRequest, reply: FastifyReply) => {
+      const slackCreds = await getSlackPlatformCreds();
       return reply.send({
-        oauthConfigured: slackOAuthConfigured(),
+        oauthConfigured: slackCreds !== null,
       });
     },
   );
@@ -348,7 +358,8 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
   fastify.get(
     '/oauth/gmail/available',
     async (_request: FastifyRequest, reply: FastifyReply) => {
-      return reply.send({ available: gmailOAuthConfigured() });
+      const gmailCreds = await getGmailPlatformCreds();
+      return reply.send({ available: gmailCreds !== null });
     },
   );
 
@@ -360,7 +371,8 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
     '/oauth/gmail/authorize',
     { preHandler: [authenticateOAuthRedirect] },
     async (request: FastifyRequest, reply: FastifyReply) => {
-      if (!gmailOAuthConfigured()) {
+      const gmailCreds = await getGmailPlatformCreds();
+      if (!gmailCreds) {
         return reply.redirect(
           `${getAppUrl()}/settings?integration=gmail&status=error&error=oauth_not_configured`,
         );
@@ -384,11 +396,10 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
       await getRedis().set(`oauth:gmail:state:${state}`, stateData, 'EX', 600);
 
       // Build Google OAuth authorization URL
-      const config = getGmailOAuthConfig();
       const oauth2Client = new google.auth.OAuth2(
-        config.clientId,
-        config.clientSecret,
-        config.redirectUri,
+        gmailCreds.clientId,
+        gmailCreds.clientSecret,
+        gmailCreds.redirectUri,
       );
 
       const authUrl = oauth2Client.generateAuthUrl({
@@ -453,12 +464,19 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
 
       const { userId, organizationId } = stateData;
 
+      // Resolve platform credentials for token exchange
+      const gmailCreds = await getGmailPlatformCreds();
+      if (!gmailCreds) {
+        return reply.redirect(
+          `${appUrl}/settings?integration=gmail&status=error&error=oauth_not_configured`,
+        );
+      }
+
       // Exchange authorization code for tokens
-      const config = getGmailOAuthConfig();
       const oauth2Client = new google.auth.OAuth2(
-        config.clientId,
-        config.clientSecret,
-        config.redirectUri,
+        gmailCreds.clientId,
+        gmailCreds.clientSecret,
+        gmailCreds.redirectUri,
       );
 
       let tokens: { access_token?: string | null; refresh_token?: string | null };
@@ -480,10 +498,9 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
         );
       }
 
-      // Build credentials object matching what GmailAdapter expects
+      // Store only user-level credential (refreshToken).
+      // Platform credentials (clientId/clientSecret) are resolved at runtime via getPlatformCredentials.
       const gmailCredentials = {
-        clientId: config.clientId,
-        clientSecret: config.clientSecret,
         refreshToken: tokens.refresh_token,
       };
 
