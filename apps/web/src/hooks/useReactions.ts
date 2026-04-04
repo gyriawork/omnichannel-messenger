@@ -7,12 +7,13 @@ export function useReactions(chatId: string, messageId: string) {
   // Add/update reaction mutation
   const addReactionMutation = useMutation({
     mutationFn: async (emoji: string) => {
-      return api.post(
+      const res = await api.post(
         `/api/chats/${chatId}/messages/${messageId}/reactions`,
         { emoji },
       );
+      return res;
     },
-    onSuccess: () => {
+    onSuccess: (_data) => {
       // Invalidate the messages query so reactions are refetched with messages
       queryClient.invalidateQueries({
         queryKey: ['messages', chatId],

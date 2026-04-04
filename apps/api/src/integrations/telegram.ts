@@ -393,11 +393,13 @@ export class TelegramAdapter implements MessengerAdapter {
 
     try {
       const peer = await this.resolvePeer(externalChatId);
+      // Strip U+FE0F variation selector — Telegram API expects bare emoji
+      const cleanEmoji = emoji.replace(/\uFE0F/g, '');
       await this.client!.invoke(
         new Api.messages.SendReaction({
           peer,
           msgId: parseInt(externalMessageId, 10),
-          reaction: [new Api.ReactionEmoji({ emoticon: emoji })],
+          reaction: [new Api.ReactionEmoji({ emoticon: cleanEmoji })],
         }),
       );
     } catch (err) {
@@ -415,8 +417,9 @@ export class TelegramAdapter implements MessengerAdapter {
 
     try {
       const peer = await this.resolvePeer(externalChatId);
+      // Strip U+FE0F variation selector — Telegram API expects bare emoji
       const reaction = (options?.remainingEmoji ?? []).map(
-        (e) => new Api.ReactionEmoji({ emoticon: e }),
+        (e) => new Api.ReactionEmoji({ emoticon: e.replace(/\uFE0F/g, '') }),
       );
       await this.client!.invoke(
         new Api.messages.SendReaction({
