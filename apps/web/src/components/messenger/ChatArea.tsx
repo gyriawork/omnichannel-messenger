@@ -353,13 +353,27 @@ function MessageBubble({
                   isSelf ? 'right-0' : 'left-0',
                 )}
               >
-                <EmojiPicker
-                  onEmojiClick={(emojiData) => handleEmojiSelect(emojiData.emoji)}
-                  theme={Theme.LIGHT}
-                  width={350}
-                  height={400}
-                  searchPlaceHolder="Search emoji..."
-                />
+                {messenger === 'telegram' ? (
+                  <div className="grid grid-cols-7 gap-0.5 bg-white p-2 border border-slate-200 rounded-lg" style={{ width: 280 }}>
+                    {TELEGRAM_ALLOWED_EMOJI.map((emoji) => (
+                      <button
+                        key={emoji}
+                        onClick={() => handleEmojiSelect(emoji)}
+                        className="flex h-8 w-8 items-center justify-center rounded hover:bg-slate-100 text-lg"
+                      >
+                        {emoji}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <EmojiPicker
+                    onEmojiClick={(emojiData) => handleEmojiSelect(emojiData.emoji)}
+                    theme={Theme.LIGHT}
+                    width={350}
+                    height={400}
+                    searchPlaceHolder="Search emoji..."
+                  />
+                )}
               </div>
             )}
           </div>
