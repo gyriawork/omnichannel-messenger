@@ -130,7 +130,7 @@ function InviteUserModal({ onClose }: { onClose: () => void }) {
           <div>
             <h3 className="text-lg font-semibold text-slate-900">Invite Team Member</h3>
             <p className="text-xs text-slate-500">
-              They will receive access to the workspace
+              They will receive an email with login credentials
             </p>
           </div>
           <button

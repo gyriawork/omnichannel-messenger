@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
 import prisma from '../lib/prisma.js';
+import { sendPasswordResetEmail } from '../lib/email.js';
 
 // ─── Env helpers ───
 
@@ -125,54 +126,17 @@ export default async function authRoutes(fastify: FastifyInstance): Promise<void
   });
 
   // ── POST /register ──
+  // Self-registration disabled — users are added via admin invite only.
 
   fastify.post(
     '/register',
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      const parsed = registerSchema.safeParse(request.body);
-      if (!parsed.success) {
-        const firstError = parsed.error.errors[0]?.message ?? 'Invalid input';
-        return validationError(reply, firstError);
-      }
-
-      const { email, password, name } = parsed.data;
-
-      // Check email uniqueness
-      const existing = await prisma.user.findUnique({ where: { email } });
-      if (existing) {
-        return reply.status(409).send({
-          error: {
-            code: 'VALIDATION_ERROR',
-            message: 'A user with this email already exists',
-            statusCode: 409,
-          },
-        });
-      }
-
-      // Hash password
-      const passwordHash = await bcrypt.hash(password, 12);
-
-      // Create user
-      const user = await prisma.user.create({
-        data: {
-          email,
-          name,
-          passwordHash,
-          role: 'user',
-          status: 'active',
+    async (_request: FastifyRequest, reply: FastifyReply) => {
+      return reply.status(403).send({
+        error: {
+          code: 'AUTH_INSUFFICIENT_PERMISSIONS',
+          message: 'Self-registration is disabled. Please ask your workspace admin for an invite.',
+          statusCode: 403,
         },
-      });
-
-      // Generate tokens
-      const accessToken = generateAccessToken(user);
-      const refreshToken = generateRefreshToken();
-      await storeRefreshToken(user.id, refreshToken);
-
-      setRefreshTokenCookie(reply, refreshToken);
-
-      return reply.status(201).send({
-        accessToken,
-        user: userResponse(user),
       });
     },
   );
@@ -358,8 +322,12 @@ export default async function authRoutes(fastify: FastifyInstance): Promise<void
         data: { token, userId: user.id, expiresAt },
       });
 
-      // TODO: Send email with reset link (integrate email service)
-      console.log(`[DEV] Password reset token for ${user.email}: ${token}`);
+      // Send password reset email
+      await sendPasswordResetEmail({
+        to: user.email,
+        name: user.name,
+        resetUrl: `${process.env.APP_URL || 'http://localhost:3000'}/reset-password?token=${token}`,
+      });
 
       return reply.status(200).send({ message: 'If the email exists, a reset link has been sent' });
     },

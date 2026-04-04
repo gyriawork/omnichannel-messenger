@@ -120,13 +120,7 @@ export default function LoginPage() {
         </form>
 
         <p className="mt-4 text-center text-sm text-slate-500">
-          Don&apos;t have an account?{' '}
-          <Link
-            href="/register"
-            className="font-medium text-accent hover:text-accent-hover"
-          >
-            Create one
-          </Link>
+          Need an account? Ask your workspace admin for an invite.
         </p>
       </div>
     </div>

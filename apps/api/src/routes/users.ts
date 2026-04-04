@@ -3,6 +3,7 @@ import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 import { randomBytes } from 'node:crypto';
 import prisma from '../lib/prisma.js';
+import { sendInviteEmail } from '../lib/email.js';
 import { authenticate } from '../middleware/auth.js';
 import { requireMinRole } from '../middleware/rbac.js';
 
@@ -260,6 +261,19 @@ export default async function userRoutes(fastify: FastifyInstance): Promise<void
           role,
           organizationId,
         },
+      });
+
+      // Send invite email with temporary password
+      const org = organizationId
+        ? await prisma.organization.findUnique({ where: { id: organizationId }, select: { name: true } })
+        : null;
+
+      await sendInviteEmail({
+        to: email,
+        name,
+        tempPassword,
+        organizationName: org?.name ?? undefined,
+        loginUrl: `${process.env.APP_URL || 'http://localhost:3000'}/login`,
       });
 
       return reply.status(201).send(sanitizeUser(user));

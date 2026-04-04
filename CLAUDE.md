@@ -1,5 +1,13 @@
 # CLAUDE.md — Instructions for Claude Code
 
+## Communication Style
+
+- Always explain changes in simple, non-technical language — as if talking to a regular user, not a programmer
+- When something is changed, explain what will change from the user's perspective (e.g. "chats will load faster" instead of "added Redis cache layer")
+- Always indicate the risk level of changes: low / medium / high
+- Save technical details for code comments and commit messages only — keep chat messages human-friendly
+- Use the user's language (Russian if they write in Russian)
+
 ## Project Overview
 
 You are building **Omnichannel Messenger V1.1** — a SaaS unified inbox for Telegram, Slack, WhatsApp, and Gmail. Messages are sent as the user (not a bot). The product supports multi-tenant organizations, chat management, mass broadcasts with anti-ban rate limiting, and real-time messaging.
