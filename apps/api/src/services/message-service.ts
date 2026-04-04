@@ -2,9 +2,18 @@
 // Extracted from webhooks.ts so it can be reused by the Telegram connection manager
 // and webhook handlers alike.
 
+import { v5 as uuidv5 } from 'uuid';
 import prisma from '../lib/prisma.js';
 import { getIO } from '../websocket/index.js';
 import { cacheInvalidate, cacheKey } from '../lib/cache.js';
+
+// Fixed namespace for generating deterministic UUIDs for external users
+const EXTERNAL_USER_UUID_NAMESPACE = '6ba7b810-9dad-11d1-80b4-00c04fd430c8'; // DNS namespace UUID
+
+/** Generate a deterministic UUID for an external messenger user */
+export function externalUserToUuid(messenger: string, externalUserId: string): string {
+  return uuidv5(`external:${messenger}:${externalUserId}`, EXTERNAL_USER_UUID_NAMESPACE);
+}
 
 export interface SaveIncomingMessageParams {
   externalChatId: string;
@@ -109,4 +118,74 @@ export async function saveIncomingMessage(params: SaveIncomingMessageParams) {
   await cacheInvalidate(cacheKey(params.organizationId, 'chats', '*'));
 
   return message;
+}
+
+interface IngestReactionParams {
+  externalMessageId: string;
+  messenger: string;
+  externalUserId: string;
+  emoji: string;
+  action: 'add' | 'remove';
+}
+
+/**
+ * Process an incoming reaction from a messenger webhook/event.
+ * Saves to DB and emits WebSocket event.
+ */
+export async function ingestReaction(params: IngestReactionParams): Promise<void> {
+  const { externalMessageId, messenger, externalUserId, emoji, action } = params;
+
+  // Find the message by external ID
+  const message = await prisma.message.findFirst({
+    where: { externalMessageId },
+    select: { id: true, chatId: true, chat: { select: { organizationId: true } } },
+  });
+
+  if (!message) {
+    console.warn(`[ingestReaction] Message not found for externalMessageId: ${externalMessageId}`);
+    return;
+  }
+
+  const userId = externalUserToUuid(messenger, externalUserId);
+
+  if (action === 'add') {
+    await prisma.reaction.upsert({
+      where: { messageId_userId_emoji: { messageId: message.id, userId, emoji } },
+      create: {
+        messageId: message.id,
+        userId,
+        emoji,
+        externalSynced: true,
+        externalUserId,
+      },
+      update: {
+        externalSynced: true,
+      },
+    });
+
+    // Emit WebSocket event
+    try {
+      const io = getIO();
+      io.to(`chat:${message.chatId}`).emit('new_reaction', {
+        messageId: message.id,
+        userId,
+        emoji,
+        externalUserId,
+      });
+    } catch { /* WebSocket not available */ }
+  } else {
+    // Remove reaction
+    await prisma.reaction.deleteMany({
+      where: { messageId: message.id, userId, emoji },
+    });
+
+    try {
+      const io = getIO();
+      io.to(`chat:${message.chatId}`).emit('reaction_removed', {
+        messageId: message.id,
+        userId,
+        emoji,
+      });
+    } catch { /* WebSocket not available */ }
+  }
 }
