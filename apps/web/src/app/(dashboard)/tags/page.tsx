@@ -283,9 +283,9 @@ export default function TagsPage() {
   const tags = data?.tags ?? [];
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-8">
+    <div className="mx-auto max-w-4xl px-4 py-6 md:px-6 md:py-8">
       {/* Header */}
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-xl font-semibold text-slate-900">Tags</h1>
           <p className="text-sm text-slate-500">
@@ -322,7 +322,7 @@ export default function TagsPage() {
           </button>
         </div>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
           {tags.map((tag) => (
             <TagCard
               key={tag.id}

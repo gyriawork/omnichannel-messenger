@@ -77,7 +77,7 @@ export default function ActivityPage() {
   );
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-8">
+    <div className="mx-auto max-w-4xl px-4 py-6 md:px-6 md:py-8">
       {/* Header */}
       <div className="mb-6">
         <h1 className="text-2xl font-semibold text-slate-900">Activity Log</h1>
@@ -87,7 +87,7 @@ export default function ActivityPage() {
       </div>
 
       {/* Filter bar */}
-      <div className="mb-6 flex flex-wrap items-center gap-3">
+      <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
         {/* Category filter */}
         <div className="relative">
           <Filter className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
