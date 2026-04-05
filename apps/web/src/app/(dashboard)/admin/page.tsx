@@ -304,8 +304,8 @@ function CreateOrgModal({
   });
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 md:items-center">
+      <div className="w-full max-h-[100dvh] overflow-y-auto rounded-t-2xl bg-white p-6 shadow-xl md:max-w-md md:rounded-xl">
         <div className="mb-5 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-slate-900">
             Create Organization
@@ -449,8 +449,8 @@ function EditOrgModal({
   });
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 md:items-center">
+      <div className="w-full max-h-[100dvh] overflow-y-auto rounded-t-2xl bg-white p-6 shadow-xl md:max-w-md md:rounded-xl">
         <div className="mb-5 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-slate-900">
             Edit Organization

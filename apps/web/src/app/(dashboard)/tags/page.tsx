@@ -91,8 +91,8 @@ function TagModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="w-full max-w-sm rounded-lg bg-white p-6 shadow-lg">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm md:items-center">
+      <div className="w-full max-h-[100dvh] overflow-y-auto rounded-t-2xl bg-white p-6 shadow-lg md:max-w-sm md:rounded-xl">
         <div className="mb-5 flex items-center justify-between">
           <h3 className="text-lg font-semibold text-slate-900">
             {mode === 'create' ? 'New Tag' : 'Edit Tag'}
@@ -183,8 +183,8 @@ function DeleteConfirm({
   isPending: boolean;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="w-full max-w-sm rounded-lg bg-white p-6 shadow-lg">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm md:items-center">
+      <div className="w-full max-h-[100dvh] overflow-y-auto rounded-t-2xl bg-white p-6 shadow-lg md:max-w-sm md:rounded-xl">
         <h3 className="text-lg font-semibold text-slate-900">Delete Tag</h3>
         <p className="mt-2 text-sm text-slate-500">
           Are you sure you want to delete <span className="font-medium text-slate-700">&quot;{tagName}&quot;</span>?

@@ -124,8 +124,8 @@ function InviteUserModal({ onClose }: { onClose: () => void }) {
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-lg">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm md:items-center">
+      <div className="w-full max-h-[100dvh] overflow-y-auto rounded-t-2xl bg-white p-6 shadow-lg md:max-w-md md:rounded-xl">
         <div className="mb-5 flex items-center justify-between">
           <div>
             <h3 className="text-lg font-semibold text-slate-900">Invite Team Member</h3>

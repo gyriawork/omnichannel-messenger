@@ -222,7 +222,7 @@ export function ImportChatsModal({ open, onClose }: ImportChatsModalProps) {
   const messengerInfo = MESSENGERS.find((m) => m.key === selectedMessenger);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div className="fixed inset-0 z-50 flex items-end justify-center md:items-center">
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/40 backdrop-blur-sm"
@@ -230,7 +230,7 @@ export function ImportChatsModal({ open, onClose }: ImportChatsModalProps) {
       />
 
       {/* Modal */}
-      <div className="relative z-10 w-full max-w-3xl max-h-[90vh] flex flex-col rounded-xl bg-white shadow-lg">
+      <div className="relative z-10 w-full max-h-[100dvh] overflow-y-auto flex flex-col rounded-t-2xl bg-white shadow-lg md:max-w-3xl md:max-h-[90vh] md:rounded-xl">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
           <div className="flex items-center gap-3">
