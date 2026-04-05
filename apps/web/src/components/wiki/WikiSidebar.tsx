@@ -150,7 +150,6 @@ export function WikiSidebar({ activeCategoryId, onCategorySelect }: WikiSidebarP
             <span className="w-[18px] flex-shrink-0" />
           )}
 
-          <span className="flex-shrink-0 text-sm">{category.icon ?? '📁'}</span>
           <span className="flex-1 truncate">{category.name}</span>
 
           <span
@@ -212,7 +211,6 @@ export function WikiSidebar({ activeCategoryId, onCategorySelect }: WikiSidebarP
         )}
       >
         <span className="w-[18px] flex-shrink-0" />
-        <span className="flex-shrink-0 text-sm">📚</span>
         <span className="flex-1">All articles</span>
       </button>
 
