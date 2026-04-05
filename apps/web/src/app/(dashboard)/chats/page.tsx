@@ -413,9 +413,9 @@ export default function ChatsPage() {
   };
 
   return (
-    <div className="p-6">
+    <div className="px-4 py-6 md:px-6 md:py-8">
       {/* Header */}
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-xl font-semibold text-slate-900">Chats</h1>
           <p className="text-sm text-slate-500">
@@ -534,8 +534,43 @@ export default function ChatsPage() {
         </div>
       )}
 
+      {/* Mobile card list */}
+      <div className="flex flex-col gap-2 md:hidden">
+        {sorted.map((chat) => {
+          const cfg = messengerConfig[chat.messenger];
+          const isSelected = selectedIds.includes(chat.id);
+          return (
+            <div
+              key={chat.id}
+              className={cn(
+                'rounded-xl border border-slate-200 bg-white p-3 transition-colors',
+                isSelected && 'border-accent bg-accent/5',
+              )}
+              onClick={() => toggleSelect(chat.id)}
+            >
+              <div className="flex items-center gap-3">
+                <div className={cn('h-2 w-2 rounded-full', cfg.dotColor)} />
+                <span className="flex-1 truncate text-sm font-medium text-slate-900">
+                  {chat.name}
+                </span>
+                <span className="text-xs text-slate-400">
+                  {chat.lastMessage?.createdAt
+                    ? new Date(chat.lastMessage.createdAt).toLocaleDateString()
+                    : ''}
+                </span>
+              </div>
+              {chat.lastMessage && (
+                <p className="mt-1 truncate pl-5 text-xs text-slate-500">
+                  {chat.lastMessage.content ?? ''}
+                </p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
       {/* Table */}
-      <div className="overflow-hidden rounded-lg bg-white shadow-xs">
+      <div className="hidden overflow-hidden rounded-lg bg-white shadow-xs md:block">
         {isLoading ? (
           <div className="flex items-center justify-center py-20">
             <Loader2 className="h-6 w-6 animate-spin text-accent" />
