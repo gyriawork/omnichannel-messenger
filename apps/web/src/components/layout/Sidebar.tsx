@@ -13,6 +13,7 @@ import {
   LogOut,
   Inbox,
   Tag,
+  BookOpen,
   ShieldCheck,
   Shield,
   ChevronsLeft,
@@ -27,6 +28,7 @@ const baseNavItems = [
   { icon: MessageSquare, href: '/messenger', label: 'Messenger' },
   { icon: Send, href: '/broadcast', label: 'Broadcast' },
   { icon: FileText, href: '/templates', label: 'Templates' },
+  { icon: BookOpen, href: '/wiki', label: 'Wiki' },
   { icon: Tag, href: '/tags', label: 'Tags' },
   { icon: Activity, href: '/activity', label: 'Activity Log' },
 ];

@@ -29,6 +29,9 @@ model Organization {
   antibanSettings      AntibanSettings[]
   activityLogs         ActivityLog[]
   globalBroadcastLimits Json?   // max values admin can't exceed
+  wikiCategories       WikiCategory[]
+  wikiArticles         WikiArticle[]
+  wikiTags             WikiTag[]
 }
 
 // ─── USERS ───
@@ -56,6 +59,8 @@ model User {
   refreshTokens    RefreshToken[]
   chatPreferences  ChatPreference[]
   passwordResetTokens PasswordResetToken[]
+  wikiArticles     WikiArticle[]  @relation("WikiArticleAuthor")
+  wikiArticlesUpdated WikiArticle[] @relation("WikiArticleUpdater")
 
   @@index([organizationId])
 }
@@ -372,4 +377,93 @@ model Attachment {
   createdAt    DateTime @default(now())
 
   @@index([messageId])
+}
+
+// ─── WIKI ───
+
+enum WikiArticleType {
+  article
+  case_study  // "case" is reserved in some contexts, using case_study
+}
+
+enum WikiArticleStatus {
+  draft
+  published
+}
+
+model WikiCategory {
+  id             String   @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  name           String
+  slug           String
+  description    String?
+  icon           String?  // emoji
+  parentId       String?
+  parent         WikiCategory? @relation("CategoryTree", fields: [parentId], references: [id])
+  children       WikiCategory[] @relation("CategoryTree")
+  order          Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  articles       WikiArticle[]
+
+  @@unique([slug, organizationId])
+  @@index([organizationId])
+  @@index([parentId])
+}
+
+model WikiArticle {
+  id             String            @id @default(uuid())
+  organizationId String
+  organization   Organization      @relation(fields: [organizationId], references: [id])
+  categoryId     String
+  category       WikiCategory      @relation(fields: [categoryId], references: [id])
+  authorId       String
+  author         User              @relation("WikiArticleAuthor", fields: [authorId], references: [id])
+  updatedById    String?
+  updatedBy      User?             @relation("WikiArticleUpdater", fields: [updatedById], references: [id])
+  title          String
+  slug           String
+  content        Json              // ProseMirror JSON from TipTap
+  type           WikiArticleType   @default(article)
+  status         WikiArticleStatus @default(draft)
+  caseProblem    String?           // short problem description for case_study
+  caseSolution   String?           // short solution description for case_study
+  viewCount      Int               @default(0)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  deletedAt      DateTime?
+
+  tags           WikiArticleTag[]
+
+  @@unique([slug, organizationId])
+  @@index([organizationId, categoryId, createdAt])
+  @@index([organizationId, type])
+  @@index([organizationId, status])
+  @@index([authorId])
+}
+
+model WikiTag {
+  id             String   @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  name           String
+  color          String   @default("#6366f1")
+  createdAt      DateTime @default(now())
+
+  articles       WikiArticleTag[]
+
+  @@unique([name, organizationId])
+  @@index([organizationId])
+}
+
+model WikiArticleTag {
+  articleId String
+  article   WikiArticle @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  tagId     String
+  tag       WikiTag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([articleId, tagId])
+  @@index([tagId])
 }

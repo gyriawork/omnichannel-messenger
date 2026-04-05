@@ -23,6 +23,7 @@ import uploadRoutes from './routes/uploads.js';
 import webhookRoutes from './routes/webhooks.js';
 import oauthRoutes from './routes/oauth.js';
 import adminRoutes from './routes/admin.js';
+import wikiRoutes from './routes/wiki.js';
 import { createWebSocketServer } from './websocket/index.js';
 import { validateEnv } from './lib/env.js';
 import { startRedisSubscriber, stopRedisSubscriber } from './services/redis-subscriber.js';
@@ -124,6 +125,7 @@ await fastify.register(workspaceRoutes, { prefix: '/api' });
 await fastify.register(uploadRoutes, { prefix: '/api' });
 await fastify.register(oauthRoutes, { prefix: '/api' });
 await fastify.register(adminRoutes, { prefix: '/api' });
+await fastify.register(wikiRoutes, { prefix: '/api' });
 
 // Health check
 fastify.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));

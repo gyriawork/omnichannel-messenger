@@ -1,0 +1,49 @@
+'use client';
+
+import { useParams, useRouter } from 'next/navigation';
+import { WikiArticleEditor } from '@/components/wiki/WikiArticleEditor';
+import { useWikiArticle, useUpdateWikiArticle, type UpdateArticleInput } from '@/hooks/useWiki';
+
+export default function EditWikiArticlePage() {
+  const params = useParams();
+  const router = useRouter();
+  const slug = params.slug as string;
+
+  const { data: article, isLoading } = useWikiArticle(slug);
+  const updateArticle = useUpdateWikiArticle();
+
+  if (isLoading) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+      </div>
+    );
+  }
+
+  if (!article) {
+    return (
+      <div className="flex h-full items-center justify-center text-slate-400">
+        Статья не найдена
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-full overflow-auto">
+      <WikiArticleEditor
+        article={article}
+        onSubmit={(data: UpdateArticleInput & { title: string; content: unknown; categoryId: string; type: 'article' | 'case_study'; status: 'draft' | 'published' }) => {
+          updateArticle.mutate(
+            { id: article.id, ...data },
+            {
+              onSuccess: () => {
+                router.push(`/wiki/${article.slug}`);
+              },
+            },
+          );
+        }}
+        isSubmitting={updateArticle.isPending}
+      />
+    </div>
+  );
+}
