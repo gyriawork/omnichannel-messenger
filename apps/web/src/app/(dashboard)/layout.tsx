@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { BottomNav } from '@/components/layout/BottomNav';
 import { useAuthStore } from '@/stores/auth';
 import { useSocket } from '@/hooks/useSocket';
 
@@ -38,7 +39,7 @@ export default function DashboardLayout({
 
   if (isLoading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-[#f8fafc]">
+      <div className="flex h-[100dvh] items-center justify-center bg-[#f8fafc]">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent border-t-transparent" />
       </div>
     );
@@ -49,11 +50,12 @@ export default function DashboardLayout({
   }
 
   return (
-    <div className="flex h-screen bg-[#f8fafc]">
+    <div className="flex h-[100dvh] bg-[#f8fafc]">
       <Sidebar />
-      <main className="flex-1 overflow-auto">
+      <main className="flex-1 overflow-auto pb-14 md:pb-0">
         <ErrorBoundary>{children}</ErrorBoundary>
       </main>
+      <BottomNav />
     </div>
   );
 }
