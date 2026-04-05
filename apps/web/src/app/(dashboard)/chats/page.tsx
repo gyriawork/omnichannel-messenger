@@ -672,7 +672,7 @@ export default function ChatsPage() {
                     <td className="px-4 py-3">
                       <span className="inline-flex items-center gap-1 text-xs text-slate-500">
                         <TypeIcon className="h-3.5 w-3.5" />
-                        {chat.chatType}
+                        {chat.chatType.charAt(0).toUpperCase() + chat.chatType.slice(1)}
                       </span>
                     </td>
 
