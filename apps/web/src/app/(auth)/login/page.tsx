@@ -47,7 +47,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="w-full max-w-[400px]">
+    <div className="w-full max-w-[400px] px-4 md:px-0">
       <div className="mb-8 text-center">
         <img src="/logo-dark.svg" alt="messengly" className="mx-auto mb-4 h-8" />
         <h1 className="text-2xl font-semibold text-slate-800">Welcome back</h1>
@@ -71,7 +71,7 @@ export default function LoginPage() {
               autoComplete="email"
               placeholder="you@company.com"
               className={cn(
-                'w-full rounded border border-slate-200 px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 outline-none transition-shadow focus:border-accent focus:shadow-focus-ring',
+                'w-full rounded border border-slate-200 px-3 py-2 text-base text-slate-800 placeholder:text-slate-400 outline-none transition-shadow focus:border-accent focus:shadow-focus-ring',
                 errors.email && 'border-red-300 focus:border-red-400',
               )}
               {...register('email')}
@@ -96,7 +96,7 @@ export default function LoginPage() {
               autoComplete="current-password"
               placeholder="Enter your password"
               className={cn(
-                'w-full rounded border border-slate-200 px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 outline-none transition-shadow focus:border-accent focus:shadow-focus-ring',
+                'w-full rounded border border-slate-200 px-3 py-2 text-base text-slate-800 placeholder:text-slate-400 outline-none transition-shadow focus:border-accent focus:shadow-focus-ring',
                 errors.password && 'border-red-300 focus:border-red-400',
               )}
               {...register('password')}
