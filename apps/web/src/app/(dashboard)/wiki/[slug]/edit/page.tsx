@@ -23,7 +23,7 @@ export default function EditWikiArticlePage() {
   if (!article) {
     return (
       <div className="flex h-full items-center justify-center text-slate-400">
-        Статья не найдена
+        Article not found
       </div>
     );
   }

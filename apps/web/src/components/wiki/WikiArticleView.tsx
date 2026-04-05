@@ -6,6 +6,9 @@ import { cn } from '@/lib/utils';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Edit3, Trash2, Eye, Clock } from 'lucide-react';
+import { generateHTML } from '@tiptap/html';
+import StarterKit from '@tiptap/starter-kit';
+import LinkExtension from '@tiptap/extension-link';
 
 interface WikiArticleViewProps {
   article: WikiArticle;
@@ -31,42 +34,27 @@ function formatRelativeTime(dateString: string): string {
   const diffHours = Math.floor(diffMin / 60);
   const diffDays = Math.floor(diffHours / 24);
 
-  if (diffSec < 60) return 'только что';
-  if (diffMin < 60) {
-    const mod = diffMin % 10;
-    const label =
-      diffMin >= 11 && diffMin <= 19
-        ? 'минут'
-        : mod === 1
-          ? 'минуту'
-          : mod >= 2 && mod <= 4
-            ? 'минуты'
-            : 'минут';
-    return `${diffMin} ${label} назад`;
-  }
-  if (diffHours < 24) {
-    const mod = diffHours % 10;
-    const label =
-      diffHours >= 11 && diffHours <= 19
-        ? 'часов'
-        : mod === 1
-          ? 'час'
-          : mod >= 2 && mod <= 4
-            ? 'часа'
-            : 'часов';
-    return `${diffHours} ${label} назад`;
-  }
+  if (diffSec < 60) return 'just now';
+  if (diffMin < 60) return `${diffMin} min ago`;
+  if (diffHours < 24) return `${diffHours} h ago`;
+  return `${diffDays} d ago`;
+}
 
-  const mod = diffDays % 10;
-  const label =
-    diffDays >= 11 && diffDays <= 19
-      ? 'дней'
-      : mod === 1
-        ? 'день'
-        : mod >= 2 && mod <= 4
-          ? 'дня'
-          : 'дней';
-  return `${diffDays} ${label} назад`;
+function renderContent(content: unknown): string {
+  if (!content) return '';
+  if (typeof content === 'string') return content;
+  const obj = content as Record<string, unknown>;
+  // Legacy { type: "text", content: "..." } format
+  if (obj.type === 'text' && typeof obj.content === 'string') return obj.content;
+  // TipTap JSON format (type: "doc")
+  if (obj.type === 'doc') {
+    try {
+      return generateHTML(obj as Parameters<typeof generateHTML>[0], [StarterKit, LinkExtension]);
+    } catch {
+      return JSON.stringify(content);
+    }
+  }
+  return JSON.stringify(content, null, 2);
 }
 
 export function WikiArticleView({ article, onDelete }: WikiArticleViewProps) {
@@ -83,11 +71,10 @@ export function WikiArticleView({ article, onDelete }: WikiArticleViewProps) {
 
   const isCaseStudy = article.type === 'case_study';
 
-  // Render content — for now just stringify JSON (TipTap rendering will be added later)
-  const renderedContent =
-    typeof article.content === 'string'
-      ? article.content
-      : JSON.stringify(article.content, null, 2);
+  const htmlContent = renderContent(article.content);
+  const isHtml = typeof article.content === 'object' &&
+    article.content !== null &&
+    (article.content as Record<string, unknown>).type === 'doc';
 
   return (
     <div className="max-w-[820px] mx-auto px-6 py-8">
@@ -134,7 +121,7 @@ export function WikiArticleView({ article, onDelete }: WikiArticleViewProps) {
                 borderRadius: 4,
               }}
             >
-              КЕЙС
+              CASE STUDY
             </span>
           )}
           <h1
@@ -156,7 +143,7 @@ export function WikiArticleView({ article, onDelete }: WikiArticleViewProps) {
               )}
             >
               <Edit3 size={14} />
-              Редактировать
+              Edit
             </Link>
           )}
           {canDelete && onDelete && (
@@ -169,7 +156,7 @@ export function WikiArticleView({ article, onDelete }: WikiArticleViewProps) {
               )}
             >
               <Trash2 size={14} />
-              Удалить
+              Delete
             </button>
           )}
         </div>
@@ -219,7 +206,7 @@ export function WikiArticleView({ article, onDelete }: WikiArticleViewProps) {
             >
               <div className="font-semibold mb-1" style={{ color: '#991b1b', fontSize: 14 }}>
                 <span className="mr-1.5">&#128308;</span>
-                Проблема
+                Problem
               </div>
               <div style={{ color: '#7f1d1d', fontSize: 14, lineHeight: 1.6 }}>
                 {article.caseProblem}
@@ -238,7 +225,7 @@ export function WikiArticleView({ article, onDelete }: WikiArticleViewProps) {
             >
               <div className="font-semibold mb-1" style={{ color: '#166534', fontSize: 14 }}>
                 <span className="mr-1.5">&#128994;</span>
-                Решение
+                Solution
               </div>
               <div style={{ color: '#14532d', fontSize: 14, lineHeight: 1.6 }}>
                 {article.caseSolution}
@@ -249,12 +236,19 @@ export function WikiArticleView({ article, onDelete }: WikiArticleViewProps) {
       )}
 
       {/* Main content */}
-      <div
-        className="whitespace-pre-wrap mb-8"
-        style={{ fontSize: 14, color: '#334155', lineHeight: 1.7 }}
-      >
-        {renderedContent}
-      </div>
+      {isHtml ? (
+        <div
+          className="prose prose-sm max-w-none mb-8"
+          dangerouslySetInnerHTML={{ __html: htmlContent }}
+        />
+      ) : (
+        <div
+          className="whitespace-pre-wrap mb-8"
+          style={{ fontSize: 14, color: '#334155', lineHeight: 1.7 }}
+        >
+          {htmlContent}
+        </div>
+      )}
 
       {/* Tags */}
       {article.tags.length > 0 && (

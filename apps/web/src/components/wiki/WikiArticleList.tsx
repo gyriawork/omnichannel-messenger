@@ -27,18 +27,18 @@ function formatRelativeTime(dateStr: string): string {
   const diffWeeks = Math.floor(diffDays / 7);
   const diffMonths = Math.floor(diffDays / 30);
 
-  if (diffMin < 1) return 'только что';
-  if (diffMin < 60) return `${diffMin} мин. назад`;
-  if (diffHours < 24) return `${diffHours} ч. назад`;
-  if (diffDays < 7) return `${diffDays} дн. назад`;
-  if (diffWeeks < 5) return `${diffWeeks} нед. назад`;
-  return `${diffMonths} мес. назад`;
+  if (diffMin < 1) return 'just now';
+  if (diffMin < 60) return `${diffMin} min ago`;
+  if (diffHours < 24) return `${diffHours} h ago`;
+  if (diffDays < 7) return `${diffDays} d ago`;
+  if (diffWeeks < 5) return `${diffWeeks} w ago`;
+  return `${diffMonths} mo ago`;
 }
 
 const filters: { key: FilterType; label: string }[] = [
-  { key: 'all', label: 'Все' },
-  { key: 'article', label: 'Статьи' },
-  { key: 'case_study', label: 'Кейсы' },
+  { key: 'all', label: 'All' },
+  { key: 'article', label: 'Articles' },
+  { key: 'case_study', label: 'Cases' },
 ];
 
 export function WikiArticleList({
@@ -80,7 +80,7 @@ export function WikiArticleList({
           onClick={onNewArticle}
           className="flex items-center justify-center rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 transition-opacity"
         >
-          + Новая статья
+          + New article
         </button>
       </div>
 
@@ -105,7 +105,7 @@ export function WikiArticleList({
       {/* Article cards */}
       {articles.length === 0 ? (
         <div className="flex items-center justify-center py-16 text-sm text-[#94a3b8]">
-          Нет статей в этой категории
+          No articles in this category
         </div>
       ) : (
         <div className="flex flex-col gap-3">
@@ -130,7 +130,7 @@ export function WikiArticleList({
                           : 'bg-[#fef3c7] text-[#d97706]'
                       )}
                     >
-                      {article.type === 'article' ? 'Статья' : 'Кейс'}
+                      {article.type === 'article' ? 'Article' : 'Case'}
                     </span>
                     <span
                       className={cn(
@@ -141,8 +141,8 @@ export function WikiArticleList({
                       )}
                     >
                       {article.status === 'published'
-                        ? 'Опубликовано'
-                        : 'Черновик'}
+                        ? 'Published'
+                        : 'Draft'}
                     </span>
                   </div>
 

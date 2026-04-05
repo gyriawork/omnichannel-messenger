@@ -15,7 +15,7 @@ export default function WikiArticlePage() {
 
   const handleDelete = () => {
     if (!article) return;
-    if (!confirm('Удалить эту статью?')) return;
+    if (!confirm('Delete this article?')) return;
     deleteArticle.mutate(article.id, {
       onSuccess: () => router.push('/wiki'),
     });
@@ -36,7 +36,7 @@ export default function WikiArticlePage() {
           <WikiArticleView article={article} onDelete={handleDelete} />
         ) : (
           <div className="flex items-center justify-center py-20 text-slate-400">
-            Статья не найдена
+            Article not found
           </div>
         )}
       </div>
