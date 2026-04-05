@@ -56,7 +56,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl px-6 py-8">
+    <div className="mx-auto max-w-5xl px-4 py-6 md:px-6 md:py-8">
       {/* Header */}
       <div className="mb-8">
         <h1 className="text-2xl font-semibold text-slate-900">Dashboard</h1>
@@ -66,7 +66,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Metric cards */}
-      <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-4">
         <MetricCard
           icon={<MessageSquare className="h-5 w-5 text-blue-500" />}
           iconBg="bg-blue-50"
@@ -117,7 +117,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
         {/* Recent activity */}
         <div className="lg:col-span-2">
           <div className="rounded-xl bg-white p-6 shadow-xs">
