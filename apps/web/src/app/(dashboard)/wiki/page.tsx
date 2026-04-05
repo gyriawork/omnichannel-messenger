@@ -46,10 +46,12 @@ export default function WikiPage() {
 
   return (
     <div className="flex h-full">
-      <WikiSidebar
-        activeCategoryId={activeCategoryId}
-        onCategorySelect={setActiveCategoryId}
-      />
+      <div className="hidden md:block">
+        <WikiSidebar
+          activeCategoryId={activeCategoryId}
+          onCategorySelect={setActiveCategoryId}
+        />
+      </div>
       <div className="flex-1 overflow-auto p-6">
         {isLoading ? (
           <div className="flex items-center justify-center py-20">
@@ -63,6 +65,9 @@ export default function WikiPage() {
             categoryName={activeCategory?.name}
             breadcrumbs={breadcrumbs}
             onNewArticle={() => router.push('/wiki/new')}
+            categories={categoriesData?.categories || []}
+            activeCategoryId={activeCategoryId}
+            onCategoryChange={setActiveCategoryId}
           />
         )}
       </div>

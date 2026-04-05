@@ -14,6 +14,9 @@ interface WikiArticleListProps {
   categoryName?: string;
   breadcrumbs?: { name: string; slug: string }[];
   onNewArticle: () => void;
+  categories?: Array<{ id: string; name: string; slug: string }>;
+  activeCategoryId?: string;
+  onCategoryChange?: (categoryId: string | undefined) => void;
 }
 
 function formatRelativeTime(dateStr: string): string {
@@ -48,9 +51,38 @@ export function WikiArticleList({
   categoryName,
   breadcrumbs,
   onNewArticle,
+  categories,
+  activeCategoryId,
+  onCategoryChange,
 }: WikiArticleListProps) {
   return (
     <div className="flex flex-col gap-4">
+      {/* Mobile category filter */}
+      {categories && categories.length > 0 && (
+        <div className="flex gap-2 overflow-x-auto pb-2 md:hidden">
+          <button
+            onClick={() => onCategoryChange?.(undefined)}
+            className={cn(
+              'flex-shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition-colors',
+              !activeCategoryId ? 'bg-accent text-white' : 'bg-slate-100 text-slate-600',
+            )}
+          >
+            All
+          </button>
+          {categories.map((cat) => (
+            <button
+              key={cat.id}
+              onClick={() => onCategoryChange?.(cat.id)}
+              className={cn(
+                'flex-shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition-colors',
+                activeCategoryId === cat.id ? 'bg-accent text-white' : 'bg-slate-100 text-slate-600',
+              )}
+            >
+              {cat.name}
+            </button>
+          ))}
+        </div>
+      )}
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
