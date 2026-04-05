@@ -30,7 +30,10 @@ import {
   AlertCircle,
   Smile,
   FileText,
+  ArrowLeft,
+  Info,
 } from 'lucide-react';
+import { useIsMobile } from '@/hooks/useIsMobile';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { getMessengerDotColor, getAvatarColor, getInitials } from '@/lib/chat-utils';
@@ -604,7 +607,7 @@ function ChatHeader({
   const ChatTypeIcon = getChatTypeIcon(chat.chatType);
 
   return (
-    <div className="flex h-[60px] flex-shrink-0 items-center justify-between border-b border-slate-200 bg-white px-5">
+    <div className="hidden h-[60px] flex-shrink-0 items-center justify-between border-b border-slate-200 bg-white px-5 md:flex">
       <div className="flex items-center gap-3">
         {/* Avatar */}
         <div className="relative">
@@ -1192,6 +1195,8 @@ function MessageFeed({ chatId, messenger }: { chatId: string; messenger?: string
 
 export function ChatArea() {
   const activeChat = useChatStore((s) => s.activeChat);
+  const isMobile = useIsMobile();
+  const setMobileView = useChatStore((s) => s.setMobileView);
   const [searchOpen, setSearchOpen] = useState(false);
   const [typingUsers, setTypingUsers] = useState<Array<{ userId: string; userName: string; timestamp: number }>>([]);
   const queryClient = useQueryClient();
@@ -1256,6 +1261,26 @@ export function ChatArea() {
 
   return (
     <div className="flex flex-1 flex-col">
+      {/* Mobile header */}
+      {isMobile && activeChat && (
+        <div className="flex h-12 flex-shrink-0 items-center gap-2 border-b border-slate-200 bg-white px-3 md:hidden">
+          <button
+            onClick={() => setMobileView('list')}
+            className="flex h-9 w-9 items-center justify-center rounded-full text-slate-600 hover:bg-slate-100"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </button>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold text-slate-900">{activeChat.name}</p>
+          </div>
+          <button
+            onClick={() => setMobileView('info')}
+            className="flex h-9 w-9 items-center justify-center rounded-full text-slate-600 hover:bg-slate-100"
+          >
+            <Info className="h-5 w-5" />
+          </button>
+        </div>
+      )}
       <ChatHeader
         chat={activeChat}
         searchOpen={searchOpen}

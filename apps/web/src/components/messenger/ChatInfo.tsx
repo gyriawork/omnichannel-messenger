@@ -15,7 +15,9 @@ import {
   Megaphone,
   Plus,
   Check,
+  ArrowLeft,
 } from 'lucide-react';
+import { useIsMobile } from '@/hooks/useIsMobile';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -117,6 +119,8 @@ export function ChatInfo() {
   const setActiveChat = useChatStore((s) => s.setActiveChat);
   const infoPanelOpen = useChatStore((s) => s.infoPanelOpen);
   const setInfoPanelOpen = useChatStore((s) => s.setInfoPanelOpen);
+  const isMobile = useIsMobile();
+  const setMobileView = useChatStore((s) => s.setMobileView);
   const { mutate: updatePreferences } = useChatPreferences();
   const { mutate: deleteChat, isPending: isDeleting } = useDeleteChat();
   const { mutate: updateChat } = useUpdateChat();
@@ -226,7 +230,18 @@ export function ChatInfo() {
   };
 
   return (
-    <div className="flex h-full w-[320px] flex-shrink-0 flex-col border-l border-slate-200 bg-white">
+    <div className="flex h-full w-full flex-col border-l border-slate-200 bg-white md:w-[320px] md:flex-shrink-0">
+      {isMobile && (
+        <div className="flex h-12 flex-shrink-0 items-center gap-3 border-b border-slate-200 px-3 md:hidden">
+          <button
+            onClick={() => setMobileView('chat')}
+            className="flex h-9 w-9 items-center justify-center rounded-full text-slate-600 hover:bg-slate-100"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </button>
+          <span className="text-base font-semibold text-slate-900">Chat Info</span>
+        </div>
+      )}
       {/* Header */}
       <div className="flex h-[60px] flex-shrink-0 items-center justify-between border-b border-slate-100 px-5">
         <h3 className="text-sm font-semibold text-slate-800">Chat Details</h3>

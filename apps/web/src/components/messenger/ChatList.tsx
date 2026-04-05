@@ -254,7 +254,7 @@ export function ChatList() {
 
   return (
     <>
-      <div className="flex h-full w-[300px] flex-shrink-0 flex-col border-r border-slate-200 bg-white">
+      <div className="flex h-full w-full flex-col border-r border-slate-200 bg-white md:w-[300px] md:flex-shrink-0">
         {/* Header */}
         <div className="flex-shrink-0 border-b border-slate-100 px-4 pb-3 pt-4">
           <div className="flex items-center justify-between">
