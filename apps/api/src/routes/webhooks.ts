@@ -1,8 +1,57 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { WebClient } from '@slack/web-api';
 import prisma from '../lib/prisma.js';
+import { decryptCredentials } from '../lib/crypto.js';
 import { saveIncomingMessage, ingestReaction } from '../services/message-service.js';
 import { slackNameToEmoji } from '../integrations/slack.js';
+
+// ─── Slack user name cache ───
+// Maps `${organizationId}:${slackUserId}` → display name.
+// Simple in-memory cache; entries never expire (restart clears it).
+const slackUserNameCache = new Map<string, string>();
+
+/**
+ * Resolve a Slack user ID to a human-readable name.
+ * Uses an in-memory cache to avoid repeated API calls.
+ * Falls back to the raw user ID if the lookup fails.
+ */
+async function resolveSlackUserName(
+  organizationId: string,
+  slackUserId: string,
+): Promise<string> {
+  const cacheKey = `${organizationId}:${slackUserId}`;
+  const cached = slackUserNameCache.get(cacheKey);
+  if (cached) return cached;
+
+  try {
+    // Find a connected Slack integration for this org
+    const integration = await prisma.integration.findFirst({
+      where: {
+        messenger: 'slack',
+        organizationId,
+        status: 'connected',
+      },
+      select: { credentials: true },
+    });
+
+    if (!integration) return slackUserId;
+
+    const credentials = decryptCredentials<{ token: string }>(
+      integration.credentials as string,
+    );
+    const client = new WebClient(credentials.token);
+    const result = await client.users.info({ user: slackUserId });
+    const name =
+      result.user?.real_name || result.user?.profile?.display_name || result.user?.name || slackUserId;
+
+    slackUserNameCache.set(cacheKey, name);
+    return name;
+  } catch {
+    // On any failure, fall back to the raw user ID so messages still get saved
+    return slackUserId;
+  }
+}
 
 // ─── Webhook secret verification ───
 
@@ -167,15 +216,15 @@ export default async function webhookRoutes(fastify: FastifyInstance): Promise<v
       const text = (event.text as string) || '';
       const ts = event.ts as string;
 
-      // Look up user name from Slack (simplified — in production cache this)
-      const senderName = userId; // Would call Slack API to resolve
-
       const importedChats = await prisma.chat.findMany({
         where: { externalChatId: channelId, messenger: 'slack' },
         select: { organizationId: true },
       });
 
       for (const ic of importedChats) {
+        // Resolve the Slack user ID to a real display name (cached per org)
+        const senderName = await resolveSlackUserName(ic.organizationId, userId);
+
         await saveIncomingMessage({
           externalChatId: channelId,
           messenger: 'slack',
