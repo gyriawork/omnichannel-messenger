@@ -28,6 +28,12 @@
     background-color: rgba(148, 163, 184, 0.3);
     border-radius: 9999px;
   }
+
+  @supports (padding-bottom: env(safe-area-inset-bottom)) {
+    .safe-bottom {
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+  }
 }
 
 /* TipTap editor styles */
