@@ -3,6 +3,8 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useChatStore } from '@/stores/chat';
+import { useIsMobile } from '@/hooks/useIsMobile';
 import {
   LayoutDashboard,
   Inbox,
@@ -40,6 +42,9 @@ export function BottomNav() {
   const pathname = usePathname();
   const user = useAuthStore((s) => s.user);
   const [showMore, setShowMore] = useState(false);
+  const mobileView = useChatStore((s) => s.mobileView);
+  const isMobile = useIsMobile();
+  const hideOnMessenger = isMobile && pathname === '/messenger' && mobileView !== 'list';
 
   const isActive = (href: string) => {
     if (href === '/') return pathname === '/';
@@ -47,6 +52,8 @@ export function BottomNav() {
   };
 
   const isMoreActive = moreItems.some((item) => isActive(item.href));
+
+  if (hideOnMessenger) return null;
 
   return (
     <>
