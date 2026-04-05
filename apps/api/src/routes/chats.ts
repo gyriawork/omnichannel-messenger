@@ -122,7 +122,10 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
       if (status) where.status = status;
       if (ownerId) where.ownerId = ownerId;
       if (search) {
-        where.name = { contains: search, mode: 'insensitive' };
+        where.OR = [
+          { name: { contains: search, mode: 'insensitive' } },
+          { messages: { some: { text: { contains: search, mode: 'insensitive' } } } },
+        ];
       }
       if (tagId) {
         where.tags = { some: { tagId } };
