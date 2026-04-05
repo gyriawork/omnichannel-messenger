@@ -128,12 +128,17 @@ export default async function webhookRoutes(fastify: FastifyInstance): Promise<v
       }
 
       const chat = message.chat as Record<string, unknown>;
-      const from = message.from as Record<string, unknown>;
+      const from = (message.from as Record<string, unknown>) || {};
+      const senderChat = message.sender_chat as Record<string, unknown> | undefined;
       const text = (message.text as string) || (message.caption as string) || '';
 
       const chatId = String(chat.id);
-      const senderName = [from.first_name, from.last_name].filter(Boolean).join(' ') || 'Unknown';
-      const senderId = String(from.id);
+      const senderName =
+        [from.first_name, from.last_name].filter(Boolean).join(' ') ||
+        (senderChat?.title as string) ||
+        (chat.title as string) ||
+        'Unknown';
+      const senderId = String(from.id ?? (senderChat?.id ?? chat.id));
 
       // Find all orgs that have this chat imported
       const importedChats = await prisma.chat.findMany({
