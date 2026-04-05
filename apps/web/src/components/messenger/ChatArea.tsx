@@ -753,6 +753,7 @@ function ComposeBar({ chatId }: { chatId: string }) {
   const [isUploading, setIsUploading] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const isMobile = useIsMobile();
   const [showComposerEmoji, setShowComposerEmoji] = useState(false);
   const composerEmojiRef = useRef<HTMLDivElement>(null);
   const composerEmojiBtnRef = useRef<HTMLButtonElement>(null);
@@ -991,18 +992,36 @@ function ComposeBar({ chatId }: { chatId: string }) {
             <Smile className="h-5 w-5" />
           </button>
           {showComposerEmoji && (
-            <div
-              ref={composerEmojiRef}
-              className="absolute bottom-full left-0 mb-2 z-50 shadow-lg rounded-lg overflow-hidden"
-            >
-              <EmojiPicker
-                onEmojiClick={handleComposerEmojiSelect}
-                theme={Theme.LIGHT}
-                width={350}
-                height={400}
-                searchPlaceHolder="Search emoji..."
-              />
-            </div>
+            isMobile ? (
+              <>
+                <div className="fixed inset-0 z-40 bg-black/20" onClick={() => setShowComposerEmoji(false)} />
+                <div
+                  ref={composerEmojiRef}
+                  className="fixed inset-x-0 bottom-0 z-50 max-h-[50vh] overflow-y-auto rounded-t-2xl bg-white p-4 shadow-lg"
+                >
+                  <EmojiPicker
+                    onEmojiClick={handleComposerEmojiSelect}
+                    theme={Theme.LIGHT}
+                    width="100%"
+                    height={360}
+                    searchPlaceHolder="Search emoji..."
+                  />
+                </div>
+              </>
+            ) : (
+              <div
+                ref={composerEmojiRef}
+                className="absolute bottom-full left-0 mb-2 z-50 shadow-lg rounded-lg overflow-hidden"
+              >
+                <EmojiPicker
+                  onEmojiClick={handleComposerEmojiSelect}
+                  theme={Theme.LIGHT}
+                  width={350}
+                  height={400}
+                  searchPlaceHolder="Search emoji..."
+                />
+              </div>
+            )
           )}
         </div>
 
