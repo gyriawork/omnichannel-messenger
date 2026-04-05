@@ -29,6 +29,7 @@ import {
   Clock,
   AlertCircle,
   Smile,
+  FileText,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -45,8 +46,9 @@ import {
   useSearchMessages,
   type MessageAttachment,
 } from '@/hooks/useChats';
-import EmojiPicker, { Theme } from 'emoji-picker-react';
+import EmojiPicker, { Theme, type EmojiClickData } from 'emoji-picker-react';
 import { useReactions } from '@/hooks/useReactions';
+import { useTemplates, useTemplateUse } from '@/hooks/useTemplates';
 
 import { ReactionsBubble } from './ReactionsBubble';
 import TypingIndicator from './TypingIndicator';
@@ -748,6 +750,15 @@ function ComposeBar({ chatId }: { chatId: string }) {
   const [isUploading, setIsUploading] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [showComposerEmoji, setShowComposerEmoji] = useState(false);
+  const composerEmojiRef = useRef<HTMLDivElement>(null);
+  const composerEmojiBtnRef = useRef<HTMLButtonElement>(null);
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [templateSearch, setTemplateSearch] = useState('');
+  const templatesRef = useRef<HTMLDivElement>(null);
+  const templatesBtnRef = useRef<HTMLButtonElement>(null);
+  const { data: templatesData } = useTemplates(showTemplates ? (templateSearch || undefined) : undefined);
+  const { mutate: trackTemplateUse } = useTemplateUse();
   const replyingTo = useChatStore((s) => s.replyingTo);
   const setReplyingTo = useChatStore((s) => s.setReplyingTo);
   const { mutate: sendMessage, isPending } = useSendMessage();
@@ -828,6 +839,69 @@ function ComposeBar({ chatId }: { chatId: string }) {
     }
   }, [text]);
 
+  // Close emoji picker on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        showComposerEmoji &&
+        composerEmojiRef.current &&
+        !composerEmojiRef.current.contains(e.target as Node) &&
+        composerEmojiBtnRef.current &&
+        !composerEmojiBtnRef.current.contains(e.target as Node)
+      ) {
+        setShowComposerEmoji(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showComposerEmoji]);
+
+  // Insert emoji at cursor position
+  const handleComposerEmojiSelect = useCallback((emojiData: EmojiClickData) => {
+    const emoji = emojiData.emoji;
+    const textarea = textareaRef.current;
+    if (textarea) {
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const newText = text.slice(0, start) + emoji + text.slice(end);
+      setText(newText);
+      requestAnimationFrame(() => {
+        textarea.selectionStart = textarea.selectionEnd = start + emoji.length;
+        textarea.focus();
+      });
+    } else {
+      setText((prev) => prev + emoji);
+    }
+    setShowComposerEmoji(false);
+  }, [text]);
+
+  // Close templates dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        showTemplates &&
+        templatesRef.current &&
+        !templatesRef.current.contains(e.target as Node) &&
+        templatesBtnRef.current &&
+        !templatesBtnRef.current.contains(e.target as Node)
+      ) {
+        setShowTemplates(false);
+        setTemplateSearch('');
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showTemplates]);
+
+  // Insert template text into composer
+  const handleTemplateSelect = useCallback((template: { id: string; messageText: string }) => {
+    setText(template.messageText);
+    trackTemplateUse(template.id);
+    setShowTemplates(false);
+    setTemplateSearch('');
+    textareaRef.current?.focus();
+  }, [trackTemplateUse]);
+
   return (
     <div className="flex-shrink-0 border-t border-slate-200 bg-white px-5 pb-4 pt-3">
       {/* Reply preview */}
@@ -901,6 +975,82 @@ function ComposeBar({ chatId }: { chatId: string }) {
         >
           <Paperclip className="h-5 w-5" />
         </button>
+
+        {/* Emoji picker button */}
+        <div className="relative">
+          <button
+            ref={composerEmojiBtnRef}
+            type="button"
+            onClick={() => setShowComposerEmoji(!showComposerEmoji)}
+            className="mb-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+            title="Insert emoji"
+          >
+            <Smile className="h-5 w-5" />
+          </button>
+          {showComposerEmoji && (
+            <div
+              ref={composerEmojiRef}
+              className="absolute bottom-full left-0 mb-2 z-50 shadow-lg rounded-lg overflow-hidden"
+            >
+              <EmojiPicker
+                onEmojiClick={handleComposerEmojiSelect}
+                theme={Theme.LIGHT}
+                width={350}
+                height={400}
+                searchPlaceHolder="Search emoji..."
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Templates button */}
+        <div className="relative">
+          <button
+            ref={templatesBtnRef}
+            type="button"
+            onClick={() => setShowTemplates(!showTemplates)}
+            className="mb-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+            title="Insert template"
+          >
+            <FileText className="h-5 w-5" />
+          </button>
+          {showTemplates && (
+            <div
+              ref={templatesRef}
+              className="absolute bottom-full left-0 mb-2 z-50 w-72 rounded-lg border border-slate-200 bg-white shadow-lg"
+            >
+              <div className="border-b border-slate-100 p-2">
+                <input
+                  type="text"
+                  value={templateSearch}
+                  onChange={(e) => setTemplateSearch(e.target.value)}
+                  placeholder="Search templates..."
+                  className="w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm outline-none focus:border-accent focus:bg-white"
+                  autoFocus
+                />
+              </div>
+              <div className="max-h-60 overflow-y-auto p-1">
+                {templatesData?.templates?.length ? (
+                  templatesData.templates.map((tpl) => (
+                    <button
+                      key={tpl.id}
+                      type="button"
+                      onClick={() => handleTemplateSelect(tpl)}
+                      className="flex w-full flex-col gap-0.5 rounded-md px-3 py-2 text-left transition-colors hover:bg-slate-50"
+                    >
+                      <span className="text-sm font-medium text-slate-700">{tpl.name}</span>
+                      <span className="line-clamp-2 text-xs text-slate-400">{tpl.messageText}</span>
+                    </button>
+                  ))
+                ) : (
+                  <div className="px-3 py-4 text-center text-sm text-slate-400">
+                    {templateSearch ? 'Nothing found' : 'No templates yet'}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
 
         <textarea
           ref={textareaRef}

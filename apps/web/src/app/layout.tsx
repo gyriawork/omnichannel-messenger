@@ -3,7 +3,7 @@ import { Providers } from './providers';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Omnichannel Messenger',
+  title: 'Messengly',
   description: 'Unified inbox for Telegram, Slack, WhatsApp, and Gmail',
 };
 

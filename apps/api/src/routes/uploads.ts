@@ -63,7 +63,7 @@ export default async function uploadRoutes(fastify: FastifyInstance): Promise<vo
             url: result.url,
             size: result.size,
             mimeType: result.mimeType,
-            originalName: result.originalName,
+            filename: result.originalName,
           },
         });
       } catch (err) {

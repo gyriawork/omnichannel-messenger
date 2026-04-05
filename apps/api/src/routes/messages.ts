@@ -232,6 +232,19 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
         }),
       ]);
 
+      // Create Attachment records if attachments provided
+      if (attachments && attachments.length > 0) {
+        await prisma.attachment.createMany({
+          data: attachments.map((att) => ({
+            messageId: message.id,
+            url: att.url,
+            filename: att.filename,
+            mimeType: att.mimeType,
+            size: att.size,
+          })),
+        });
+      }
+
       // ── Send message to real messenger ──
       let deliveryStatus = 'sent';
       let externalMessageId: string | null = null;

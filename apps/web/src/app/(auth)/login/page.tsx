@@ -49,9 +49,7 @@ export default function LoginPage() {
   return (
     <div className="w-full max-w-[400px]">
       <div className="mb-8 text-center">
-        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-gradient-to-br from-accent to-accent-hover">
-          <LogIn className="h-6 w-6 text-white" />
-        </div>
+        <img src="/logo-dark.svg" alt="messengly" className="mx-auto mb-4 h-8" />
         <h1 className="text-2xl font-semibold text-slate-800">Welcome back</h1>
         <p className="mt-1 text-sm text-slate-500">
           Sign in to your account to continue

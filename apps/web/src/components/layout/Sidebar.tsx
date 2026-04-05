@@ -63,10 +63,13 @@ export function Sidebar() {
       {/* Logo + Collapse toggle */}
       <div className={cn('mb-6 flex items-center', collapsed ? 'justify-center' : 'justify-between px-2')}>
         <div className="flex items-center gap-2.5">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-accent to-purple-500">
-            <span className="text-sm font-bold text-white">O</span>
-          </div>
-          {!collapsed && <span className="text-sm font-semibold text-white">Omni</span>}
+          {collapsed ? (
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-accent to-purple-500">
+              <span className="text-sm font-bold text-white">m</span>
+            </div>
+          ) : (
+            <img src="/logo.svg" alt="messengly" className="h-6" />
+          )}
         </div>
         {!collapsed && (
           <button
