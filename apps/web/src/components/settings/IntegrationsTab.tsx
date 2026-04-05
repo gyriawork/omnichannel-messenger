@@ -392,7 +392,7 @@ function SlackConnectForm({
 
   const handleOAuthConnect = async () => {
     const token = await getAccessToken();
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || (process.env.NODE_ENV === 'production' ? 'https://api-production-3c91.up.railway.app' : 'http://localhost:3001');
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
     window.location.href = `${apiUrl}/api/oauth/slack/authorize?token=${encodeURIComponent(token ?? '')}`;
   };
 
@@ -598,7 +598,7 @@ function GmailConnectForm({}: {
 
   const handleOAuthConnect = async () => {
     const token = await getAccessToken();
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || (process.env.NODE_ENV === 'production' ? 'https://api-production-3c91.up.railway.app' : 'http://localhost:3001');
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
     window.location.href = `${apiUrl}/api/oauth/gmail/authorize?token=${encodeURIComponent(token ?? '')}`;
   };
 
