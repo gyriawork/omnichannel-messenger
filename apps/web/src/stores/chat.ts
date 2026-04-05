@@ -13,6 +13,8 @@ interface ChatStore {
   messengerFilter: MessengerType | null;
   infoPanelOpen: boolean;
   replyingTo: Message | null;
+  mobileView: 'list' | 'chat' | 'info';
+  setMobileView: (view: 'list' | 'chat' | 'info') => void;
 
   setActiveChat: (chat: Chat | null) => void;
   setSearchQuery: (q: string) => void;
@@ -37,9 +39,10 @@ export const useChatStore = create<ChatStore>((set) => ({
   messengerFilter: null,
   infoPanelOpen: false,
   replyingTo: null,
+  mobileView: 'list' as const,
 
   setActiveChat: (chat) =>
-    set({ activeChat: chat, messages: [], replyingTo: null }),
+    set({ activeChat: chat, messages: [], replyingTo: null, mobileView: chat ? 'chat' : 'list' }),
 
   setSearchQuery: (searchQuery) => set({ searchQuery }),
 
@@ -70,4 +73,6 @@ export const useChatStore = create<ChatStore>((set) => ({
     set((state) => ({ infoPanelOpen: !state.infoPanelOpen })),
 
   setReplyingTo: (replyingTo) => set({ replyingTo }),
+
+  setMobileView: (mobileView) => set({ mobileView }),
 }));
