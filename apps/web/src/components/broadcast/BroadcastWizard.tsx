@@ -312,7 +312,7 @@ export function BroadcastWizard() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-8">
+    <div className="mx-auto max-w-3xl px-4 py-6 md:px-6 md:py-8">
       {/* Header */}
       <div className="mb-8">
         <button
@@ -328,13 +328,13 @@ export function BroadcastWizard() {
       </div>
 
       {/* Step Indicator */}
-      <div className="mb-8 flex items-center gap-2">
+      <div className="mb-8 flex items-center gap-2 overflow-x-auto pb-1">
         {STEPS.map((s, i) => {
           const Icon = s.icon;
           const isCurrent = i === step;
           const isCompleted = i < step;
           return (
-            <div key={s.label} className="flex items-center gap-2">
+            <div key={s.label} className="flex flex-shrink-0 items-center gap-2">
               {i > 0 && (
                 <div
                   className={cn(
@@ -384,7 +384,7 @@ export function BroadcastWizard() {
                 {...register('name')}
                 placeholder="e.g., Weekly Update, Product Launch..."
                 className={cn(
-                  'w-full rounded-lg border-[1.5px] bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 transition-shadow focus:outline-none focus:ring-2 focus:ring-accent/15',
+                  'w-full rounded-lg border-[1.5px] bg-white px-3 py-2 text-base text-slate-900 placeholder:text-slate-400 transition-shadow focus:outline-none focus:ring-2 focus:ring-accent/15',
                   errors.name
                     ? 'border-red-300 focus:border-red-400'
                     : 'border-slate-200 focus:border-accent',
@@ -535,7 +535,7 @@ export function BroadcastWizard() {
                   placeholder="Search chats..."
                   value={chatSearch}
                   onChange={(e) => setChatSearch(e.target.value)}
-                  className="w-full rounded-lg border-[1.5px] border-slate-200 bg-white py-2 pl-9 pr-4 text-sm text-slate-900 placeholder:text-slate-400 transition-shadow focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15"
+                  className="w-full rounded-lg border-[1.5px] border-slate-200 bg-white py-2 pl-9 pr-4 text-base text-slate-900 placeholder:text-slate-400 transition-shadow focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15"
                 />
               </div>
               <div className="flex gap-1">
@@ -769,7 +769,7 @@ export function BroadcastWizard() {
                   type="datetime-local"
                   {...register('scheduledAt')}
                   min={(() => { const now = new Date(); return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16); })()}
-                  className="w-full rounded-lg border-[1.5px] border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-shadow focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15"
+                  className="w-full rounded-lg border-[1.5px] border-slate-200 bg-white px-3 py-2 text-base text-slate-900 transition-shadow focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15"
                 />
                 {scheduledAt && (
                   <p className="mt-2 text-sm text-slate-500">
