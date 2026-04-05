@@ -561,7 +561,7 @@ export default function ChatsPage() {
               </div>
               {chat.lastMessage && (
                 <p className="mt-1 truncate pl-5 text-xs text-slate-500">
-                  {chat.lastMessage.content ?? ''}
+                  {chat.lastMessage.text ?? ''}
                 </p>
               )}
             </div>
