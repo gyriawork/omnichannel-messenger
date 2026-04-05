@@ -221,7 +221,9 @@ export default function ActivityPage() {
                     </span>
                     {entry.targetId && entry.targetType && (
                       <span className="text-xs text-slate-400">
-                        {entry.targetType}: {entry.targetId.slice(0, 8)}...
+                        {entry.targetType}:{' '}
+                        {(entry.metadata?.preview as string) ||
+                          `${entry.targetId.slice(0, 8)}...`}
                       </span>
                     )}
                   </div>

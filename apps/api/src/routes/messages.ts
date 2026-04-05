@@ -335,7 +335,7 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
         userId: request.user.id,
         userName: request.user.name,
         organizationId: request.user.organizationId!,
-        metadata: { chatId, chatName: chat.name, messageLength: text.length },
+        metadata: { chatId, chatName: chat.name, messageLength: text.length, preview: text.slice(0, 100) },
       }).catch(() => {});
 
       return reply.status(201).send(message);
@@ -427,6 +427,7 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
         userId: request.user.id,
         userName: request.user.name,
         organizationId: message.chat.organizationId,
+        metadata: { preview: text.slice(0, 100) },
       }).catch(() => {});
 
       return reply.status(200).send(updated);
@@ -506,6 +507,7 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
         userId: request.user.id,
         userName: request.user.name,
         organizationId: message.chat.organizationId,
+        metadata: { preview: message.text?.slice(0, 100) },
       }).catch(() => {});
 
       return reply.status(200).send({ success: true });
@@ -576,7 +578,7 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
         userId: request.user.id,
         userName: request.user.name,
         organizationId: request.user.organizationId!,
-        metadata: { sourceChatName: sourceMessage.chat.name, targetChatId },
+        metadata: { sourceChatName: sourceMessage.chat.name, targetChatId, preview: sourceMessage.text?.slice(0, 100) },
       }).catch(() => {});
 
       return reply.status(201).send(newMessage);
