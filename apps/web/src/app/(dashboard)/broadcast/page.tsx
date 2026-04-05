@@ -108,9 +108,9 @@ export default function BroadcastPage() {
     <div className="flex h-full">
       {/* Main content */}
       <div className="flex-1 overflow-auto">
-        <div className="mx-auto max-w-4xl px-6 py-8">
+        <div className="mx-auto max-w-4xl px-4 py-6 md:px-6 md:py-8">
           {/* Header */}
-          <div className="mb-6 flex items-center justify-between">
+          <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h1 className="text-2xl font-semibold text-slate-900">
                 Broadcasts
@@ -171,13 +171,13 @@ export default function BroadcastPage() {
           </div>
 
           {/* Tabs */}
-          <div className="mb-6 flex gap-1 rounded-lg bg-slate-100 p-1">
+          <div className="mb-6 flex gap-1 overflow-x-auto rounded-lg bg-slate-100 p-1">
             {statusTabs.map((tab) => (
               <button
                 key={tab.label}
                 onClick={() => setActiveTab(tab.value)}
                 className={cn(
-                  'flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-all',
+                  'flex-1 flex-shrink-0 rounded-md px-3 py-1.5 text-sm font-medium transition-all',
                   activeTab === tab.value
                     ? 'bg-white text-slate-900 shadow-xs'
                     : 'text-slate-500 hover:text-slate-700',
@@ -323,12 +323,12 @@ export default function BroadcastPage() {
 
       {/* Side panel */}
       {sideView === 'antiban' && (
-        <div className="w-[420px] shrink-0 overflow-auto border-l border-slate-200 bg-white">
+        <div className="w-full shrink-0 overflow-auto border-l border-slate-200 bg-white md:w-[420px]">
           <AntibanSettings />
         </div>
       )}
       {sideView === 'analytics' && (
-        <div className="w-[420px] shrink-0 overflow-auto border-l border-slate-200 bg-white">
+        <div className="w-full shrink-0 overflow-auto border-l border-slate-200 bg-white md:w-[420px]">
           <AnalyticsPanel />
         </div>
       )}
