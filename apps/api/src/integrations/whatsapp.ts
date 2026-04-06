@@ -18,26 +18,30 @@ export interface WhatsAppWahaCredentials {
 
 // ─── Pairing functions ───
 // These are used during the integration setup flow (QR code scanning).
+// WAHA Core (free) only supports session name "default".
+// WAHA Plus supports multiple named sessions.
 
 const client = new WahaClient();
+const WAHA_SESSION_NAME = process.env.WAHA_SESSION_NAME ?? 'default';
 
 /**
  * Create a WAHA session and configure webhooks for incoming messages.
  * Call this when a user starts the WhatsApp pairing flow.
  */
 export async function startWhatsAppPairing(
-  sessionKey: string,
+  _sessionKey: string,
   webhookUrl: string,
-): Promise<void> {
+): Promise<string> {
+  const sessionName = WAHA_SESSION_NAME;
   try {
     // Delete any stale session with the same name
     try {
-      await client.deleteSession(sessionKey);
+      await client.deleteSession(sessionName);
     } catch {
       // Session may not exist — that's fine
     }
 
-    await client.createSession(sessionKey, {
+    await client.createSession(sessionName, {
       webhooks: [
         {
           url: webhookUrl,
@@ -45,6 +49,7 @@ export async function startWhatsAppPairing(
         },
       ],
     });
+    return sessionName;
   } catch (err) {
     throw new MessengerError(
       'whatsapp',

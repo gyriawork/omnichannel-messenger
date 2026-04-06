@@ -797,26 +797,26 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
       }
 
       const userId = request.user.id;
-      const sessionName = `wa-${organizationId.slice(0, 8)}-${userId.slice(0, 8)}`;
       const webhookUrl = `${process.env.APP_URL || 'http://localhost:3001'}/api/webhooks/waha`;
 
       try {
-        await startWhatsAppPairing(sessionName, webhookUrl);
+        // startWhatsAppPairing returns the actual WAHA session name (e.g. 'default' for free tier)
+        const actualSessionName = await startWhatsAppPairing(`wa-${organizationId.slice(0, 8)}-${userId.slice(0, 8)}`, webhookUrl);
 
         // Wait for WAHA to initialize the session
         await new Promise((r) => setTimeout(r, 3000));
 
-        // Try to get the QR code
-        let qr = await getQrCode(sessionName);
+        // Try to get the QR code using the actual session name
+        let qr = await getQrCode(actualSessionName);
 
         // If QR is not ready yet, wait a bit more and retry
         if (!qr) {
           await new Promise((r) => setTimeout(r, 2000));
-          qr = await getQrCode(sessionName);
+          qr = await getQrCode(actualSessionName);
         }
 
         return reply.send({
-          sessionName,
+          sessionName: actualSessionName,
           qr: qr?.value || null,
           mimetype: qr?.mimetype || null,
         });
