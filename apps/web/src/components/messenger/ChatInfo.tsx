@@ -30,6 +30,7 @@ import {
   useTags,
 } from '@/hooks/useChats';
 import type { Chat, MessengerType } from '@/types/chat';
+import { MessengerIcon } from '@/components/ui/MessengerIcon';
 
 function getMessengerDotColor(messenger: MessengerType): string {
   const map: Record<MessengerType, string> = {
@@ -256,20 +257,7 @@ export function ChatInfo() {
       <div className="flex-1 overflow-y-auto">
         {/* Profile section */}
         <div className="flex flex-col items-center border-b border-slate-100 px-5 pb-5 pt-6">
-          <div className="relative">
-            <div
-              className="flex h-16 w-16 items-center justify-center rounded-xl text-xl font-bold text-white"
-              style={{ backgroundColor: getAvatarColor(chat.name) }}
-            >
-              {getInitials(chat.name)}
-            </div>
-            <span
-              className="absolute -bottom-1 -right-1 h-4 w-4 rounded-full border-2 border-white"
-              style={{
-                backgroundColor: getMessengerDotColor(chat.messenger),
-              }}
-            />
-          </div>
+          <MessengerIcon messenger={chat.messenger} size={64} />
 
           <h3 className="mt-3 text-base font-semibold text-slate-800">
             {chat.name}

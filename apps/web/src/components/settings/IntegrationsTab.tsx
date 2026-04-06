@@ -20,6 +20,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { MessengerIcon } from '@/components/ui/MessengerIcon';
 import { getAccessToken } from '@/lib/api';
 import {
   useIntegrations,
@@ -679,15 +680,7 @@ function ConnectModal({
         {/* Modal header */}
         <div className="mb-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div
-              className={cn(
-                'flex h-10 w-10 items-center justify-center rounded-lg text-sm font-bold',
-                messenger.bgClass,
-                messenger.textClass,
-              )}
-            >
-              {messenger.abbr}
-            </div>
+            <MessengerIcon messenger={messenger.key} size={40} />
             <div>
               <h3 className="text-lg font-semibold text-slate-900">
                 Connect {messenger.name}
@@ -775,15 +768,7 @@ function IntegrationSettingsModal({
       <div className="w-full max-h-[100dvh] overflow-y-auto rounded-t-2xl bg-white p-6 shadow-lg md:max-w-lg md:rounded-xl">
         <div className="mb-5 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div
-              className={cn(
-                'flex h-10 w-10 items-center justify-center rounded-lg text-sm font-bold',
-                messenger.bgClass,
-                messenger.textClass,
-              )}
-            >
-              {messenger.abbr}
-            </div>
+            <MessengerIcon messenger={messenger.key} size={40} />
             <div>
               <h3 className="text-lg font-semibold text-slate-900">
                 {messenger.name} Settings
@@ -892,15 +877,7 @@ function IntegrationCard({
         {/* Header row */}
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
-            <div
-              className={cn(
-                'flex h-12 w-12 items-center justify-center rounded-lg text-base font-bold',
-                info.bgClass,
-                info.textClass,
-              )}
-            >
-              {info.abbr}
-            </div>
+            <MessengerIcon messenger={info.key} size={48} />
             <div>
               <h3 className="text-base font-semibold text-slate-900">
                 {info.name}
@@ -1123,15 +1100,7 @@ function FaqSection() {
                 onClick={() => setOpenItem(isOpen ? null : item.messenger)}
                 className="flex w-full items-center gap-3 px-5 py-4 text-left transition-colors hover:bg-slate-50"
               >
-                <div
-                  className={cn(
-                    'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold',
-                    item.bgClass,
-                    item.textClass,
-                  )}
-                >
-                  {item.abbr}
-                </div>
+                <MessengerIcon messenger={item.messenger} size={32} />
                 <span className="flex-1 text-sm font-medium text-slate-800">
                   {item.title}
                 </span>

@@ -11,7 +11,8 @@ import {
   Loader2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { getMessengerDotColor, getAvatarColor, getInitials } from '@/lib/chat-utils';
+import { getAvatarColor, getInitials } from '@/lib/chat-utils';
+import { MessengerIcon } from '@/components/ui/MessengerIcon';
 import { useChatStore } from '@/stores/chat';
 import { useChats, useChatPreferences } from '@/hooks/useChats';
 import type { Chat, MessengerType } from '@/types/chat';
@@ -88,17 +89,7 @@ const ChatItem = React.memo(function ChatItem({ chat, isActive }: { chat: Chat; 
     >
       {/* Avatar */}
       <div className="relative flex-shrink-0">
-        <div
-          className="flex h-10 w-10 items-center justify-center rounded-avatar text-sm font-semibold text-white"
-          style={{ backgroundColor: getAvatarColor(chat.name) }}
-        >
-          {getInitials(chat.name)}
-        </div>
-        {/* Messenger dot */}
-        <span
-          className="absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full border-2 border-white"
-          style={{ backgroundColor: getMessengerDotColor(chat.messenger) }}
-        />
+        <MessengerIcon messenger={chat.messenger} size={40} className="rounded-avatar" />
         {/* Sync indicator */}
         {chat.syncStatus && chat.syncStatus !== 'synced' && (
           <span className="absolute -top-0.5 -left-0.5">

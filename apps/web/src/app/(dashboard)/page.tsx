@@ -13,6 +13,7 @@ import {
 import { cn } from '@/lib/utils';
 import { useDashboardStats } from '@/hooks/useDashboard';
 import type { ActivityCategory } from '@/types/activity';
+import { MessengerIcon } from '@/components/ui/MessengerIcon';
 
 const CATEGORY_COLORS: Record<ActivityCategory, string> = {
   chats: '#3b82f6',
@@ -199,14 +200,7 @@ export default function DashboardPage() {
                       key={messenger}
                       className="flex items-center gap-3 rounded-lg border border-slate-100 p-3"
                     >
-                      <div
-                        className={cn(
-                          'flex h-9 w-9 items-center justify-center rounded-lg text-xs font-bold text-white',
-                          config.color,
-                        )}
-                      >
-                        {config.short}
-                      </div>
+                      <MessengerIcon messenger={messenger} size={36} />
                       <div className="flex-1">
                         <p className="text-sm font-medium text-slate-800">
                           {config.label}

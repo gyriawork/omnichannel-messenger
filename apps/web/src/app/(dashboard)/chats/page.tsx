@@ -25,6 +25,7 @@ import { useTags } from '@/hooks/useTags';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { ImportChatsModal } from '@/components/messenger/ImportChatsModal';
+import { MessengerIcon } from '@/components/ui/MessengerIcon';
 import type { Chat, MessengerType } from '@/types/chat';
 
 // ─── Constants ───
@@ -434,7 +435,7 @@ export default function ChatsPage() {
       {/* Filters bar */}
       <div className="mb-4 flex flex-wrap items-center gap-3">
         {/* Search */}
-        <div className="relative flex-1 min-w-[200px]">
+        <div className="relative min-w-0 flex-1 sm:min-w-[200px]">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <input
             value={search}
@@ -496,7 +497,7 @@ export default function ChatsPage() {
           value={ownerFilter ?? ''}
           onChange={(e) => setOwnerFilter(e.target.value || null)}
           placeholder="Filter by owner..."
-          className="rounded border-[1.5px] border-slate-200 py-2 pl-3 pr-3 text-xs text-slate-600 placeholder:text-slate-400 focus:border-accent focus:outline-none w-36"
+          className="rounded border-[1.5px] border-slate-200 py-2 pl-3 pr-3 text-xs text-slate-600 placeholder:text-slate-400 focus:border-accent focus:outline-none w-full sm:w-36"
         />
 
         {/* Sort dropdown */}
@@ -631,12 +632,6 @@ export default function ChatsPage() {
                 const mcfg = messengerConfig[chat.messenger];
                 const TypeIcon = chatTypeIcons[chat.chatType] ?? MessageSquare;
                 const isSelected = selectedIds.includes(chat.id);
-                const initials = chat.name
-                  .split(' ')
-                  .map((w) => w[0])
-                  .join('')
-                  .toUpperCase()
-                  .slice(0, 2);
 
                 return (
                   <tr
@@ -659,23 +654,7 @@ export default function ChatsPage() {
                     {/* Chat name + avatar */}
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
-                        <div className="relative">
-                          <div
-                            className={cn(
-                              'flex h-9 w-9 items-center justify-center rounded-avatar text-xs font-semibold',
-                              mcfg.bgClass,
-                              mcfg.textClass,
-                            )}
-                          >
-                            {initials}
-                          </div>
-                          <span
-                            className={cn(
-                              'absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-white',
-                              mcfg.dotColor,
-                            )}
-                          />
-                        </div>
+                        <MessengerIcon messenger={chat.messenger} size={36} />
                         <div>
                           <a
                             href={`/messenger?chatId=${chat.id}`}

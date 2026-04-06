@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { MessengerIcon } from '@/components/ui/MessengerIcon';
 import { MESSENGER_PLATFORM_FIELDS } from '@omnichannel/shared';
 import type { Messenger } from '@omnichannel/shared';
 import {
@@ -97,9 +98,7 @@ export function PlatformConfigCard({ entry }: { entry: PlatformConfigEntry }) {
         {/* Header */}
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
-            <div className={cn('flex h-12 w-12 items-center justify-center rounded-lg text-base font-bold', meta.bgClass, meta.textClass)}>
-              {meta.abbr}
-            </div>
+            <MessengerIcon messenger={entry.messenger} size={48} />
             <div>
               <h3 className="text-base font-semibold text-slate-900">{meta.name}</h3>
               {isNoneRequired ? (
