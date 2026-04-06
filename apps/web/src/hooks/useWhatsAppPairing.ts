@@ -1,10 +1,27 @@
 'use client';
 
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-import { getSocket } from '@/hooks/useSocket';
-import QRCode from 'qrcode';
+
+// ─── API response types ───
+
+interface PairingStartResponse {
+  sessionName?: string;
+  qr?: string;
+  mimetype?: string;
+}
+
+interface PairingStatusResponse {
+  status: string;
+  qr?: string;
+  mimetype?: string;
+  message?: string;
+}
+
+interface ListChatsResponse {
+  chats: WhatsAppChat[];
+}
 
 export type WhatsAppPairingStatus =
   | 'idle'
@@ -21,25 +38,10 @@ export type WhatsAppPairingStatus =
 export interface WhatsAppChat {
   externalChatId: string;
   name: string;
-  chatType: string; // 'group' or 'individual'
+  chatType: string;
 }
 
-interface UseWhatsAppPairingReturn {
-  status: WhatsAppPairingStatus;
-  qrDataUrl: string | null;
-  statusMessage: string;
-  error: string | null;
-  availableChats: WhatsAppChat[];
-  selectedChatIds: Set<string>;
-  startPairing: () => Promise<void>;
-  cancelPairing: () => void;
-  reset: () => void;
-  listChats: () => Promise<void>;
-  toggleChatSelection: (chatId: string) => void;
-  importSelectedChats: () => Promise<void>;
-}
-
-export function useWhatsAppPairing(): UseWhatsAppPairingReturn {
+export function useWhatsAppPairing() {
   const [status, setStatus] = useState<WhatsAppPairingStatus>('idle');
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState('');
@@ -47,119 +49,43 @@ export function useWhatsAppPairing(): UseWhatsAppPairingReturn {
   const [availableChats, setAvailableChats] = useState<WhatsAppChat[]>([]);
   const [selectedChatIds, setSelectedChatIds] = useState<Set<string>>(new Set());
   const queryClient = useQueryClient();
-  const listenersAttachedRef = useRef(false);
-  const qrTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const initialQrTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const sessionNameRef = useRef<string | null>(null);
 
-  // Clear the 120s QR expiry timeout
-  const clearQrTimeout = useCallback(() => {
-    if (qrTimeoutRef.current !== null) {
-      clearTimeout(qrTimeoutRef.current);
-      qrTimeoutRef.current = null;
+  const stopPolling = useCallback(() => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
     }
   }, []);
 
-  // (Re)start the 120s QR expiry timeout
-  const resetQrTimeout = useCallback(() => {
-    clearQrTimeout();
-    qrTimeoutRef.current = setTimeout(() => {
-      setError('QR code expired. Click to try again.');
-      setStatus('error');
-      setQrDataUrl(null);
-    }, 120_000);
-  }, [clearQrTimeout]);
-
-  // Clean up socket listeners
-  const detachListeners = useCallback(() => {
-    const socket = getSocket();
-    if (socket && listenersAttachedRef.current) {
-      socket.off('whatsapp:qr');
-      socket.off('whatsapp:status');
-      socket.off('whatsapp:connected');
-      socket.off('whatsapp:error');
-      listenersAttachedRef.current = false;
-    }
-  }, []);
-
-  // Attach WebSocket listeners for WhatsApp pairing events
-  const attachListeners = useCallback(() => {
-    const socket = getSocket();
-    if (!socket) return;
-
-    // Prevent duplicate listeners
-    if (listenersAttachedRef.current) {
-      detachListeners();
-    }
-
-    socket.on('whatsapp:qr', async (data: { qr: string }) => {
-      // Cancel the initial "no QR arrived" safety timer
-      if (initialQrTimeoutRef.current) {
-        clearTimeout(initialQrTimeoutRef.current);
-        initialQrTimeoutRef.current = null;
-      }
-      // Reset the 120s expiry timer on every QR refresh (Baileys regenerates ~every 20s)
-      resetQrTimeout();
+  const startPolling = useCallback((sessionName: string) => {
+    stopPolling();
+    pollingRef.current = setInterval(async () => {
       try {
-        // Convert the QR code string into a data URL image
-        const dataUrl = await QRCode.toDataURL(data.qr, {
-          width: 280,
-          margin: 2,
-          color: {
-            dark: '#000000',
-            light: '#ffffff',
-          },
-        });
-        setQrDataUrl(dataUrl);
-        setStatus('qr_ready');
-        setStatusMessage('Scan the QR code with WhatsApp on your phone');
+        const data = await api.get<PairingStatusResponse>(`/api/integrations/whatsapp/pairing-status?sessionName=${sessionName}`);
+
+        if (data.status === 'connected' || data.status === 'WORKING') {
+          stopPolling();
+          setStatus('connected');
+          setStatusMessage('WhatsApp connected successfully!');
+          setQrDataUrl(null);
+          queryClient.invalidateQueries({ queryKey: ['integrations'] });
+        } else if (data.status === 'SCAN_QR_CODE' && data.qr) {
+          setQrDataUrl(`data:${data.mimetype || 'image/png'};base64,${data.qr}`);
+          setStatus('qr_ready');
+          setStatusMessage('Scan the QR code with WhatsApp on your phone');
+        } else if (data.status === 'failed' || data.status === 'FAILED') {
+          stopPolling();
+          setError(data.message || 'WhatsApp pairing failed');
+          setStatus('error');
+          setQrDataUrl(null);
+        }
       } catch {
-        setError('Failed to generate QR code image');
-        setStatus('error');
+        // Silently retry on next interval; network blips are transient
       }
-    });
-
-    socket.on('whatsapp:status', (data: { message: string }) => {
-      setStatusMessage(data.message);
-    });
-
-    socket.on('whatsapp:connected', () => {
-      clearQrTimeout();
-      if (initialQrTimeoutRef.current) { clearTimeout(initialQrTimeoutRef.current); initialQrTimeoutRef.current = null; }
-      setStatus('connected');
-      setStatusMessage('WhatsApp connected successfully!');
-      setQrDataUrl(null);
-      // Refresh integrations list
-      queryClient.invalidateQueries({ queryKey: ['integrations'] });
-      // Detach after success
-      detachListeners();
-    });
-
-    socket.on('whatsapp:error', (data: { message: string }) => {
-      clearQrTimeout();
-      if (initialQrTimeoutRef.current) { clearTimeout(initialQrTimeoutRef.current); initialQrTimeoutRef.current = null; }
-      setError(data.message);
-      setStatus('error');
-      setQrDataUrl(null);
-      detachListeners();
-    });
-
-    socket.on('whatsapp:chats-available', (data: { chats: WhatsAppChat[] }) => {
-      setAvailableChats(data.chats);
-      setStatus('chats_ready');
-      setStatusMessage(`Found ${data.chats.length} chats. Select chats to import.`);
-    });
-
-    listenersAttachedRef.current = true;
-  }, [queryClient, detachListeners, resetQrTimeout, clearQrTimeout]);
-
-  // Clean up on unmount
-  useEffect(() => {
-    return () => {
-      clearQrTimeout();
-      if (initialQrTimeoutRef.current) clearTimeout(initialQrTimeoutRef.current);
-      detachListeners();
-    };
-  }, [detachListeners, clearQrTimeout]);
+    }, 3000);
+  }, [stopPolling, queryClient]);
 
   const startPairing = useCallback(async () => {
     setStatus('starting');
@@ -168,85 +94,76 @@ export function useWhatsAppPairing(): UseWhatsAppPairingReturn {
     setStatusMessage('Starting WhatsApp pairing...');
 
     try {
-      // Attach WebSocket listeners before calling the API so no events are missed
-      attachListeners();
+      const data = await api.post<PairingStartResponse>('/api/integrations/whatsapp/start-pairing', {});
 
-      await api.post('/api/integrations/whatsapp/start-pairing', {});
+      sessionNameRef.current = data.sessionName ?? null;
 
-      setStatus('waiting_for_qr');
-      setStatusMessage('Generating QR code...');
+      if (data.qr) {
+        setQrDataUrl(`data:${data.mimetype || 'image/png'};base64,${data.qr}`);
+        setStatus('qr_ready');
+        setStatusMessage('Scan the QR code with WhatsApp on your phone');
+      } else {
+        setStatus('waiting_for_qr');
+        setStatusMessage('Generating QR code...');
+      }
 
-      // Safety: if no QR arrives within 15s, show error instead of hanging
-      initialQrTimeoutRef.current = setTimeout(() => {
-        setError('Could not generate QR code. The server may have trouble connecting to WhatsApp. Try again.');
-        setStatus('error');
-        detachListeners();
-      }, 15_000);
-
-      // Start the 120s session-expiry guard; will be reset on each whatsapp:qr event
-      resetQrTimeout();
+      if (data.sessionName) {
+        startPolling(data.sessionName);
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to start WhatsApp pairing';
       setError(message);
       setStatus('error');
-      clearQrTimeout();
-      detachListeners();
     }
-  }, [attachListeners, detachListeners, resetQrTimeout, clearQrTimeout]);
+  }, [startPolling]);
 
   const cancelPairing = useCallback(() => {
-    clearQrTimeout();
-    if (initialQrTimeoutRef.current) { clearTimeout(initialQrTimeoutRef.current); initialQrTimeoutRef.current = null; }
-    detachListeners();
+    stopPolling();
+    const sessionName = sessionNameRef.current;
+    sessionNameRef.current = null;
     setStatus('idle');
     setQrDataUrl(null);
     setStatusMessage('');
     setError(null);
 
-    // Fire and forget the cancel request
-    api.post('/api/integrations/whatsapp/cancel-pairing', {}).catch(() => {});
-  }, [detachListeners, clearQrTimeout]);
+    if (sessionName) {
+      api.post('/api/integrations/whatsapp/cancel-pairing', { sessionName }).catch(() => {});
+    }
+  }, [stopPolling]);
 
   const reset = useCallback(() => {
-    clearQrTimeout();
-    if (initialQrTimeoutRef.current) { clearTimeout(initialQrTimeoutRef.current); initialQrTimeoutRef.current = null; }
-    detachListeners();
+    stopPolling();
+    sessionNameRef.current = null;
     setStatus('idle');
     setQrDataUrl(null);
     setStatusMessage('');
     setError(null);
     setAvailableChats([]);
     setSelectedChatIds(new Set());
-  }, [detachListeners, clearQrTimeout]);
+  }, [stopPolling]);
 
   const listChats = useCallback(async () => {
-    if (status !== 'connected') {
-      setError('Not connected to WhatsApp');
-      return;
-    }
-
     setStatus('fetching_chats');
     setStatusMessage('Fetching available chats...');
 
     try {
-      await api.post('/api/integrations/whatsapp/list-chats', {});
-      // The 'whatsapp:chats-available' event will be emitted via WebSocket
-      // and handled by the attachListeners socket.on('whatsapp:chats-available')
+      const data = await api.post<ListChatsResponse>('/api/integrations/whatsapp/list-chats', {});
+      const chats: WhatsAppChat[] = data.chats ?? [];
+      setAvailableChats(chats);
+      setStatus('chats_ready');
+      setStatusMessage(`Found ${chats.length} chats. Select chats to import.`);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to fetch chats';
       setError(message);
       setStatus('error');
     }
-  }, [status]);
+  }, []);
 
   const toggleChatSelection = useCallback((chatId: string) => {
     setSelectedChatIds((prev) => {
       const next = new Set(prev);
-      if (next.has(chatId)) {
-        next.delete(chatId);
-      } else {
-        next.add(chatId);
-      }
+      if (next.has(chatId)) next.delete(chatId);
+      else next.add(chatId);
       return next;
     });
   }, []);

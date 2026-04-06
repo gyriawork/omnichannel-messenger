@@ -40,7 +40,7 @@ export async function createAdapter(
     }
     case 'whatsapp': {
       const { WhatsAppAdapter } = await import('./whatsapp.js');
-      return new WhatsAppAdapter(credentials as { authState?: string; phoneNumber?: string });
+      return new WhatsAppAdapter(credentials as { wahaSessionName: string; phoneNumber?: string });
     }
     case 'gmail': {
       const { GmailAdapter } = await import('./gmail.js');

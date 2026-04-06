@@ -245,44 +245,89 @@ export default async function webhookRoutes(fastify: FastifyInstance): Promise<v
     },
   );
 
-  // ── WhatsApp Webhook ──
-  // WhatsApp (Baileys) uses local session, but if using Business API:
+  // ── WAHA Webhook (WhatsApp) ──
+  // WAHA posts incoming messages and session status changes here.
   fastify.post(
-    '/webhooks/whatsapp',
+    '/webhooks/waha',
     async (request: FastifyRequest, reply: FastifyReply) => {
-      const body = request.body as Record<string, unknown>;
-
-      // Note: GET-based verification is handled by the separate GET route below
-
-      const entry = (body.entry as Array<Record<string, unknown>>)?.[0];
-      const changes = (entry?.changes as Array<Record<string, unknown>>)?.[0];
-      const value = changes?.value as Record<string, unknown>;
-      const messages = value?.messages as Array<Record<string, unknown>>;
-
-      if (!messages?.length) {
-        return reply.send({ ok: true });
+      // Verify WAHA API key
+      const wahaApiKey = process.env.WAHA_API_KEY;
+      if (wahaApiKey) {
+        const headerKey = request.headers['x-api-key'] as string | undefined;
+        if (headerKey !== wahaApiKey) {
+          return reply.status(403).send({ error: 'Invalid WAHA API key' });
+        }
       }
 
-      for (const msg of messages) {
-        const from = msg.from as string; // phone number
-        const text = (msg.text as Record<string, unknown>)?.body as string || '';
-        const msgId = msg.id as string;
+      const body = request.body as {
+        event: string;
+        session: string;
+        payload?: {
+          id?: string;
+          body?: string;
+          from?: string;
+          to?: string;
+          fromMe?: boolean;
+          timestamp?: number;
+          _data?: { notifyName?: string };
+          chatId?: string;
+        };
+        me?: { id?: string };
+      };
 
+      const { event, session: sessionName } = body;
+
+      // Handle incoming message
+      if (event === 'message' && body.payload) {
+        const payload = body.payload;
+        // Skip outgoing messages
+        if (payload.fromMe) {
+          return reply.send({ ok: true });
+        }
+
+        const chatId = payload.from || payload.chatId || '';
+        const text = payload.body || '';
+        const msgId = payload.id || `waha_${Date.now()}`;
+        const senderName = payload._data?.notifyName || payload.from || 'Unknown';
+
+        // Find imported chats matching this external chat ID
         const importedChats = await prisma.chat.findMany({
-          where: { externalChatId: from, messenger: 'whatsapp' },
+          where: { externalChatId: chatId, messenger: 'whatsapp' },
           select: { organizationId: true },
         });
 
         for (const ic of importedChats) {
           await saveIncomingMessage({
-            externalChatId: from,
+            externalChatId: chatId,
             messenger: 'whatsapp',
             organizationId: ic.organizationId,
-            senderName: from,
-            senderExternalId: from,
+            senderName,
+            senderExternalId: payload.from || chatId,
             text,
             externalMessageId: msgId,
           });
+        }
+      }
+
+      // Handle session status changes
+      if (event === 'session.status') {
+        const status = (body.payload as { status?: string })?.status;
+        if (status === 'FAILED' || status === 'STOPPED') {
+          // Extract orgId and userId from session name (format: wa-{orgId8}-{userId8})
+          // Find the integration and mark as disconnected
+          const integration = await prisma.integration.findFirst({
+            where: {
+              messenger: 'whatsapp',
+              credentials: { path: ['wahaSessionName'], equals: sessionName },
+            },
+          });
+
+          if (integration) {
+            await prisma.integration.update({
+              where: { id: integration.id },
+              data: { status: 'session_expired' },
+            });
+          }
         }
       }
 
@@ -338,20 +383,5 @@ export default async function webhookRoutes(fastify: FastifyInstance): Promise<v
     },
   );
 
-  // ── GET verification endpoints (for Slack/WhatsApp setup) ──
-  fastify.get(
-    '/webhooks/whatsapp',
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      const query = request.query as Record<string, string>;
-      const whatsappVerifyToken = process.env.WHATSAPP_VERIFY_TOKEN;
-      if (!whatsappVerifyToken) {
-        fastify.log.error('WHATSAPP_VERIFY_TOKEN environment variable is not set');
-        return reply.status(500).send({ error: 'Server misconfiguration' });
-      }
-      if (query['hub.verify_token'] === whatsappVerifyToken) {
-        return reply.send(query['hub.challenge'] || 'OK');
-      }
-      return reply.status(403).send({ error: 'Invalid verify token' });
-    },
-  );
+  // ── GET verification endpoints (for Slack setup) ──
 }

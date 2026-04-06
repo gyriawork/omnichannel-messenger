@@ -1,9 +1,3 @@
-// Polyfill globalThis.crypto for Node.js 18 (required by Baileys / libsignal)
-import { webcrypto } from 'node:crypto';
-if (!globalThis.crypto) {
-  (globalThis as any).crypto = webcrypto;
-}
-
 import { Worker, Queue, type Job } from 'bullmq';
 import IORedis from 'ioredis';
 import prisma from './lib/prisma.js';

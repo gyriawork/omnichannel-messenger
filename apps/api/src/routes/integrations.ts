@@ -11,10 +11,8 @@ import { MessengerError } from '../integrations/base.js';
 let createAuthClient: any, storePendingAuth: any, getPendingAuth: any, removePendingAuth: any, TelegramAdapter: any;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let StringSession: any, Api: any, computeCheck: any;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let startWhatsAppPairing: any, cancelPairing: any;
+import { startWhatsAppPairing, getQrCode, getPairingStatus, cancelPairing, WhatsAppAdapter } from '../integrations/whatsapp.js';
 
-import { getIO } from '../websocket/index.js';
 import { getTelegramManager } from '../services/telegram-connection-manager.js';
 import { cacheGet, cacheSet, cacheInvalidate, cacheKey } from '../lib/cache.js';
 import { getPlatformCredentials } from '../lib/platform-credentials.js';
@@ -38,7 +36,7 @@ const connectSlackSchema = z.object({
 });
 
 const connectWhatsAppSchema = z.object({
-  authState: z.string().optional(),
+  wahaSessionName: z.string().min(1),
   phoneNumber: z.string().optional(),
 });
 
@@ -117,7 +115,7 @@ function sanitizeIntegration(integration: {
 // ─── Plugin ───
 
 export default async function integrationRoutes(fastify: FastifyInstance): Promise<void> {
-  // Load telegram/whatsapp inside plugin (not at module level) to avoid crashing if native deps fail
+  // Load telegram inside plugin (not at module level) to avoid crashing if native deps fail
   try {
     const tgMod = await import('../integrations/telegram.js');
     createAuthClient = tgMod.createAuthClient;
@@ -134,14 +132,6 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
     computeCheck = pwMod.computeCheck;
   } catch (e) {
     console.warn('Telegram integration unavailable:', (e as Error).message);
-  }
-
-  try {
-    const waMod = await import('../integrations/whatsapp.js');
-    startWhatsAppPairing = waMod.startWhatsAppPairing;
-    cancelPairing = waMod.cancelPairing;
-  } catch (e) {
-    console.warn('WhatsApp integration unavailable:', (e as Error).message);
   }
 
   const authPreHandlers = [authenticate];
@@ -794,8 +784,8 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
   );
 
   // ─── POST /integrations/whatsapp/start-pairing ───
-  // Start the WhatsApp QR code pairing flow.
-  // QR codes are emitted to the user via WebSocket.
+  // Start the WhatsApp QR code pairing flow via WAHA.
+  // QR code is returned directly in the HTTP response.
 
   fastify.post(
     '/integrations/whatsapp/start-pairing',
@@ -807,85 +797,123 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
       }
 
       const userId = request.user.id;
-      const sessionKey = `whatsapp:${organizationId}:${userId}`;
+      const sessionName = `wa-${organizationId.slice(0, 8)}-${userId.slice(0, 8)}`;
+      const webhookUrl = `${process.env.APP_URL || 'http://localhost:3001'}/api/webhooks/waha`;
 
       try {
-        const emitter = await startWhatsAppPairing(sessionKey);
+        await startWhatsAppPairing(sessionName, webhookUrl);
 
-        const io = getIO();
+        // Wait for WAHA to initialize the session
+        await new Promise((r) => setTimeout(r, 3000));
 
-        // Emit QR codes to the specific user via WebSocket
-        emitter.on('qr', (qr: string) => {
-          io.to(`user:${userId}`).emit('whatsapp:qr', { qr });
-        });
+        // Try to get the QR code
+        let qr = await getQrCode(sessionName);
 
-        emitter.on('status', (message: string) => {
-          io.to(`user:${userId}`).emit('whatsapp:status', { message });
-        });
-
-        emitter.on('connected', async (credentials: { authState?: string; phoneNumber?: string }) => {
-          try {
-            // Encrypt and store credentials
-            const encryptedCredentials = encryptCredentials(credentials as Record<string, unknown>);
-
-            // Upsert integration
-            const existing = await prisma.integration.findUnique({
-              where: {
-                messenger_organizationId_userId: {
-                  messenger: 'whatsapp',
-                  organizationId,
-                  userId,
-                },
-              },
-            });
-
-            let integration;
-            if (existing) {
-              integration = await prisma.integration.update({
-                where: { id: existing.id },
-                data: {
-                  credentials: encryptedCredentials,
-                  status: 'connected',
-                  connectedAt: new Date(),
-                },
-              });
-            } else {
-              integration = await prisma.integration.create({
-                data: {
-                  messenger: 'whatsapp',
-                  status: 'connected',
-                  credentials: encryptedCredentials,
-                  organizationId,
-                  userId,
-                  connectedAt: new Date(),
-                },
-              });
-            }
-
-            io.to(`user:${userId}`).emit('whatsapp:connected', {
-              integration: sanitizeIntegration(integration),
-            });
-          } catch (err) {
-            io.to(`user:${userId}`).emit('whatsapp:error', {
-              message: err instanceof Error ? err.message : 'Failed to save WhatsApp credentials',
-            });
-          }
-        });
-
-        emitter.on('error', (error: Error) => {
-          io.to(`user:${userId}`).emit('whatsapp:error', {
-            message: error.message,
-          });
-        });
+        // If QR is not ready yet, wait a bit more and retry
+        if (!qr) {
+          await new Promise((r) => setTimeout(r, 2000));
+          qr = await getQrCode(sessionName);
+        }
 
         return reply.send({
-          message: 'WhatsApp pairing started. Listen for whatsapp:qr events on WebSocket.',
+          sessionName,
+          qr: qr?.value || null,
+          mimetype: qr?.mimetype || null,
         });
       } catch (err) {
         return sendError(
           reply,
           'MESSENGER_API_ERROR',
           err instanceof Error ? err.message : 'Failed to start WhatsApp pairing',
+          502,
+        );
+      }
+    },
+  );
+
+  // ─── GET /integrations/whatsapp/pairing-status ───
+  // Poll the current status of a WhatsApp pairing session.
+  // When WORKING, auto-saves the integration record.
+
+  fastify.get(
+    '/integrations/whatsapp/pairing-status',
+    { preHandler: authPreHandlers },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const organizationId = getOrgId(request);
+      if (!organizationId) {
+        return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
+      }
+
+      const { sessionName } = request.query as { sessionName?: string };
+      if (!sessionName) {
+        return sendError(reply, 'VALIDATION_ERROR', 'sessionName query parameter is required', 422);
+      }
+
+      const userId = request.user.id;
+
+      try {
+        const status = await getPairingStatus(sessionName);
+
+        if (status === 'SCAN_QR_CODE') {
+          // Session is waiting for QR scan — return fresh QR
+          const qr = await getQrCode(sessionName);
+          return reply.send({
+            status,
+            qr: qr?.value || null,
+            mimetype: qr?.mimetype || null,
+          });
+        }
+
+        if (status === 'WORKING') {
+          // Session is connected — save integration
+          const wahaClient = new (await import('../lib/waha-client.js')).WahaClient();
+          const sessionInfo = await wahaClient.getSession(sessionName);
+          const phoneNumber = sessionInfo.me?.id || undefined;
+
+          const encryptedCredentials = encryptCredentials({
+            wahaSessionName: sessionName,
+            phoneNumber,
+          });
+
+          await prisma.integration.upsert({
+            where: {
+              messenger_organizationId_userId: {
+                messenger: 'whatsapp',
+                organizationId,
+                userId,
+              },
+            },
+            update: {
+              credentials: encryptedCredentials,
+              status: 'connected',
+              connectedAt: new Date(),
+            },
+            create: {
+              messenger: 'whatsapp',
+              status: 'connected',
+              credentials: encryptedCredentials,
+              organizationId,
+              userId,
+              connectedAt: new Date(),
+            },
+          });
+
+          await cacheInvalidate(cacheKey(organizationId, 'integrations'));
+
+          return reply.send({ status: 'connected' });
+        }
+
+        if (status === 'FAILED' || status === 'STOPPED') {
+          return reply.send({ status: 'failed', error: 'WhatsApp session failed' });
+        }
+
+        // For other statuses (STARTING, etc.)
+        return reply.send({ status });
+      } catch (err) {
+        return sendError(
+          reply,
+          'MESSENGER_API_ERROR',
+          err instanceof Error ? err.message : 'Failed to get WhatsApp pairing status',
           502,
         );
       }
@@ -899,21 +927,28 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
     '/integrations/whatsapp/cancel-pairing',
     { preHandler: authPreHandlers },
     async (request: FastifyRequest, reply: FastifyReply) => {
-      const organizationId = getOrgId(request);
-      if (!organizationId) {
-        return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
+      const { sessionName } = request.body as { sessionName?: string };
+      if (!sessionName) {
+        return sendError(reply, 'VALIDATION_ERROR', 'sessionName is required', 422);
       }
 
-      const sessionKey = `whatsapp:${organizationId}:${request.user.id}`;
-      cancelPairing(sessionKey);
-
-      return reply.send({ message: 'WhatsApp pairing cancelled' });
+      try {
+        await cancelPairing(sessionName);
+        return reply.send({ message: 'WhatsApp pairing cancelled' });
+      } catch (err) {
+        return sendError(
+          reply,
+          'MESSENGER_API_ERROR',
+          err instanceof Error ? err.message : 'Failed to cancel WhatsApp pairing',
+          502,
+        );
+      }
     },
   );
 
   // ─── POST /integrations/whatsapp/list-chats ───
   // Fetch available WhatsApp chats (groups + contacts) after pairing.
-  // Returns a list of chats via WebSocket event 'whatsapp:chats-available'.
+  // Returns chats directly in the HTTP response.
 
   fastify.post(
     '/integrations/whatsapp/list-chats',
@@ -956,30 +991,18 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
           );
         }
 
-        // Decrypt credentials
+        // Decrypt credentials and list chats via adapter
         const decrypted = decryptCredentials<Record<string, unknown>>(integration.credentials as string);
+        const adapter = new WhatsAppAdapter(decrypted);
 
-        // Create adapter and connect
-        const adapter = await createAdapter('whatsapp', decrypted);
         try {
-          await adapter.connect(decrypted);
-
-          // List available chats
+          await adapter.connect();
           const chats = await adapter.listChats();
-          console.log(`[WhatsApp] Listed ${chats.length} chats for user ${userId}`);
-
-          // Emit chats via WebSocket
-          const io = getIO();
-          io.to(`user:${userId}`).emit('whatsapp:chats-available', { chats });
-
-          return reply.send({
-            message: `Found ${chats.length} available chats. Check WebSocket for whatsapp:chats-available event.`,
-          });
+          return reply.send({ chats });
         } finally {
           try { await adapter.disconnect(); } catch (e) { fastify.log.warn(e, 'adapter disconnect error'); }
         }
       } catch (err) {
-        console.error(`[WhatsApp] Failed to list chats for user ${userId}:`, err);
         return sendError(
           reply,
           'MESSENGER_API_ERROR',
