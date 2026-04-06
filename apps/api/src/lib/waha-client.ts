@@ -180,9 +180,13 @@ export class WahaClient {
 
   // ─── Session management ───
 
-  /** Create a new WAHA session with optional webhook config. */
+  /**
+   * Create AND start a new WAHA session with optional webhook config.
+   * Uses /api/sessions/start which both creates and starts the session.
+   * Plain POST /api/sessions only saves config without starting.
+   */
   async createSession(name: string, config?: WahaSessionConfig): Promise<WahaSessionInfo> {
-    return this.request<WahaSessionInfo>('POST', '/api/sessions', {
+    return this.request<WahaSessionInfo>('POST', '/api/sessions/start', {
       name,
       config,
     } satisfies WahaCreateSessionBody);
@@ -212,16 +216,49 @@ export class WahaClient {
 
   /**
    * Get the QR code for a session that is in SCAN_QR_CODE status.
-   * Returns null if QR is not ready yet (404).
+   * WAHA returns a PNG image by default; we fetch it as binary and
+   * convert to base64 so the frontend can display it directly.
+   * Returns null if QR is not ready yet (404/422).
    */
   async getQr(session: string): Promise<WahaQrResponse | null> {
+    const url = `${this.baseUrl}/api/${encodeURIComponent(session)}/auth/qr`;
+    const headers: Record<string, string> = {};
+    if (this.apiKey) {
+      headers['X-Api-Key'] = this.apiKey;
+    }
+
+    let response: Response;
     try {
-      return await this.request<WahaQrResponse>('GET', `/api/${encodeURIComponent(session)}/auth/qr`);
-    } catch (err) {
-      if (err instanceof WahaApiError && err.statusCode === 404) {
-        return null; // QR not ready yet
+      response = await fetch(url, { method: 'GET', headers });
+    } catch {
+      return null;
+    }
+
+    if (!response.ok) {
+      if (response.status === 404 || response.status === 422) {
+        return null; // QR not ready yet or session not found
       }
-      throw err;
+      const text = await response.text().catch(() => '');
+      throw new WahaApiError(response.status, text, `WAHA GET QR → ${response.status}`);
+    }
+
+    const contentType = response.headers.get('content-type') || '';
+
+    // If WAHA returns an image (default for WEBJS engine), convert to base64
+    if (contentType.startsWith('image/')) {
+      const buffer = Buffer.from(await response.arrayBuffer());
+      return {
+        value: buffer.toString('base64'),
+        mimetype: contentType.split(';')[0].trim(),
+      };
+    }
+
+    // If JSON (some engines return { value, mimetype })
+    const text = await response.text();
+    try {
+      return JSON.parse(text) as WahaQrResponse;
+    } catch {
+      return null;
     }
   }
 
