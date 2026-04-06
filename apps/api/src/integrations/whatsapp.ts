@@ -1,7 +1,7 @@
 // ─── WhatsApp Adapter (Baileys) ───
 // Real implementation using @whiskeysockets/baileys with QR code auth flow.
 
-import baileys from '@whiskeysockets/baileys';
+import * as baileysModule from '@whiskeysockets/baileys';
 import type {
   WASocket,
   ConnectionState,
@@ -12,15 +12,15 @@ import type {
   SignalKeyStore,
 } from '@whiskeysockets/baileys';
 
-// Handle ESM/CJS interop: baileys default export may be the function or the whole module
+// Handle ESM/CJS interop: use star import to access all named exports reliably.
+// The default export (makeWASocket) is available as baileysModule.default.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const _mod: any = baileys;
-const _ns = (typeof _mod === 'function' ? _mod : null) ? { default: _mod } : _mod;
-const makeWASocket = (_ns.default ?? _ns.makeWASocket) as typeof baileys;
-const DisconnectReason = _ns.DisconnectReason ?? (_ns.default?.DisconnectReason);
-const fetchLatestBaileysVersion = _ns.fetchLatestBaileysVersion ?? (_ns.default?.fetchLatestBaileysVersion);
-const makeCacheableSignalKeyStore = _ns.makeCacheableSignalKeyStore ?? (_ns.default?.makeCacheableSignalKeyStore);
-const initAuthCreds = _ns.initAuthCreds ?? (_ns.default?.initAuthCreds);
+const _ns: any = baileysModule;
+const makeWASocket = (_ns.default ?? _ns.makeWASocket) as typeof baileysModule.default;
+const DisconnectReason = _ns.DisconnectReason;
+const fetchLatestBaileysVersion = _ns.fetchLatestBaileysVersion;
+const makeCacheableSignalKeyStore = _ns.makeCacheableSignalKeyStore;
+const initAuthCreds = _ns.initAuthCreds;
 
 import { Boom } from '@hapi/boom';
 import { EventEmitter } from 'node:events';
@@ -66,9 +66,9 @@ function useMemoryAuthState(serialized?: string): {
   let creds: AuthenticationCreds;
   const keys: KeyStore = {};
 
-  const createCreds = typeof initAuthCreds === 'function'
-    ? initAuthCreds
-    : () => ({} as AuthenticationCreds);
+  if (typeof initAuthCreds !== 'function') {
+    throw new Error('Baileys initAuthCreds not available — check @whiskeysockets/baileys installation');
+  }
 
   if (serialized) {
     try {
@@ -80,10 +80,10 @@ function useMemoryAuthState(serialized?: string): {
         }
       }
     } catch {
-      creds = createCreds();
+      creds = initAuthCreds();
     }
   } else {
-    creds = createCreds();
+    creds = initAuthCreds();
   }
 
   const keyStore: SignalKeyStore = {
