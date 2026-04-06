@@ -132,6 +132,7 @@ export function createWebSocketServer(httpServer: HttpServer): Server {
 
     // Join a personal room for user-specific events (e.g., WhatsApp QR pairing)
     socket.join(`user:${user.id}`);
+    console.log(`[WS] User connected: ${user.id} (${user.email}), socket: ${socket.id}`);
 
     // Broadcast online status to org
     if (user.organizationId) {
