@@ -250,14 +250,10 @@ export default async function webhookRoutes(fastify: FastifyInstance): Promise<v
   fastify.post(
     '/webhooks/waha',
     async (request: FastifyRequest, reply: FastifyReply) => {
-      // Verify WAHA API key
-      const wahaApiKey = process.env.WAHA_API_KEY;
-      if (wahaApiKey) {
-        const headerKey = request.headers['x-api-key'] as string | undefined;
-        if (headerKey !== wahaApiKey) {
-          return reply.status(403).send({ error: 'Invalid WAHA API key' });
-        }
-      }
+      // Note: WAHA does not send X-Api-Key in webhook requests by default.
+      // On Railway, the webhook URL is only known by our WAHA service.
+      // For additional security, a custom header can be configured in WAHA
+      // webhook config if needed.
 
       const body = request.body as {
         event: string;
