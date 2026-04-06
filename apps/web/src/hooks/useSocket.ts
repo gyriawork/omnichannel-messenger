@@ -18,8 +18,12 @@ export function useSocket() {
   const accessToken = useAuthStore((s) => s.accessToken);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const queryClient = useQueryClient();
+  const queryClientRef = useRef(queryClient);
   const connectedRef = useRef(false);
   const chatUpdateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Keep queryClient ref up to date without triggering socket reconnection
+  queryClientRef.current = queryClient;
 
   useEffect(() => {
     if (!isAuthenticated || !accessToken) {
@@ -65,7 +69,7 @@ export function useSocket() {
     // Real-time message received → optimistically insert into cache
     socket.on('new_message', (data: { chatId: string; message: Message }) => {
       if (data.message) {
-        queryClient.setQueryData(
+        queryClientRef.current.setQueryData(
           ['messages', data.chatId],
           (oldData: { pages: Array<{ messages: Message[]; nextCursor?: string }>; pageParams: unknown[] } | undefined) => {
             if (!oldData?.pages) return oldData;
@@ -89,31 +93,31 @@ export function useSocket() {
       // Debounce chat list refresh — message is already optimistically inserted above
       if (chatUpdateTimer.current) clearTimeout(chatUpdateTimer.current);
       chatUpdateTimer.current = setTimeout(() => {
-        queryClient.invalidateQueries({ queryKey: ['chats'] });
+        queryClientRef.current.invalidateQueries({ queryKey: ['chats'] });
       }, 500);
     });
 
     // Message updated
     socket.on('message_updated', (data: { chatId: string }) => {
-      queryClient.invalidateQueries({ queryKey: ['messages', data.chatId] });
+      queryClientRef.current.invalidateQueries({ queryKey: ['messages', data.chatId] });
     });
 
     // Message deleted
     socket.on('message_deleted', (data: { chatId: string }) => {
-      queryClient.invalidateQueries({ queryKey: ['messages', data.chatId] });
+      queryClientRef.current.invalidateQueries({ queryKey: ['messages', data.chatId] });
     });
 
     // Chat updated (new message count, last activity, etc.) — debounced
     socket.on('chat_updated', () => {
       if (chatUpdateTimer.current) clearTimeout(chatUpdateTimer.current);
       chatUpdateTimer.current = setTimeout(() => {
-        queryClient.invalidateQueries({ queryKey: ['chats'] });
+        queryClientRef.current.invalidateQueries({ queryKey: ['chats'] });
       }, 2000);
     });
 
     // Broadcast status update
     socket.on('broadcast_status', () => {
-      queryClient.invalidateQueries({ queryKey: ['broadcasts'] });
+      queryClientRef.current.invalidateQueries({ queryKey: ['broadcasts'] });
     });
 
     // Typing indicator
@@ -129,7 +133,7 @@ export function useSocket() {
         connectedRef.current = false;
       }
     };
-  }, [isAuthenticated, accessToken, queryClient]);
+  }, [isAuthenticated, accessToken]);
 
   const joinChat = useCallback((chatId: string) => {
     socket?.emit('join_chat', { chatId });

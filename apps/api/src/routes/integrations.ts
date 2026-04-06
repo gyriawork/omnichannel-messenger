@@ -815,10 +815,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
         const io = getIO();
 
         // Emit QR codes to the specific user via WebSocket
-        emitter.on('qr', async (qr: string) => {
-          const room = io.in(`user:${userId}`);
-          const sockets = await room.fetchSockets();
-          console.log(`[WhatsApp] Emitting QR to user:${userId}, connected sockets: ${sockets.length}`);
+        emitter.on('qr', (qr: string) => {
           io.to(`user:${userId}`).emit('whatsapp:qr', { qr });
         });
 

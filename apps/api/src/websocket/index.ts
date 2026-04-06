@@ -99,7 +99,6 @@ export function createWebSocketServer(httpServer: HttpServer): Server {
     const token = socket.handshake.auth?.token as string | undefined;
 
     if (!token) {
-      console.log('[WS] Auth rejected: no token provided');
       return next(new Error('Authentication required'));
     }
 
@@ -116,8 +115,7 @@ export function createWebSocketServer(httpServer: HttpServer): Server {
       };
 
       next();
-    } catch (err) {
-      console.log(`[WS] Auth rejected: ${err instanceof Error ? err.message : 'unknown error'}`);
+    } catch {
       next(new Error('Invalid or expired token'));
     }
   });
