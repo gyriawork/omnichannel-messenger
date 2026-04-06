@@ -30,7 +30,7 @@ import {
   useTags,
 } from '@/hooks/useChats';
 import type { Chat, MessengerType } from '@/types/chat';
-import { MessengerIcon } from '@/components/ui/MessengerIcon';
+import { ChatAvatar } from '@/components/ui/ChatAvatar';
 
 function getMessengerDotColor(messenger: MessengerType): string {
   const map: Record<MessengerType, string> = {
@@ -257,7 +257,7 @@ export function ChatInfo() {
       <div className="flex-1 overflow-y-auto">
         {/* Profile section */}
         <div className="flex flex-col items-center border-b border-slate-100 px-5 pb-5 pt-6">
-          <MessengerIcon messenger={chat.messenger} size={64} />
+          <ChatAvatar name={chat.name} messenger={chat.messenger} size={64} />
 
           <h3 className="mt-3 text-base font-semibold text-slate-800">
             {chat.name}

@@ -37,7 +37,7 @@ import { useIsMobile } from '@/hooks/useIsMobile';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { getAvatarColor, getInitials } from '@/lib/chat-utils';
-import { MessengerIcon } from '@/components/ui/MessengerIcon';
+import { ChatAvatar } from '@/components/ui/ChatAvatar';
 import { api } from '@/lib/api';
 import { useChatStore } from '@/stores/chat';
 import { useAuthStore } from '@/stores/auth';
@@ -611,7 +611,7 @@ function ChatHeader({
     <div className="hidden h-[60px] flex-shrink-0 items-center justify-between border-b border-slate-200 bg-white px-5 md:flex">
       <div className="flex items-center gap-3">
         {/* Avatar */}
-        <MessengerIcon messenger={chat.messenger} size={36} />
+        <ChatAvatar name={chat.name} messenger={chat.messenger} size={36} />
 
         <div>
           <div className="flex items-center gap-2">

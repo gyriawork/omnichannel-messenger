@@ -25,7 +25,7 @@ import { useTags } from '@/hooks/useTags';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { ImportChatsModal } from '@/components/messenger/ImportChatsModal';
-import { MessengerIcon } from '@/components/ui/MessengerIcon';
+import { ChatAvatar } from '@/components/ui/ChatAvatar';
 import type { Chat, MessengerType } from '@/types/chat';
 
 // ─── Constants ───
@@ -654,7 +654,7 @@ export default function ChatsPage() {
                     {/* Chat name + avatar */}
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
-                        <MessengerIcon messenger={chat.messenger} size={36} />
+                        <ChatAvatar name={chat.name} messenger={chat.messenger} size={36} />
                         <div>
                           <a
                             href={`/messenger?chatId=${chat.id}`}
