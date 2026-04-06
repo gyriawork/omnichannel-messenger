@@ -1,7 +1,8 @@
 // ─── WhatsApp Adapter (Baileys) ───
 // Real implementation using @whiskeysockets/baileys with QR code auth flow.
 
-import * as baileysModule from '@whiskeysockets/baileys';
+import baileys from '@whiskeysockets/baileys';
+import * as baileysNs from '@whiskeysockets/baileys';
 import type {
   WASocket,
   ConnectionState,
@@ -12,15 +13,21 @@ import type {
   SignalKeyStore,
 } from '@whiskeysockets/baileys';
 
-// Handle ESM/CJS interop: use star import to access all named exports reliably.
-// The default export (makeWASocket) is available as baileysModule.default.
+// Handle ESM/CJS interop across tsx, native Node ESM, and bundled CJS.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const _ns: any = baileysModule;
-const makeWASocket = (_ns.default ?? _ns.makeWASocket) as typeof baileysModule.default;
-const DisconnectReason = _ns.DisconnectReason;
-const fetchLatestBaileysVersion = _ns.fetchLatestBaileysVersion;
-const makeCacheableSignalKeyStore = _ns.makeCacheableSignalKeyStore;
-const initAuthCreds = _ns.initAuthCreds;
+const _default: any = baileys;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const _ns: any = baileysNs;
+const makeWASocket = (
+  typeof _default === 'function' ? _default
+  : _ns.default && typeof _ns.default === 'function' ? _ns.default
+  : _ns.makeWASocket
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+) as any;
+const DisconnectReason = _ns.DisconnectReason ?? _default?.DisconnectReason;
+const fetchLatestBaileysVersion = _ns.fetchLatestBaileysVersion ?? _default?.fetchLatestBaileysVersion;
+const makeCacheableSignalKeyStore = _ns.makeCacheableSignalKeyStore ?? _default?.makeCacheableSignalKeyStore;
+const initAuthCreds = _ns.initAuthCreds ?? _default?.initAuthCreds;
 
 import { Boom } from '@hapi/boom';
 import { EventEmitter } from 'node:events';
