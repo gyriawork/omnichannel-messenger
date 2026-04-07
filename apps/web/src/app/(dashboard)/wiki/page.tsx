@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { WikiSidebar } from '@/components/wiki/WikiSidebar';
 import { WikiArticleList } from '@/components/wiki/WikiArticleList';
 import { useWikiArticles, useWikiCategories } from '@/hooks/useWiki';
+import { RequireOrgContext } from '@/components/layout/RequireOrgContext';
 
 export default function WikiPage() {
   const router = useRouter();
@@ -45,6 +46,7 @@ export default function WikiPage() {
   }, [activeCategory]);
 
   return (
+    <RequireOrgContext>
     <div className="flex h-full">
       <div className="hidden md:block">
         <WikiSidebar
@@ -72,5 +74,6 @@ export default function WikiPage() {
         )}
       </div>
     </div>
+    </RequireOrgContext>
   );
 }

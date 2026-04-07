@@ -23,6 +23,7 @@ import {
   useDuplicateTemplate,
 } from '@/hooks/useTemplates';
 import type { Template } from '@/types/template';
+import { RequireOrgContext } from '@/components/layout/RequireOrgContext';
 
 export default function TemplatesPage() {
   const [search, setSearch] = useState('');
@@ -52,6 +53,7 @@ export default function TemplatesPage() {
   }
 
   return (
+    <RequireOrgContext>
     <div className="mx-auto max-w-4xl px-4 py-6 md:px-6 md:py-8">
       {/* Header */}
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -194,6 +196,7 @@ export default function TemplatesPage() {
         </div>
       )}
     </div>
+    </RequireOrgContext>
   );
 }
 

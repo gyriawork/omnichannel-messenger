@@ -6,6 +6,7 @@ import { Sidebar } from '@/components/layout/Sidebar';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { BottomNav } from '@/components/layout/BottomNav';
 import { useAuthStore } from '@/stores/auth';
+import { useSuperadminStore } from '@/stores/superadmin';
 import { useSocket } from '@/hooks/useSocket';
 
 export default function DashboardLayout({
@@ -21,6 +22,7 @@ export default function DashboardLayout({
 
   useEffect(() => {
     hydrate();
+    useSuperadminStore.getState().hydrate();
   }, [hydrate]);
 
   useEffect(() => {

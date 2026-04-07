@@ -21,16 +21,20 @@ import {
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth';
 import { cn } from '@/lib/utils';
+import { OrgSwitcher } from './OrgSwitcher';
 
 const baseNavItems = [
   { icon: LayoutDashboard, href: '/', label: 'Dashboard' },
   { icon: Inbox, href: '/chats', label: 'Chats' },
   { icon: MessageSquare, href: '/messenger', label: 'Messenger' },
+  { icon: BookOpen, href: '/wiki', label: 'Wiki' },
+  { icon: Activity, href: '/activity', label: 'Activity Log' },
+];
+
+const adminNavItems = [
   { icon: Send, href: '/broadcast', label: 'Broadcast' },
   { icon: FileText, href: '/templates', label: 'Templates' },
-  { icon: BookOpen, href: '/wiki', label: 'Wiki' },
   { icon: Tag, href: '/tags', label: 'Tags' },
-  { icon: Activity, href: '/activity', label: 'Activity Log' },
 ];
 
 export function Sidebar() {
@@ -93,10 +97,14 @@ export function Sidebar() {
         </button>
       )}
 
+      {/* Organization switcher (superadmin only) */}
+      {user?.role === 'superadmin' && <OrgSwitcher collapsed={collapsed} />}
+
       {/* Navigation */}
       <nav className={cn('flex flex-1 flex-col gap-0.5', collapsed && 'items-center')}>
         {[
           ...baseNavItems,
+          ...(user?.role !== 'user' ? adminNavItems : []),
           ...(user?.role === 'superadmin'
             ? [
                 { icon: ShieldCheck, href: '/admin', label: 'Admin' },

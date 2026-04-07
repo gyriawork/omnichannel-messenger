@@ -13,6 +13,7 @@ import {
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { useTags, useCreateTag, useUpdateTag, useDeleteTag } from '@/hooks/useTags';
+import { RequireOrgContext } from '@/components/layout/RequireOrgContext';
 
 // ─── Constants ───
 
@@ -283,6 +284,7 @@ export default function TagsPage() {
   const tags = data?.tags ?? [];
 
   return (
+    <RequireOrgContext>
     <div className="mx-auto max-w-4xl px-4 py-6 md:px-6 md:py-8">
       {/* Header */}
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -402,5 +404,6 @@ export default function TagsPage() {
         />
       )}
     </div>
+    </RequireOrgContext>
   );
 }

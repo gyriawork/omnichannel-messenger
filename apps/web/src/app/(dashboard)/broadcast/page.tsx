@@ -25,6 +25,7 @@ import {
 } from '@/hooks/useBroadcasts';
 import { AntibanSettings } from '@/components/broadcast/AntibanSettings';
 import type { BroadcastStatus } from '@/types/broadcast';
+import { RequireOrgContext } from '@/components/layout/RequireOrgContext';
 
 const statusTabs: Array<{ label: string; value: BroadcastStatus | null }> = [
   { label: 'All', value: null },
@@ -105,6 +106,7 @@ export default function BroadcastPage() {
   }
 
   return (
+    <RequireOrgContext>
     <div className="flex h-full">
       {/* Main content */}
       <div className="flex-1 overflow-auto">
@@ -333,6 +335,7 @@ export default function BroadcastPage() {
         </div>
       )}
     </div>
+    </RequireOrgContext>
   );
 }
 

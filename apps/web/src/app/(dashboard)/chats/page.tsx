@@ -27,6 +27,7 @@ import { api } from '@/lib/api';
 import { ImportChatsModal } from '@/components/messenger/ImportChatsModal';
 import { ChatAvatar } from '@/components/ui/ChatAvatar';
 import type { Chat, MessengerType } from '@/types/chat';
+import { RequireOrgContext } from '@/components/layout/RequireOrgContext';
 
 // ─── Constants ───
 
@@ -414,6 +415,7 @@ export default function ChatsPage() {
   };
 
   return (
+    <RequireOrgContext>
     <div className="px-4 py-6 md:px-6 md:py-8">
       {/* Header */}
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -741,5 +743,6 @@ export default function ChatsPage() {
       {/* Import Modal */}
       <ImportChatsModal open={showImport} onClose={() => setShowImport(false)} />
     </div>
+    </RequireOrgContext>
   );
 }

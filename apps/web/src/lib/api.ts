@@ -1,4 +1,17 @@
+import { useSuperadminStore } from '@/stores/superadmin';
+
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+
+const ORG_PARAM_EXCLUDE = ['/api/auth/', '/api/organizations'];
+
+function injectOrgId(endpoint: string): string {
+  if (typeof window === 'undefined') return endpoint;
+  const orgId = useSuperadminStore.getState().selectedOrgId;
+  if (!orgId) return endpoint;
+  if (ORG_PARAM_EXCLUDE.some((prefix) => endpoint.startsWith(prefix))) return endpoint;
+  const separator = endpoint.includes('?') ? '&' : '?';
+  return `${endpoint}${separator}organizationId=${orgId}`;
+}
 
 type RequestOptions = Omit<RequestInit, 'body'> & {
   body?: unknown;
@@ -92,7 +105,9 @@ async function request<T>(
     config.body = '{}';
   }
 
-  let response = await fetch(`${BASE_URL}${endpoint}`, config);
+  const finalEndpoint = injectOrgId(endpoint);
+
+  let response = await fetch(`${BASE_URL}${finalEndpoint}`, config);
 
   if (response.status === 401 && token) {
     if (!refreshPromise) {
@@ -102,7 +117,7 @@ async function request<T>(
     if (newToken) {
       headers['Authorization'] = `Bearer ${newToken}`;
       config.headers = headers;
-      response = await fetch(`${BASE_URL}${endpoint}`, config);
+      response = await fetch(`${BASE_URL}${finalEndpoint}`, config);
     } else {
       clearTokens();
       if (typeof window !== 'undefined') {
@@ -150,11 +165,12 @@ export const api = {
     const token = await getAccessToken();
     const formData = new FormData();
     formData.append('file', file);
+    const uploadEndpoint = injectOrgId(endpoint);
 
     const headers: Record<string, string> = {};
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
-    let response = await fetch(`${BASE_URL}${endpoint}`, {
+    let response = await fetch(`${BASE_URL}${uploadEndpoint}`, {
       method: 'POST',
       headers,
       credentials: 'include',
@@ -170,7 +186,7 @@ export const api = {
       if (newToken) {
         const retryFormData = new FormData();
         retryFormData.append('file', file);
-        response = await fetch(`${BASE_URL}${endpoint}`, {
+        response = await fetch(`${BASE_URL}${uploadEndpoint}`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${newToken}` },
           credentials: 'include',

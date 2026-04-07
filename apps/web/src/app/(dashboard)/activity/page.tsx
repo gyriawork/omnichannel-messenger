@@ -13,6 +13,7 @@ import {
 import { cn } from '@/lib/utils';
 import { useActivity } from '@/hooks/useActivity';
 import type { ActivityCategory, ActivityFilters } from '@/types/activity';
+import { RequireOrgContext } from '@/components/layout/RequireOrgContext';
 
 const CATEGORIES: Array<{ value: ActivityCategory | null; label: string }> = [
   { value: null, label: 'All Categories' },
@@ -77,6 +78,7 @@ export default function ActivityPage() {
   );
 
   return (
+    <RequireOrgContext>
     <div className="mx-auto max-w-4xl px-4 py-6 md:px-6 md:py-8">
       {/* Header */}
       <div className="mb-6">
@@ -258,6 +260,7 @@ export default function ActivityPage() {
         </>
       )}
     </div>
+    </RequireOrgContext>
   );
 }
 

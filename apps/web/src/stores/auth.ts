@@ -2,6 +2,7 @@
 
 import { create } from 'zustand';
 import { api, setAccessToken, clearTokens, registerTokenRefreshCallback } from '@/lib/api';
+import { useSuperadminStore } from '@/stores/superadmin';
 
 interface User {
   id: string;
@@ -75,6 +76,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     clearTokens();
     localStorage.removeItem('user');
+    useSuperadminStore.getState().clearOrg();
     set({
       user: null,
       accessToken: null,

@@ -16,6 +16,7 @@ import { useDashboardStats } from '@/hooks/useDashboard';
 import { useAuthStore } from '@/stores/auth';
 import type { ActivityCategory } from '@/types/activity';
 import { MessengerIcon } from '@/components/ui/MessengerIcon';
+import { RequireOrgContext } from '@/components/layout/RequireOrgContext';
 
 const CATEGORY_COLORS: Record<ActivityCategory, string> = {
   chats: '#3b82f6',
@@ -65,6 +66,7 @@ export default function DashboardPage() {
   }
 
   return (
+    <RequireOrgContext>
     <div className="mx-auto max-w-5xl px-4 py-6 md:px-6 md:py-8">
       {/* Header */}
       <div className="mb-8">
@@ -266,6 +268,7 @@ export default function DashboardPage() {
         </div>
       </div>
     </div>
+    </RequireOrgContext>
   );
 }
 
