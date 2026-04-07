@@ -8,6 +8,8 @@ import { authenticate } from '../middleware/auth.js';
 import { createAdapter } from '../integrations/factory.js';
 import { MessengerError } from '../integrations/base.js';
 import { getPlatformCredentials } from '../lib/platform-credentials.js';
+import { cacheInvalidate, cacheKey } from '../lib/cache.js';
+import { messageSyncQueue } from '../lib/queue.js';
 
 // ─── Redis client for OAuth state storage ───
 
@@ -385,6 +387,11 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
         );
       }
 
+      // Parse importCount from query (default 50, max 500)
+      const query = request.query as Record<string, string>;
+      const rawImportCount = parseInt(query.importCount ?? '50', 10);
+      const importCount = Math.min(Math.max(rawImportCount || 50, 1), 500);
+
       // Generate a cryptographically random state token
       const state = randomBytes(32).toString('hex');
 
@@ -392,6 +399,7 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
       const stateData = JSON.stringify({
         userId: request.user.id,
         organizationId,
+        importCount,
       });
       await getRedis().set(`oauth:gmail:state:${state}`, stateData, 'EX', 600);
 
@@ -453,7 +461,7 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
       // Delete state token immediately (one-time use)
       await getRedis().del(redisKey);
 
-      let stateData: { userId: string; organizationId: string };
+      let stateData: { userId: string; organizationId: string; importCount?: number };
       try {
         stateData = JSON.parse(stateDataRaw);
       } catch {
@@ -462,7 +470,7 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
         );
       }
 
-      const { userId, organizationId } = stateData;
+      const { userId, organizationId, importCount = 50 } = stateData;
 
       // Resolve platform credentials for token exchange
       const gmailCreds = await getGmailPlatformCreds();
@@ -498,9 +506,11 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
         );
       }
 
-      // Store only user-level credential (refreshToken).
-      // Platform credentials (clientId/clientSecret) are resolved at runtime via getPlatformCredentials.
+      // Store full credentials (clientId + clientSecret + refreshToken)
+      // so the adapter can be created without needing platform credentials at runtime.
       const gmailCredentials = {
+        clientId: gmailCreds.clientId,
+        clientSecret: gmailCreds.clientSecret,
         refreshToken: tokens.refresh_token,
       };
 
@@ -518,6 +528,8 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
         },
       });
 
+      let integrationId: string;
+
       if (existing) {
         await prisma.integration.update({
           where: { id: existing.id },
@@ -527,8 +539,9 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
             connectedAt: new Date(),
           },
         });
+        integrationId = existing.id;
       } else {
-        await prisma.integration.create({
+        const created = await prisma.integration.create({
           data: {
             messenger: 'gmail',
             status: 'connected',
@@ -538,9 +551,62 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
             connectedAt: new Date(),
           },
         });
+        integrationId = created.id;
       }
 
-      fastify.log.info(`Gmail OAuth connected for user ${userId} in org ${organizationId}`);
+      // Invalidate integrations cache so frontend immediately sees "Connected"
+      await cacheInvalidate(cacheKey(organizationId, 'integrations'));
+
+      // Queue auto-import job to fetch recent email threads
+      await messageSyncQueue.add(
+        'gmail:auto-import',
+        {
+          integrationId,
+          organizationId,
+          userId,
+          importCount: Math.min(importCount, 500),
+        },
+        { jobId: `gmail-auto-import-${organizationId}-${Date.now()}` },
+      );
+
+      // Set up Gmail Pub/Sub watch for real-time notifications
+      const gmailPubSubTopic = process.env.GMAIL_PUBSUB_TOPIC;
+      if (gmailPubSubTopic) {
+        try {
+          const watchClient = new google.auth.OAuth2(
+            gmailCreds.clientId,
+            gmailCreds.clientSecret,
+          );
+          watchClient.setCredentials({ refresh_token: tokens.refresh_token });
+          const gmailApi = google.gmail({ version: 'v1', auth: watchClient });
+
+          const watchResponse = await gmailApi.users.watch({
+            userId: 'me',
+            requestBody: {
+              topicName: gmailPubSubTopic,
+              labelIds: ['INBOX'],
+            },
+          });
+
+          // Store historyId for webhook processing
+          const historyId = watchResponse.data.historyId;
+          if (historyId) {
+            await prisma.integration.update({
+              where: { id: integrationId },
+              data: {
+                settings: { lastHistoryId: historyId },
+              },
+            });
+          }
+
+          fastify.log.info(`Gmail watch registered, historyId: ${historyId}`);
+        } catch (err) {
+          // Watch setup failure is non-fatal — webhooks just won't work until renewed
+          fastify.log.warn(`Failed to set up Gmail watch: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+
+      fastify.log.info(`Gmail OAuth connected for user ${userId} in org ${organizationId}, queued auto-import of ${importCount} threads`);
 
       return reply.redirect(
         `${appUrl}/settings?integration=gmail&status=connected`,

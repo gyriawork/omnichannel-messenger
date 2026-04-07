@@ -589,18 +589,21 @@ function WhatsAppConnectForm({ onClose }: { onClose: () => void }) {
   );
 }
 
+const GMAIL_IMPORT_COUNTS = [10, 20, 50, 100, 200, 500] as const;
+
 function GmailConnectForm({}: {
   onSubmit: (data: Record<string, string>) => void;
   isPending: boolean;
 }) {
   const { data: oauthData, isLoading: oauthLoading } = useGmailOAuthAvailable();
+  const [importCount, setImportCount] = useState<number>(50);
 
   const oauthAvailable = oauthData?.available ?? false;
 
   const handleOAuthConnect = async () => {
     const token = await getAccessToken();
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-    window.location.href = `${apiUrl}/api/oauth/gmail/authorize?token=${encodeURIComponent(token ?? '')}`;
+    window.location.href = `${apiUrl}/api/oauth/gmail/authorize?token=${encodeURIComponent(token ?? '')}&importCount=${importCount}`;
   };
 
   if (oauthLoading) {
@@ -630,9 +633,25 @@ function GmailConnectForm({}: {
       <div className="flex items-start gap-2 rounded-lg bg-blue-50 p-3">
         <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-500" />
         <p className="text-xs text-blue-700">
-          Click the button below to authorize with Google. You will be redirected to
-          Google to grant Gmail access, then returned here automatically.
+          After connecting, your recent emails will be automatically imported.
+          Each email thread becomes a separate chat.
         </p>
+      </div>
+      <div>
+        <label className="mb-1.5 block text-xs font-medium text-slate-600">
+          Import last emails
+        </label>
+        <select
+          value={importCount}
+          onChange={(e) => setImportCount(Number(e.target.value))}
+          className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none transition-colors focus:border-accent focus:bg-white"
+        >
+          {GMAIL_IMPORT_COUNTS.map((count) => (
+            <option key={count} value={count}>
+              {count} emails
+            </option>
+          ))}
+        </select>
       </div>
       <button
         type="button"

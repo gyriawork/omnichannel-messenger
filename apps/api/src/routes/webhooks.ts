@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { WebClient } from '@slack/web-api';
+import { google } from 'googleapis';
 import prisma from '../lib/prisma.js';
 import { decryptCredentials } from '../lib/crypto.js';
 import { saveIncomingMessage, ingestReaction } from '../services/message-service.js';
@@ -371,9 +372,160 @@ export default async function webhookRoutes(fastify: FastifyInstance): Promise<v
         'Gmail push notification received',
       );
 
-      // In production: use historyId to fetch new messages via Gmail API
-      // Then save them using saveIncomingMessage()
-      // This requires the Gmail adapter to fetch the actual message content
+      // Find integration by email address
+      // Gmail integrations don't store email directly, so search by messenger + status
+      const gmailIntegrations = await prisma.integration.findMany({
+        where: { messenger: 'gmail', status: 'connected' },
+        select: { id: true, credentials: true, organizationId: true, userId: true, settings: true },
+      });
+
+      // Find matching integration by decrypting creds and checking email
+      for (const integration of gmailIntegrations) {
+        try {
+          const credentials = decryptCredentials<{
+            clientId: string;
+            clientSecret: string;
+            refreshToken: string;
+          }>(integration.credentials as string);
+
+          const oauth2Client = new google.auth.OAuth2(
+            credentials.clientId,
+            credentials.clientSecret,
+          );
+          oauth2Client.setCredentials({ refresh_token: credentials.refreshToken });
+
+          const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+
+          // Check if this integration's email matches the notification
+          const profile = await gmail.users.getProfile({ userId: 'me' });
+          const integrationEmail = profile.data.emailAddress ?? '';
+
+          if (integrationEmail !== decoded.emailAddress) continue;
+
+          // Get the stored historyId from integration metadata
+          const metadata = (integration.settings ?? {}) as Record<string, unknown>;
+          const lastHistoryId = metadata.lastHistoryId as string | undefined;
+
+          if (!lastHistoryId) {
+            // No history tracking yet — just save the new historyId
+            await prisma.integration.update({
+              where: { id: integration.id },
+              data: { settings: { ...metadata, lastHistoryId: decoded.historyId } },
+            });
+            break;
+          }
+
+          // Fetch history changes since last known historyId
+          let historyResponse;
+          try {
+            historyResponse = await gmail.users.history.list({
+              userId: 'me',
+              startHistoryId: lastHistoryId,
+              historyTypes: ['messageAdded'],
+            });
+          } catch (err) {
+            const errMsg = String(err);
+            if (errMsg.includes('404') || errMsg.includes('notFound')) {
+              // historyId too old — just update and skip
+              await prisma.integration.update({
+                where: { id: integration.id },
+                data: { settings: { ...metadata, lastHistoryId: decoded.historyId } },
+              });
+              break;
+            }
+            throw err;
+          }
+
+          const histories = historyResponse.data.history ?? [];
+
+          // Collect unique thread IDs from new messages
+          const newThreadIds = new Set<string>();
+          for (const history of histories) {
+            for (const added of history.messagesAdded ?? []) {
+              const threadId = added.message?.threadId;
+              if (threadId) newThreadIds.add(threadId);
+            }
+          }
+
+          // Process each new thread
+          for (const threadId of newThreadIds) {
+            try {
+              const thread = await gmail.users.threads.get({
+                userId: 'me',
+                id: threadId,
+                format: 'metadata',
+                metadataHeaders: ['Subject', 'From', 'Date'],
+              });
+
+              const messages = thread.data.messages ?? [];
+              if (messages.length === 0) continue;
+
+              const firstHeaders = messages[0]?.payload?.headers ?? [];
+              const subject = firstHeaders.find((h) => h.name === 'Subject')?.value ?? '(no subject)';
+              const from = firstHeaders.find((h) => h.name === 'From')?.value ?? '';
+              const fromMatch = from.match(/^(.+?)\s*<(.+?)>$/);
+              const senderName = fromMatch ? fromMatch[1]!.replace(/^["']|["']$/g, '') : from;
+              const senderEmail = fromMatch ? fromMatch[2]! : from;
+              const isSelfThread = senderEmail === integrationEmail;
+              const chatName = isSelfThread ? subject : `${senderName} — ${subject}`;
+
+              // Upsert chat
+              const chat = await prisma.chat.upsert({
+                where: {
+                  externalChatId_messenger_organizationId: {
+                    externalChatId: threadId,
+                    messenger: 'gmail',
+                    organizationId: integration.organizationId,
+                  },
+                },
+                create: {
+                  externalChatId: threadId,
+                  messenger: 'gmail',
+                  name: chatName,
+                  chatType: 'direct',
+                  organizationId: integration.organizationId,
+                  importedById: integration.userId,
+                  syncStatus: 'synced',
+                  messageCount: messages.length,
+                },
+                update: {},
+              });
+
+              // Save only the newest message(s) that triggered the notification
+              const lastMsg = messages[messages.length - 1];
+              if (lastMsg?.id) {
+                const msgHeaders = lastMsg.payload?.headers ?? [];
+                const msgFrom = msgHeaders.find((h) => h.name === 'From')?.value ?? '';
+                const msgFromMatch = msgFrom.match(/^(.+?)\s*<(.+?)>$/);
+                const msgSenderName = msgFromMatch ? msgFromMatch[1]!.replace(/^["']|["']$/g, '') : msgFrom;
+                const msgSenderEmail = msgFromMatch ? msgFromMatch[2]! : msgFrom;
+
+                await saveIncomingMessage({
+                  externalChatId: threadId,
+                  messenger: 'gmail',
+                  organizationId: integration.organizationId,
+                  senderName: msgSenderName || 'Unknown',
+                  senderExternalId: msgSenderEmail,
+                  text: lastMsg.snippet ?? '',
+                  externalMessageId: lastMsg.id,
+                });
+              }
+            } catch (err) {
+              fastify.log.error({ threadId, error: String(err) }, 'Failed to process Gmail thread');
+            }
+          }
+
+          // Update lastHistoryId
+          await prisma.integration.update({
+            where: { id: integration.id },
+            data: { settings: { ...metadata, lastHistoryId: decoded.historyId } },
+          });
+
+          break; // Found matching integration, done
+        } catch (err) {
+          fastify.log.error({ integrationId: integration.id, error: String(err) }, 'Error processing Gmail webhook for integration');
+        }
+      }
 
       return reply.status(200).send({ ok: true });
     },

@@ -49,6 +49,13 @@ interface MessageSyncPayload {
   messenger: string;
 }
 
+interface GmailAutoImportPayload {
+  integrationId: string;
+  organizationId: string;
+  userId: string;
+  importCount: number;
+}
+
 interface AntibanConfig {
   messagesPerBatch: number;
   delayBetweenMessages: number;
@@ -712,6 +719,272 @@ async function processChatHistorySync(job: Job<MessageSyncPayload>): Promise<voi
   log.info('Chat history sync job complete', { chatCount: chatIds.length });
 }
 
+// ─── Gmail Auto-Import Processor ───
+
+async function processGmailAutoImport(job: Job<GmailAutoImportPayload>): Promise<void> {
+  const { integrationId, organizationId, userId, importCount } = job.data;
+  const maxThreads = Math.min(importCount || 50, 500);
+
+  log.info('Processing gmail:auto-import', { integrationId, importCount: maxThreads });
+
+  // Load integration credentials
+  const integration = await prisma.integration.findUnique({
+    where: { id: integrationId },
+    select: { credentials: true, messenger: true },
+  });
+
+  if (!integration) {
+    log.warn('Integration not found for Gmail auto-import', { integrationId });
+    return;
+  }
+
+  const credentials = decryptCredentials<Record<string, unknown>>(integration.credentials as string);
+
+  // Import googleapis directly for thread-level operations
+  const { google } = await import('googleapis');
+  const oauth2Client = new google.auth.OAuth2(
+    credentials.clientId as string,
+    credentials.clientSecret as string,
+  );
+  oauth2Client.setCredentials({ refresh_token: credentials.refreshToken as string });
+
+  const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+
+  // Get user email for determining sender direction
+  let userEmail = '';
+  try {
+    const profile = await gmail.users.getProfile({ userId: 'me' });
+    userEmail = profile.data.emailAddress ?? '';
+  } catch (err) {
+    log.error('Failed to get Gmail profile', { error: String(err) });
+    return;
+  }
+
+  // Fetch threads (paginate if importCount > 100)
+  let allThreadIds: string[] = [];
+  let pageToken: string | undefined;
+
+  while (allThreadIds.length < maxThreads) {
+    const remaining = maxThreads - allThreadIds.length;
+    const batchSize = Math.min(remaining, 100);
+
+    try {
+      const threadsResult = await gmail.users.threads.list({
+        userId: 'me',
+        maxResults: batchSize,
+        q: 'in:inbox',
+        pageToken,
+      });
+
+      const threads = threadsResult.data.threads ?? [];
+      if (threads.length === 0) break;
+
+      allThreadIds.push(...threads.map((t) => t.id!).filter(Boolean));
+      pageToken = threadsResult.data.nextPageToken ?? undefined;
+      if (!pageToken) break;
+    } catch (err) {
+      log.error('Failed to list Gmail threads', { error: String(err) });
+      break;
+    }
+  }
+
+  log.info(`Found ${allThreadIds.length} Gmail threads to import`, { organizationId });
+
+  if (allThreadIds.length === 0) return;
+
+  // Process threads in batches of 20
+  const BATCH_SIZE = 20;
+  let importedCount = 0;
+
+  for (let i = 0; i < allThreadIds.length; i += BATCH_SIZE) {
+    const batch = allThreadIds.slice(i, i + BATCH_SIZE);
+
+    const threadDetails = await Promise.allSettled(
+      batch.map((threadId) =>
+        gmail.users.threads.get({
+          userId: 'me',
+          id: threadId,
+          format: 'metadata',
+          metadataHeaders: ['Subject', 'From', 'To', 'Date', 'Message-ID'],
+        }),
+      ),
+    );
+
+    for (const result of threadDetails) {
+      if (result.status === 'rejected') continue;
+
+      const thread = result.value.data;
+      const threadId = thread.id;
+      if (!threadId) continue;
+
+      const messages = thread.messages ?? [];
+      if (messages.length === 0) continue;
+
+      // Extract chat info from first message
+      const firstHeaders = messages[0]?.payload?.headers ?? [];
+      const subject = firstHeaders.find((h) => h.name === 'Subject')?.value ?? '(no subject)';
+      const from = firstHeaders.find((h) => h.name === 'From')?.value ?? '';
+
+      // Parse sender: "Display Name <email>" or just "email"
+      const fromMatch = from.match(/^(.+?)\s*<(.+?)>$/);
+      const senderName = fromMatch ? fromMatch[1]!.replace(/^["']|["']$/g, '') : from;
+      const senderEmail = fromMatch ? fromMatch[2]! : from;
+
+      // Chat name: if sent by user, use subject; otherwise use sender name + subject
+      const isSelfThread = senderEmail === userEmail;
+      const chatName = isSelfThread ? subject : `${senderName} — ${subject}`;
+
+      try {
+        // Upsert chat (idempotent via unique constraint)
+        const chat = await prisma.chat.upsert({
+          where: {
+            externalChatId_messenger_organizationId: {
+              externalChatId: threadId,
+              messenger: 'gmail',
+              organizationId,
+            },
+          },
+          create: {
+            externalChatId: threadId,
+            messenger: 'gmail',
+            name: chatName,
+            chatType: 'direct',
+            organizationId,
+            importedById: userId,
+            syncStatus: 'syncing',
+            messageCount: messages.length,
+          },
+          update: {
+            syncStatus: 'syncing',
+          },
+        });
+
+        // Create messages for each email in the thread
+        const messageRecords = messages
+          .filter((m) => m.id)
+          .map((m) => {
+            const headers = m.payload?.headers ?? [];
+            const msgFrom = headers.find((h) => h.name === 'From')?.value ?? '';
+            const msgFromMatch = msgFrom.match(/^(.+?)\s*<(.+?)>$/);
+            const msgSenderName = msgFromMatch ? msgFromMatch[1]!.replace(/^["']|["']$/g, '') : msgFrom;
+            const msgSenderEmail = msgFromMatch ? msgFromMatch[2]! : msgFrom;
+            const dateStr = headers.find((h) => h.name === 'Date')?.value;
+            const msgDate = dateStr ? new Date(dateStr) : new Date();
+            const snippet = m.snippet ?? '';
+
+            return {
+              chatId: chat.id,
+              externalMessageId: m.id!,
+              senderName: msgSenderName || msgSenderEmail || 'Unknown',
+              senderExternalId: msgSenderEmail,
+              isSelf: msgSenderEmail === userEmail,
+              text: snippet,
+              createdAt: msgDate,
+            };
+          });
+
+        if (messageRecords.length > 0) {
+          await prisma.message.createMany({
+            data: messageRecords,
+            skipDuplicates: true,
+          });
+        }
+
+        // Get latest message date for lastActivityAt
+        const latestDate = messageRecords.reduce(
+          (latest, m) => (m.createdAt > latest ? m.createdAt : latest),
+          new Date(0),
+        );
+
+        // Mark chat as synced
+        await prisma.chat.update({
+          where: { id: chat.id },
+          data: {
+            syncStatus: 'synced',
+            messageCount: messageRecords.length,
+            lastActivityAt: latestDate > new Date(0) ? latestDate : new Date(),
+          },
+        });
+
+        importedCount++;
+
+        // Notify frontend about new/updated chat
+        pubClient.publish('ws:events', JSON.stringify({
+          event: 'chat_updated',
+          room: `org:${organizationId}`,
+          data: { chatId: chat.id },
+        })).catch(() => {});
+      } catch (err) {
+        log.error(`Failed to import Gmail thread ${threadId}`, { error: String(err) });
+      }
+    }
+
+    // Small delay between batches to avoid Gmail rate limits
+    if (i + BATCH_SIZE < allThreadIds.length) {
+      await sleep(1);
+    }
+  }
+
+  log.info(`Gmail auto-import complete: ${importedCount}/${allThreadIds.length} threads imported`, { organizationId });
+}
+
+// ─── Gmail Watch Renewal Processor ───
+
+async function processGmailWatchRenewal(): Promise<void> {
+  const gmailPubSubTopic = process.env.GMAIL_PUBSUB_TOPIC;
+  if (!gmailPubSubTopic) {
+    log.info('GMAIL_PUBSUB_TOPIC not set, skipping watch renewal');
+    return;
+  }
+
+  const integrations = await prisma.integration.findMany({
+    where: { messenger: 'gmail', status: 'connected' },
+    select: { id: true, credentials: true, settings: true },
+  });
+
+  log.info(`Renewing Gmail watch for ${integrations.length} integration(s)`);
+
+  for (const integration of integrations) {
+    try {
+      const credentials = decryptCredentials<{
+        clientId: string;
+        clientSecret: string;
+        refreshToken: string;
+      }>(integration.credentials as string);
+
+      const { google } = await import('googleapis');
+      const oauth2Client = new google.auth.OAuth2(
+        credentials.clientId,
+        credentials.clientSecret,
+      );
+      oauth2Client.setCredentials({ refresh_token: credentials.refreshToken });
+
+      const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+
+      const watchResponse = await gmail.users.watch({
+        userId: 'me',
+        requestBody: {
+          topicName: gmailPubSubTopic,
+          labelIds: ['INBOX'],
+        },
+      });
+
+      const historyId = watchResponse.data.historyId;
+      if (historyId) {
+        const metadata = (integration.settings ?? {}) as Record<string, unknown>;
+        await prisma.integration.update({
+          where: { id: integration.id },
+          data: { settings: { ...metadata, lastHistoryId: historyId } },
+        });
+      }
+
+      log.info(`Gmail watch renewed for integration ${integration.id}`);
+    } catch (err) {
+      log.error(`Failed to renew Gmail watch for integration ${integration.id}`, { error: String(err) });
+    }
+  }
+}
+
 // ─── Worker Setup ───
 
 log.info('Worker service starting...');
@@ -742,11 +1015,16 @@ const worker = new Worker<BroadcastSendPayload>(
 
 // ─── Message Sync Worker ───
 
-const messageSyncWorker = new Worker<MessageSyncPayload>(
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const messageSyncWorker = new Worker<any>(
   'message-sync',
   async (job) => {
     if (job.name === 'sync:chat-history') {
-      await processChatHistorySync(job);
+      await processChatHistorySync(job as Job<MessageSyncPayload>);
+    } else if (job.name === 'gmail:auto-import') {
+      await processGmailAutoImport(job as Job<GmailAutoImportPayload>);
+    } else if (job.name === 'gmail:renew-watch') {
+      await processGmailWatchRenewal();
     } else {
       log.warn(`Unknown message-sync job name: ${job.name}`, { jobId: job.id });
     }
@@ -915,6 +1193,27 @@ async function recoverPendingChatSyncs(): Promise<void> {
   }
 }
 
+// ─── Gmail Watch Renewal Schedule ───
+// Renew Gmail Pub/Sub watches daily (they expire after 7 days)
+
+async function scheduleGmailWatchRenewal(): Promise<void> {
+  try {
+    const renewalQueue = new Queue('message-sync', { connection });
+    await renewalQueue.add(
+      'gmail:renew-watch',
+      {},
+      {
+        jobId: 'gmail-renew-watch-daily',
+        repeat: { every: 24 * 60 * 60 * 1000 }, // every 24 hours
+      },
+    );
+    await renewalQueue.close();
+    log.info('Gmail watch renewal scheduled (daily)');
+  } catch (err) {
+    log.error('Failed to schedule Gmail watch renewal', { error: String(err) });
+  }
+}
+
 // Run recovery after a short delay to ensure worker is fully ready
 setTimeout(() => {
   recoverOverdueScheduledBroadcasts().catch((err) => {
@@ -922,6 +1221,9 @@ setTimeout(() => {
   });
   recoverPendingChatSyncs().catch((err) => {
     log.error('Chat sync recovery error', { error: String(err) });
+  });
+  scheduleGmailWatchRenewal().catch((err) => {
+    log.error('Gmail watch schedule error', { error: String(err) });
   });
 }, 5000);
 

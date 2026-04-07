@@ -58,15 +58,7 @@ const MESSENGERS: Array<{
     textClass: 'text-messenger-wa-text',
     borderClass: 'border-[#25D366]/20',
   },
-  {
-    key: 'gmail',
-    name: 'Gmail',
-    description: 'Import email conversations',
-    dotColor: '#EA4335',
-    bgClass: 'bg-messenger-gm-bg',
-    textClass: 'text-messenger-gm-text',
-    borderClass: 'border-[#EA4335]/20',
-  },
+  // Gmail is excluded — emails are auto-imported after connecting via Settings
 ];
 
 // Mock data for development
