@@ -63,7 +63,7 @@ export default async function organizationRoutes(fastify: FastifyInstance): Prom
   // ─── GET /api/organizations ───
 
   fastify.get(
-    '/organizations',
+    '/',
     { preHandler: superadminPreHandlers },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const parsed = listOrgsQuerySchema.safeParse(request.query);
@@ -112,7 +112,7 @@ export default async function organizationRoutes(fastify: FastifyInstance): Prom
   // ─── POST /api/organizations ───
 
   fastify.post(
-    '/organizations',
+    '/',
     { preHandler: superadminPreHandlers },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const parsed = createOrgBodySchema.safeParse(request.body);
@@ -169,7 +169,7 @@ export default async function organizationRoutes(fastify: FastifyInstance): Prom
   // ─── PATCH /api/organizations/:id ───
 
   fastify.patch(
-    '/organizations/:id',
+    '/:id',
     { preHandler: superadminPreHandlers },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const paramsParsed = orgIdParamSchema.safeParse(request.params);
@@ -227,7 +227,7 @@ export default async function organizationRoutes(fastify: FastifyInstance): Prom
   // ─── GET /api/organizations/:id/stats ───
 
   fastify.get(
-    '/organizations/:id/stats',
+    '/:id/stats',
     { preHandler: superadminPreHandlers },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const paramsParsed = orgIdParamSchema.safeParse(request.params);

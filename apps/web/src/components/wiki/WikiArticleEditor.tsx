@@ -91,6 +91,7 @@ export function WikiArticleEditor({
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>(
     article?.tags?.map((t) => t.id) ?? [],
   );
+  const [showCategoryError, setShowCategoryError] = useState(false);
 
   const editor = useEditor({
     extensions: [
@@ -114,6 +115,11 @@ export function WikiArticleEditor({
 
   const handleSubmit = useCallback(
     (status: 'draft' | 'published') => {
+      if (!categoryId) {
+        setShowCategoryError(true);
+        return;
+      }
+      setShowCategoryError(false);
       const editorContent = editor?.getJSON() ?? { type: 'doc', content: [] };
       onSubmit({
         title,
@@ -193,22 +199,35 @@ export function WikiArticleEditor({
         {/* Meta row */}
         <div className="mt-6 flex flex-wrap items-center gap-4">
           {/* Category select */}
-          <select
-            value={categoryId}
-            onChange={(e) => setCategoryId(e.target.value)}
-            className={cn(
-              'rounded-lg border-[1.5px] border-[#e2e8f0] bg-white px-3 py-2 text-sm text-slate-700',
-              'focus:border-[#6366f1] focus:outline-none focus:ring-2 focus:ring-[#6366f1]/20',
+          <div>
+            <select
+              value={categoryId}
+              onChange={(e) => {
+                setCategoryId(e.target.value);
+                if (e.target.value) setShowCategoryError(false);
+              }}
+              className={cn(
+                'rounded-lg border-[1.5px] bg-white px-3 py-2 text-sm text-slate-700',
+                'focus:border-[#6366f1] focus:outline-none focus:ring-2 focus:ring-[#6366f1]/20',
+                showCategoryError ? 'border-red-400 ring-2 ring-red-100' : 'border-[#e2e8f0]',
+              )}
+            >
+              <option value="">Select category</option>
+              {flatCategories.map((cat) => (
+                <option key={cat.id} value={cat.id}>
+                  {'\u00A0\u00A0'.repeat(cat.depth)}
+                  {cat.name}
+                </option>
+              ))}
+            </select>
+            {showCategoryError && (
+              <p className="mt-1 text-xs text-red-500">
+                {flatCategories.length === 0
+                  ? 'Create a category first in the Wiki sidebar'
+                  : 'Please select a category'}
+              </p>
             )}
-          >
-            <option value="">Select category</option>
-            {flatCategories.map((cat) => (
-              <option key={cat.id} value={cat.id}>
-                {'\u00A0\u00A0'.repeat(cat.depth)}
-                {cat.name}
-              </option>
-            ))}
-          </select>
+          </div>
 
           {/* Type toggle */}
           <div className="flex overflow-hidden rounded-lg border border-[#e2e8f0]">

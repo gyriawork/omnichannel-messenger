@@ -77,6 +77,9 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
       }
 
       const where: Record<string, unknown> = { organizationId };
+      if (request.user.role === 'user') {
+        where.createdById = request.user.id;
+      }
       if (status) where.status = status;
       if (search) {
         where.name = { contains: search, mode: 'insensitive' };

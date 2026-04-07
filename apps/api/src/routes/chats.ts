@@ -223,13 +223,17 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
         return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
       }
 
-      // Look up active integration for this messenger + org
+      // Look up active integration for this messenger + org (scoped to user for non-admins)
+      const integrationWhere: Record<string, unknown> = {
+        messenger,
+        organizationId,
+        status: 'connected',
+      };
+      if (request.user.role === 'user') {
+        integrationWhere.userId = request.user.id;
+      }
       const integration = await prisma.integration.findFirst({
-        where: {
-          messenger,
-          organizationId,
-          status: 'connected',
-        },
+        where: integrationWhere,
       });
 
       if (integration) {

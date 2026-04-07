@@ -53,6 +53,7 @@ import {
 import EmojiPicker, { Theme, type EmojiClickData } from 'emoji-picker-react';
 import { useReactions } from '@/hooks/useReactions';
 import { useTemplates, useTemplateUse } from '@/hooks/useTemplates';
+import { useIntegrations } from '@/hooks/useIntegrations';
 
 import { ReactionsBubble } from './ReactionsBubble';
 import TypingIndicator from './TypingIndicator';
@@ -737,7 +738,7 @@ function SearchBar({
   );
 }
 
-function ComposeBar({ chatId }: { chatId: string }) {
+function ComposeBar({ chatId, messenger }: { chatId: string; messenger?: string }) {
   const [text, setText] = useState('');
   const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
   const [isUploading, setIsUploading] = useState(false);
@@ -757,6 +758,28 @@ function ComposeBar({ chatId }: { chatId: string }) {
   const setReplyingTo = useChatStore((s) => s.setReplyingTo);
   const { mutate: sendMessage, isPending } = useSendMessage();
   const { sendTyping } = useSocket();
+
+  // Check if user has a connected integration for this messenger
+  const { data: integrationsData } = useIntegrations();
+  const hasIntegration = useMemo(() => {
+    if (!messenger || !integrationsData?.integrations) return true;
+    return integrationsData.integrations.some(
+      (i) => i.messenger === messenger && i.status === 'connected',
+    );
+  }, [messenger, integrationsData]);
+
+  if (!hasIntegration) {
+    const messengerLabel = messenger ? messenger.charAt(0).toUpperCase() + messenger.slice(1) : 'this messenger';
+    return (
+      <div className="border-t border-slate-200 bg-slate-50 px-5 py-4 text-center">
+        <p className="text-sm text-slate-500">
+          Connect {messengerLabel} in{' '}
+          <a href="/settings" className="font-medium text-accent hover:text-accent-hover">Settings</a>
+          {' '}to send messages
+        </p>
+      </div>
+    );
+  }
 
   // Notify server when user is typing
   useEffect(() => {
@@ -1303,7 +1326,7 @@ export function ChatArea() {
       )}
       <MessageFeed chatId={activeChat.id} messenger={activeChat.messenger} />
       <TypingIndicator typingUsers={typingUsers} />
-      <ComposeBar chatId={activeChat.id} />
+      <ComposeBar chatId={activeChat.id} messenger={activeChat.messenger} />
     </div>
   );
 }

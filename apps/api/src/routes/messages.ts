@@ -67,7 +67,7 @@ async function verifyChat(
   chatId: string,
   organizationId: string | null,
   reply: FastifyReply,
-): Promise<{ id: string; organizationId: string; messenger: string; externalChatId: string; name: string } | null> {
+): Promise<{ id: string; organizationId: string; messenger: string; externalChatId: string; name: string; importedById: string | null } | null> {
   if (!organizationId) {
     sendError(reply, 'VALIDATION_ERROR', 'User is not associated with an organization', 400);
     return null;
@@ -75,7 +75,7 @@ async function verifyChat(
 
   const chat = await prisma.chat.findUnique({
     where: { id: chatId },
-    select: { id: true, organizationId: true, messenger: true, externalChatId: true, name: true },
+    select: { id: true, organizationId: true, messenger: true, externalChatId: true, name: true, importedById: true },
   });
 
   if (!chat) {
@@ -192,6 +192,11 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
       const chat = await verifyChat(chatId, request.user.organizationId, reply);
       if (!chat) return;
 
+      // User role can only send messages in their own chats
+      if (request.user.role === 'user' && chat.importedById !== request.user.id) {
+        return sendError(reply, 'AUTH_INSUFFICIENT_PERMISSIONS', 'You can only send messages in your own chats', 403);
+      }
+
       // Verify replyToMessageId exists in this chat
       if (replyToMessageId) {
         const replyTarget = await prisma.message.findFirst({
@@ -253,9 +258,14 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
           where: {
             messenger: chat.messenger,
             organizationId: request.user.organizationId!,
+            userId: request.user.id,
             status: 'connected',
           },
         });
+
+        if (!integration) {
+          return sendError(reply, 'AUTH_INSUFFICIENT_PERMISSIONS', `Connect ${chat.messenger} to send messages in this chat`, 403);
+        }
 
         if (integration && integration.credentials) {
           const creds = decryptCredentials(integration.credentials as string);

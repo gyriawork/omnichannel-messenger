@@ -173,14 +173,21 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
         return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
       }
 
-      const ck = cacheKey(organizationId, 'integrations');
+      const ck = request.user.role === 'user'
+        ? cacheKey(organizationId, 'integrations', `u:${request.user.id}`)
+        : cacheKey(organizationId, 'integrations');
       const cached = await cacheGet(ck);
       if (cached) {
         return reply.send(cached);
       }
 
+      const where: Record<string, unknown> = { organizationId };
+      if (request.user.role === 'user') {
+        where.userId = request.user.id;
+      }
+
       const integrations = await prisma.integration.findMany({
-        where: { organizationId },
+        where,
         orderBy: { createdAt: 'desc' },
       });
 

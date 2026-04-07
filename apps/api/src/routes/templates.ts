@@ -69,6 +69,9 @@ export default async function templateRoutes(fastify: FastifyInstance): Promise<
       const skip = (page - 1) * limit;
 
       const where: Record<string, unknown> = { organizationId };
+      if (request.user.role === 'user') {
+        where.createdById = request.user.id;
+      }
       if (search) {
         where.OR = [
           { name: { contains: search, mode: 'insensitive' } },

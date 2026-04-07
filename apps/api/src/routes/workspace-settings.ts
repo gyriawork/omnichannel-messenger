@@ -32,7 +32,7 @@ export default async function workspaceSettingsRoutes(fastify: FastifyInstance):
 
   fastify.get(
     '/settings/workspace',
-    { preHandler: authPreHandlers },
+    { preHandler: adminPreHandlers },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const organizationId = getOrgId(request);
       if (!organizationId) {
