@@ -925,6 +925,19 @@ async function processGmailAutoImport(job: Job<GmailAutoImportPayload>): Promise
     }
   }
 
+  // Invalidate chat list cache so frontend sees new chats immediately
+  if (importedCount > 0) {
+    let cursor = '0';
+    const pattern = `cache:${organizationId}:chats:*`;
+    do {
+      const [nextCursor, keys] = await connection.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
+      cursor = nextCursor;
+      if (keys.length > 0) {
+        await connection.del(...keys);
+      }
+    } while (cursor !== '0');
+  }
+
   log.info(`Gmail auto-import complete: ${importedCount}/${allThreadIds.length} threads imported`, { organizationId });
 }
 
