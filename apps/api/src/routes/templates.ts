@@ -60,7 +60,8 @@ export default async function templateRoutes(fastify: FastifyInstance): Promise<
 
       const { search, page, limit } = parsed.data;
 
-      const ck = cacheKey(organizationId, 'templates', `p${page}`, `l${limit}`, search ?? '');
+      const userScope = request.user.role === 'user' ? `u:${request.user.id}` : 'all';
+      const ck = cacheKey(organizationId, 'templates', userScope, `p${page}`, `l${limit}`, search ?? '');
       const cached = await cacheGet(ck);
       if (cached) {
         return reply.send(cached);

@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useBroadcastAnalytics } from '@/hooks/useBroadcasts';
+import { RequireOrgContext } from '@/components/layout/RequireOrgContext';
 
 const periods = [
   { label: '7 days', value: '7d' as const },
@@ -59,6 +60,7 @@ export default function BroadcastAnalyticsPage() {
     : [];
 
   return (
+    <RequireOrgContext>
     <div className="mx-auto max-w-4xl px-6 py-8">
       {/* Header */}
       <button
@@ -222,6 +224,7 @@ export default function BroadcastAnalyticsPage() {
         </>
       )}
     </div>
+    </RequireOrgContext>
   );
 }
 

@@ -176,11 +176,15 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
       since.setDate(since.getDate() - days);
 
       // Common where clause for Prisma groupBy
+      const broadcastFilter: Record<string, unknown> = {
+        organizationId,
+        sentAt: { gte: since },
+      };
+      if (request.user.role === 'user') {
+        broadcastFilter.createdById = request.user.id;
+      }
       const broadcastChatWhere: Record<string, unknown> = {
-        broadcast: {
-          organizationId,
-          sentAt: { gte: since },
-        },
+        broadcast: broadcastFilter,
       };
 
       if (messenger) {
@@ -190,6 +194,10 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
       // Build conditional SQL fragment for messenger filter
       const messengerCondition = messenger
         ? Prisma.sql`AND c."messenger" = ${messenger}`
+        : Prisma.empty;
+
+      const userCondition = request.user.role === 'user'
+        ? Prisma.sql`AND b."createdById" = ${request.user.id}`
         : Prisma.empty;
 
       // Use database-level aggregation instead of loading all rows into memory
@@ -210,6 +218,7 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
             JOIN "Broadcast" b ON bc."broadcastId" = b."id"
             WHERE b."organizationId" = ${organizationId}
               AND b."sentAt" >= ${since}
+              ${userCondition}
               ${messengerCondition}
             GROUP BY c."messenger", bc."status"
           `,
@@ -225,6 +234,7 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
             WHERE b."organizationId" = ${organizationId}
               AND b."sentAt" >= ${since}
               AND bc."sentAt" IS NOT NULL
+              ${userCondition}
               ${messengerCondition}
             GROUP BY bc."sentAt"::date, bc."status"
             ORDER BY date
@@ -303,8 +313,13 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
         return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
       }
 
+      const where: Record<string, unknown> = { id, organizationId };
+      if (request.user.role === 'user') {
+        where.createdById = request.user.id;
+      }
+
       const broadcast = await prisma.broadcast.findFirst({
-        where: { id, organizationId },
+        where,
         include: {
           createdBy: { select: { id: true, name: true, email: true } },
           chats: {

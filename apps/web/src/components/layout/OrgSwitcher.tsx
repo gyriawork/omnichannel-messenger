@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect } from 'react';
 import { Building2, ChevronDown, X } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useOrganizations } from '@/hooks/useOrganizations';
@@ -15,6 +16,14 @@ export function OrgSwitcher({ collapsed }: { collapsed: boolean }) {
   const clearOrg = useSuperadminStore((s) => s.clearOrg);
 
   const organizations = Array.isArray(orgs) ? orgs : [];
+
+  // Clear selection if the selected org was deleted
+  useEffect(() => {
+    if (selectedOrgId && organizations.length > 0 && !organizations.some((o) => o.id === selectedOrgId)) {
+      clearOrg();
+      queryClient.resetQueries();
+    }
+  }, [selectedOrgId, organizations, clearOrg, queryClient]);
 
   const handleChange = (orgId: string) => {
     if (!orgId) {

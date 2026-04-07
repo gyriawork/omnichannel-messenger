@@ -67,7 +67,7 @@ async function verifyChat(
   chatId: string,
   organizationId: string | null,
   reply: FastifyReply,
-): Promise<{ id: string; organizationId: string; messenger: string; externalChatId: string; name: string; importedById: string | null } | null> {
+): Promise<{ id: string; organizationId: string; messenger: string; externalChatId: string; name: string; importedById: string | null; ownerId: string | null } | null> {
   if (!organizationId) {
     sendError(reply, 'VALIDATION_ERROR', 'User is not associated with an organization', 400);
     return null;
@@ -75,7 +75,7 @@ async function verifyChat(
 
   const chat = await prisma.chat.findUnique({
     where: { id: chatId },
-    select: { id: true, organizationId: true, messenger: true, externalChatId: true, name: true, importedById: true },
+    select: { id: true, organizationId: true, messenger: true, externalChatId: true, name: true, importedById: true, ownerId: true },
   });
 
   if (!chat) {
@@ -192,8 +192,8 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
       const chat = await verifyChat(chatId, request.user.organizationId, reply);
       if (!chat) return;
 
-      // User role can only send messages in their own chats
-      if (request.user.role === 'user' && chat.importedById !== request.user.id) {
+      // User role can only send messages in chats they imported or own
+      if (request.user.role === 'user' && chat.importedById !== request.user.id && chat.ownerId !== request.user.id) {
         return sendError(reply, 'AUTH_INSUFFICIENT_PERMISSIONS', 'You can only send messages in your own chats', 403);
       }
 
@@ -207,6 +207,20 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
         if (!replyTarget) {
           return sendError(reply, 'RESOURCE_NOT_FOUND', 'Reply target message not found in this chat', 404);
         }
+      }
+
+      // Check integration BEFORE creating the message to avoid phantom records
+      const integration = await prisma.integration.findFirst({
+        where: {
+          messenger: chat.messenger,
+          organizationId: request.user.organizationId!,
+          userId: request.user.id,
+          status: 'connected',
+        },
+      });
+
+      if (!integration) {
+        return sendError(reply, 'MESSENGER_NOT_CONNECTED', `Connect ${chat.messenger} to send messages in this chat`, 403);
       }
 
       // Create message + update chat in a transaction
@@ -254,20 +268,7 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
       let deliveryStatus = 'sent';
       let externalMessageId: string | null = null;
       try {
-        const integration = await prisma.integration.findFirst({
-          where: {
-            messenger: chat.messenger,
-            organizationId: request.user.organizationId!,
-            userId: request.user.id,
-            status: 'connected',
-          },
-        });
-
-        if (!integration) {
-          return sendError(reply, 'AUTH_INSUFFICIENT_PERMISSIONS', `Connect ${chat.messenger} to send messages in this chat`, 403);
-        }
-
-        if (integration && integration.credentials) {
+        if (integration.credentials) {
           const creds = decryptCredentials(integration.credentials as string);
           const adapter = await createAdapter(chat.messenger, creds);
           try {
@@ -400,7 +401,7 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
           });
           if (chat) {
             const integration = await prisma.integration.findFirst({
-              where: { messenger: chat.messenger, organizationId: chat.organizationId, status: 'connected' },
+              where: { messenger: chat.messenger, organizationId: chat.organizationId, userId: request.user.id, status: 'connected' },
             });
             if (integration?.credentials) {
               const creds = decryptCredentials(integration.credentials as string);
@@ -480,7 +481,7 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
           });
           if (chat) {
             const integration = await prisma.integration.findFirst({
-              where: { messenger: chat.messenger, organizationId: chat.organizationId, status: 'connected' },
+              where: { messenger: chat.messenger, organizationId: chat.organizationId, userId: request.user.id, status: 'connected' },
             });
             if (integration?.credentials) {
               const creds = decryptCredentials(integration.credentials as string);
@@ -728,14 +729,10 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
 
       let syncWarning: string | undefined;
 
-      console.log(`[Reaction sync] messageId=${messageId} externalMessageId=${msg?.externalMessageId ?? 'NULL'} messenger=${msg?.chat?.messenger ?? 'NULL'} orgId=${msg?.chat?.organizationId ?? 'NULL'}`);
-
-      if (msg?.externalMessageId && msg.chat) {
+if (msg?.externalMessageId && msg.chat) {
         const integration = await prisma.integration.findFirst({
-          where: { messenger: msg.chat.messenger, organizationId: msg.chat.organizationId, status: 'connected' },
+          where: { messenger: msg.chat.messenger, organizationId: msg.chat.organizationId, userId: request.user.id, status: 'connected' },
         });
-
-        console.log(`[Reaction sync] integration found=${!!integration} status=${integration?.status ?? 'N/A'} hasCreds=${!!integration?.credentials}`);
 
         if (integration?.credentials) {
           const creds = decryptCredentials(integration.credentials as string);
@@ -783,11 +780,6 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
       return reply.status(201).send({
         ...reaction,
         ...(syncWarning ? { syncWarning } : {}),
-        _debug: {
-          externalMessageId: msg?.externalMessageId ?? null,
-          messenger: msg?.chat?.messenger ?? null,
-          hasIntegration: !!(msg?.externalMessageId && msg.chat),
-        },
       });
     },
   );
@@ -883,7 +875,7 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
 
       if (msg?.externalMessageId && msg.chat) {
         const integration = await prisma.integration.findFirst({
-          where: { messenger: msg.chat.messenger, organizationId: msg.chat.organizationId, status: 'connected' },
+          where: { messenger: msg.chat.messenger, organizationId: msg.chat.organizationId, userId: request.user.id, status: 'connected' },
         });
 
         if (integration?.credentials) {

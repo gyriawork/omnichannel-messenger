@@ -4,6 +4,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { WikiSidebar } from '@/components/wiki/WikiSidebar';
 import { WikiArticleView } from '@/components/wiki/WikiArticleView';
 import { useWikiArticle, useDeleteWikiArticle } from '@/hooks/useWiki';
+import { RequireOrgContext } from '@/components/layout/RequireOrgContext';
 
 export default function WikiArticlePage() {
   const params = useParams();
@@ -22,6 +23,7 @@ export default function WikiArticlePage() {
   };
 
   return (
+    <RequireOrgContext>
     <div className="flex h-full">
       <WikiSidebar
         activeCategoryId={article?.category?.id}
@@ -41,5 +43,6 @@ export default function WikiArticlePage() {
         )}
       </div>
     </div>
+    </RequireOrgContext>
   );
 }

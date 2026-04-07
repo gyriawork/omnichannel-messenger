@@ -299,6 +299,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
       try { await adapter.disconnect(); } catch (e) { request.log.warn(e, 'adapter disconnect error'); }
 
       await cacheInvalidate(cacheKey(organizationId, 'integrations'));
+      await cacheInvalidate(cacheKey(organizationId, 'integrations', `u:${request.user.id}`));
 
       // Start persistent listener for Telegram
       if (messenger === 'telegram') {
@@ -364,6 +365,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
       });
 
       await cacheInvalidate(cacheKey(organizationId, 'integrations'));
+      await cacheInvalidate(cacheKey(organizationId, 'integrations', `u:${request.user.id}`));
 
       return reply.send({
         integration: sanitizeIntegration(updated),
@@ -454,6 +456,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
       try { await adapter.disconnect(); } catch (e) { request.log.warn(e, 'adapter disconnect error'); }
 
       await cacheInvalidate(cacheKey(organizationId, 'integrations'));
+      await cacheInvalidate(cacheKey(organizationId, 'integrations', `u:${request.user.id}`));
 
       // Start persistent listener for Telegram
       if (messenger === 'telegram') {
@@ -906,6 +909,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
           });
 
           await cacheInvalidate(cacheKey(organizationId, 'integrations'));
+      await cacheInvalidate(cacheKey(organizationId, 'integrations', `u:${request.user.id}`));
 
           return reply.send({ status: 'connected' });
         }

@@ -8,9 +8,16 @@ function injectOrgId(endpoint: string): string {
   if (typeof window === 'undefined') return endpoint;
   const orgId = useSuperadminStore.getState().selectedOrgId;
   if (!orgId) return endpoint;
+  // Only superadmins should inject org context — defense in depth
+  try {
+    const userStr = localStorage.getItem('user');
+    if (!userStr) return endpoint;
+    const user = JSON.parse(userStr);
+    if (user.role !== 'superadmin') return endpoint;
+  } catch { return endpoint; }
   if (ORG_PARAM_EXCLUDE.some((prefix) => endpoint.startsWith(prefix))) return endpoint;
   const separator = endpoint.includes('?') ? '&' : '?';
-  return `${endpoint}${separator}organizationId=${orgId}`;
+  return `${endpoint}${separator}organizationId=${encodeURIComponent(orgId)}`;
 }
 
 type RequestOptions = Omit<RequestInit, 'body'> & {

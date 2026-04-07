@@ -3,6 +3,7 @@
 import { useParams, useRouter } from 'next/navigation';
 import { WikiArticleEditor } from '@/components/wiki/WikiArticleEditor';
 import { useWikiArticle, useUpdateWikiArticle, type UpdateArticleInput } from '@/hooks/useWiki';
+import { RequireOrgContext } from '@/components/layout/RequireOrgContext';
 
 export default function EditWikiArticlePage() {
   const params = useParams();
@@ -29,6 +30,7 @@ export default function EditWikiArticlePage() {
   }
 
   return (
+    <RequireOrgContext>
     <div className="h-full overflow-auto">
       <WikiArticleEditor
         article={article}
@@ -45,5 +47,6 @@ export default function EditWikiArticlePage() {
         isSubmitting={updateArticle.isPending}
       />
     </div>
+    </RequireOrgContext>
   );
 }
