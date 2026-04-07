@@ -379,14 +379,25 @@ export default async function wikiRoutes(fastify: FastifyInstance): Promise<void
       const { categoryId, type, status, search, tagId, page, limit } = parsed.data;
 
       const where: Record<string, unknown> = { organizationId, deletedAt: null };
+
+      // User role: only own articles + published by others
+      if (request.user.role === 'user') {
+        where.OR = [
+          { authorId: request.user.id },
+          { status: 'published' },
+        ];
+      }
+
       if (categoryId) where.categoryId = categoryId;
       if (type) where.type = type;
       if (status) where.status = status;
       if (search) {
-        where.OR = [
-          { title: { contains: search, mode: 'insensitive' } },
-          { caseProblem: { contains: search, mode: 'insensitive' } },
-          { caseSolution: { contains: search, mode: 'insensitive' } },
+        where.AND = [
+          { OR: [
+            { title: { contains: search, mode: 'insensitive' } },
+            { caseProblem: { contains: search, mode: 'insensitive' } },
+            { caseSolution: { contains: search, mode: 'insensitive' } },
+          ]},
         ];
       }
       if (tagId) {
@@ -443,8 +454,17 @@ export default async function wikiRoutes(fastify: FastifyInstance): Promise<void
 
       const { slug } = paramsParsed.data;
 
+      const articleWhere: Record<string, unknown> = { slug, organizationId, deletedAt: null };
+      // User role: can only view own articles or published
+      if (request.user.role === 'user') {
+        articleWhere.OR = [
+          { authorId: request.user.id },
+          { status: 'published' },
+        ];
+      }
+
       const article = await prisma.wikiArticle.findFirst({
-        where: { slug, organizationId, deletedAt: null },
+        where: articleWhere,
         include: {
           author: { select: { id: true, name: true } },
           updatedBy: { select: { id: true, name: true } },
