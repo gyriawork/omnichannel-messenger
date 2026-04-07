@@ -21,7 +21,7 @@ const ALL_TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
 
 const oauthErrorMessages: Record<string, string> = {
   oauth_not_configured: 'OAuth is not configured on the server. Please use manual credential input.',
-  no_organization: 'No organization found. Please ensure you belong to an organization.',
+  no_organization: 'No organization selected. Please select an organization in the sidebar first.',
   missing_params: 'OAuth callback received incomplete data. Please try again.',
   invalid_or_expired_state: 'OAuth session expired. Please try connecting again.',
   corrupted_state: 'OAuth session was corrupted. Please try connecting again.',

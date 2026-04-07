@@ -22,6 +22,7 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { MessengerIcon } from '@/components/ui/MessengerIcon';
 import { getAccessToken } from '@/lib/api';
+import { useSuperadminStore } from '@/stores/superadmin';
 import {
   useIntegrations,
   useConnectIntegration,
@@ -394,7 +395,12 @@ function SlackConnectForm({
   const handleOAuthConnect = async () => {
     const token = await getAccessToken();
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-    window.location.href = `${apiUrl}/api/oauth/slack/authorize?token=${encodeURIComponent(token ?? '')}`;
+    let url = `${apiUrl}/api/oauth/slack/authorize?token=${encodeURIComponent(token ?? '')}`;
+    const orgId = useSuperadminStore.getState().selectedOrgId;
+    if (orgId) {
+      url += `&organizationId=${encodeURIComponent(orgId)}`;
+    }
+    window.location.href = url;
   };
 
   if (oauthLoading) {
@@ -603,7 +609,13 @@ function GmailConnectForm({}: {
   const handleOAuthConnect = async () => {
     const token = await getAccessToken();
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-    window.location.href = `${apiUrl}/api/oauth/gmail/authorize?token=${encodeURIComponent(token ?? '')}&importCount=${importCount}`;
+    let url = `${apiUrl}/api/oauth/gmail/authorize?token=${encodeURIComponent(token ?? '')}&importCount=${importCount}`;
+    // Superadmin: inject selected org context (window.location.href bypasses api.ts interceptor)
+    const orgId = useSuperadminStore.getState().selectedOrgId;
+    if (orgId) {
+      url += `&organizationId=${encodeURIComponent(orgId)}`;
+    }
+    window.location.href = url;
   };
 
   if (oauthLoading) {
