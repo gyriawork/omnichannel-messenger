@@ -599,34 +599,7 @@ export function WorkspaceTab() {
               </select>
             </div>
 
-            {/* Chat Visibility Toggle */}
-            <div className="flex items-center justify-between rounded-lg border border-slate-100 p-4">
-              <div>
-                <p className="text-sm font-medium text-slate-700">
-                  Chat Visibility
-                </p>
-                <p className="text-xs text-slate-500">
-                  Allow all workspace members to see all imported chats
-                </p>
-              </div>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={chatVisibility}
-                onClick={() => setChatVisibility(!chatVisibility)}
-                className={cn(
-                  'relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full transition-colors',
-                  chatVisibility ? 'bg-accent' : 'bg-slate-200',
-                )}
-              >
-                <span
-                  className={cn(
-                    'pointer-events-none inline-block h-5 w-5 translate-y-0.5 rounded-full bg-white shadow-sm transition-transform',
-                    chatVisibility ? 'translate-x-[22px]' : 'translate-x-0.5',
-                  )}
-                />
-              </button>
-            </div>
+            {/* Chat Visibility Toggle — hidden for now */}
           </div>
 
           <div className="mt-6 flex justify-end">

@@ -33,17 +33,20 @@ interface ActivityResponse {
   pagination: { page: number; limit: number; total: number; totalPages: number };
 }
 
-export function useDashboardStats() {
+export function useDashboardStats(scope?: 'org' | 'my') {
+  const scopeParam = scope === 'my' ? '&scope=my' : '';
+  const scopeQuery = scope === 'my' ? '?scope=my' : '';
+
   return useQuery({
-    queryKey: ['dashboard-stats'],
+    queryKey: ['dashboard-stats', scope ?? 'default'],
     queryFn: async (): Promise<DashboardStats> => {
       const [chatsData, broadcastsData, integrationsData, analyticsData, activityData] =
         await Promise.allSettled([
-          api.get<ChatsResponse>('/api/chats'),
+          api.get<ChatsResponse>(`/api/chats${scopeQuery}`),
           api.get<BroadcastsResponse>('/api/broadcasts'),
           api.get<IntegrationsResponse>('/api/integrations'),
-          api.get<AnalyticsResponse>('/api/broadcasts/analytics?period=30d'),
-          api.get<ActivityResponse>('/api/activity?limit=10'),
+          api.get<AnalyticsResponse>(`/api/broadcasts/analytics?period=30d${scopeParam}`),
+          api.get<ActivityResponse>(`/api/activity?limit=10${scopeParam}`),
         ]);
 
       const chats = chatsData.status === 'fulfilled' ? chatsData.value : { chats: [], total: 0 };

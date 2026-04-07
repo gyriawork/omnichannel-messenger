@@ -20,6 +20,7 @@ const listChatsQuerySchema = z.object({
   ownerId: z.string().uuid().optional(),
   search: z.string().min(1).max(200).optional(),
   tagId: z.string().uuid().optional(),
+  scope: z.enum(['org', 'my']).optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });
@@ -98,7 +99,7 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
         return sendError(reply, 'VALIDATION_ERROR', parsed.error.issues.map((i) => i.message).join('; '), 422);
       }
 
-      const { messenger, status, ownerId, search, tagId, page, limit } = parsed.data;
+      const { messenger, status, ownerId, search, tagId, scope, page, limit } = parsed.data;
 
       const organizationId = getOrgId(request);
       if (!organizationId) {
@@ -117,6 +118,11 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
       }
 
       const where: Record<string, unknown> = { organizationId, deletedAt: null };
+
+      // User role: only see own imported chats; Admin with scope=my: also only own
+      if (request.user.role === 'user' || scope === 'my') {
+        where.importedById = request.user.id;
+      }
 
       if (messenger) where.messenger = messenger;
       if (status) where.status = status;

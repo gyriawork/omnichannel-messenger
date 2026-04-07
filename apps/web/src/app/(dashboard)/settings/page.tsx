@@ -9,10 +9,11 @@ import { IntegrationsTab } from '@/components/settings/IntegrationsTab';
 import { WorkspaceTab } from '@/components/settings/WorkspaceTab';
 import { ProfileTab } from '@/components/settings/ProfileTab';
 import { useQueryClient } from '@tanstack/react-query';
+import { useAuthStore } from '@/stores/auth';
 
 type Tab = 'integrations' | 'workspace' | 'profile';
 
-const tabs: { id: Tab; label: string; icon: React.ElementType }[] = [
+const ALL_TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: 'integrations', label: 'Integrations', icon: Settings },
   { id: 'workspace', label: 'Workspace', icon: Building2 },
   { id: 'profile', label: 'Profile', icon: User },
@@ -35,6 +36,12 @@ export default function SettingsPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const queryClient = useQueryClient();
+  const user = useAuthStore((s) => s.user);
+
+  // Hide Workspace tab for regular users
+  const tabs = user?.role === 'user'
+    ? ALL_TABS.filter((t) => t.id !== 'workspace')
+    : ALL_TABS;
 
   // Handle OAuth callback query parameters
   useEffect(() => {

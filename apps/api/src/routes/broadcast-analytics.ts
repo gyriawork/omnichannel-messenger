@@ -7,6 +7,7 @@ const analyticsQuerySchema = z.object({
   period: z.enum(['week', 'month', 'quarter']).optional().default('month'),
   messenger: z.enum(['telegram', 'slack', 'whatsapp', 'gmail']).optional(),
   createdBy: z.string().uuid().optional(),
+  scope: z.enum(['org', 'my']).optional(),
 });
 
 function getDateFilter(period: string): { gte: Date } {
@@ -33,7 +34,7 @@ export default async function broadcastAnalyticsRoutes(fastify: FastifyInstance)
           error: { code: 'VALIDATION_ERROR', message: parsed.error.issues[0].message, statusCode: 422 },
         });
       }
-      const { period, messenger, createdBy } = parsed.data;
+      const { period, messenger, createdBy, scope } = parsed.data;
 
       const orgId = request.user.organizationId;
       if (!orgId) {
@@ -50,8 +51,8 @@ export default async function broadcastAnalyticsRoutes(fastify: FastifyInstance)
       };
       if (messenger) where.messenger = messenger;
       if (createdBy) where.createdById = createdBy;
-      // User role: only own broadcasts
-      if (request.user.role === 'user') where.createdById = request.user.id;
+      // User role: only own broadcasts; Admin with scope=my: also only own
+      if (request.user.role === 'user' || scope === 'my') where.createdById = request.user.id;
 
       const broadcasts = await prisma.broadcast.findMany({
         where,

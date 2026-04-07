@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   MessageSquare,
@@ -12,6 +13,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useDashboardStats } from '@/hooks/useDashboard';
+import { useAuthStore } from '@/stores/auth';
 import type { ActivityCategory } from '@/types/activity';
 import { MessengerIcon } from '@/components/ui/MessengerIcon';
 
@@ -46,7 +48,13 @@ const MESSENGER_CONFIG = {
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { data: stats, isLoading } = useDashboardStats();
+  const user = useAuthStore((s) => s.user);
+  const isAdmin = user?.role === 'admin' || user?.role === 'superadmin';
+  const [dashboardScope, setDashboardScope] = useState<'org' | 'my'>(isAdmin ? 'org' : 'my');
+
+  // User always gets 'my' scope; Admin can switch between 'org' and 'my'
+  const scope = isAdmin ? dashboardScope : 'my';
+  const { data: stats, isLoading } = useDashboardStats(scope);
 
   if (isLoading) {
     return (
@@ -60,10 +68,40 @@ export default function DashboardPage() {
     <div className="mx-auto max-w-5xl px-4 py-6 md:px-6 md:py-8">
       {/* Header */}
       <div className="mb-8">
-        <h1 className="text-2xl font-semibold text-slate-900">Dashboard</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Overview of your messaging workspace
-        </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold text-slate-900">Dashboard</h1>
+            <p className="mt-1 text-sm text-slate-500">
+              {scope === 'my' ? 'Your personal stats' : 'Overview of your messaging workspace'}
+            </p>
+          </div>
+          {isAdmin && (
+            <div className="flex rounded-lg border border-slate-200 bg-slate-50 p-0.5">
+              <button
+                onClick={() => setDashboardScope('org')}
+                className={cn(
+                  'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+                  dashboardScope === 'org'
+                    ? 'bg-white text-slate-900 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-700',
+                )}
+              >
+                Organization
+              </button>
+              <button
+                onClick={() => setDashboardScope('my')}
+                className={cn(
+                  'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+                  dashboardScope === 'my'
+                    ? 'bg-white text-slate-900 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-700',
+                )}
+              >
+                My Stats
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Metric cards */}

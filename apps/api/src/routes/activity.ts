@@ -9,6 +9,7 @@ import { getOrgId } from '../middleware/rbac.js';
 const listQuerySchema = z.object({
   category: z.string().optional(),
   userId: z.string().uuid().optional(),
+  scope: z.enum(['org', 'my']).optional(),
   startDate: z.string().datetime({ offset: true }).optional(),
   endDate: z.string().datetime({ offset: true }).optional(),
   page: z.coerce.number().int().min(1).default(1),
@@ -44,12 +45,19 @@ export default async function activityRoutes(fastify: FastifyInstance): Promise<
         return sendError(reply, 'VALIDATION_ERROR', parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '), 422);
       }
 
-      const { category, userId, startDate, endDate, page, limit } = parsed.data;
+      const { category, userId, scope, startDate, endDate, page, limit } = parsed.data;
       const skip = (page - 1) * limit;
 
       const where: Record<string, unknown> = { organizationId };
+
+      // User role: only see own activity; Admin with scope=my: also only own
+      if (request.user.role === 'user' || scope === 'my') {
+        where.userId = request.user.id;
+      } else if (userId) {
+        where.userId = userId;
+      }
+
       if (category) where.category = category;
-      if (userId) where.userId = userId;
 
       if (startDate || endDate) {
         const createdAt: Record<string, unknown> = {};
