@@ -26,6 +26,9 @@ import {
 import { AntibanSettings } from '@/components/broadcast/AntibanSettings';
 import type { BroadcastStatus } from '@/types/broadcast';
 import { RequireOrgContext } from '@/components/layout/RequireOrgContext';
+import { Skeleton } from '@/components/ui/Skeleton';
+import { EmptyState as EmptyStateUI } from '@/components/ui/EmptyState';
+import { Megaphone } from 'lucide-react';
 
 const statusTabs: Array<{ label: string; value: BroadcastStatus | null }> = [
   { label: 'All', value: null },
@@ -192,11 +195,45 @@ export default function BroadcastPage() {
 
           {/* Broadcast list */}
           {isLoading ? (
-            <div className="flex items-center justify-center py-20">
-              <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+            <div className="space-y-3">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="rounded-lg bg-white p-4 shadow-xs"
+                >
+                  <div className="flex items-center gap-2">
+                    <Skeleton className="h-4 w-48" />
+                    <Skeleton className="h-5 w-14 rounded-full" />
+                  </div>
+                  <Skeleton className="mt-2 h-3 w-full" />
+                  <Skeleton className="mt-1.5 h-3 w-4/5" />
+                  <div className="mt-3 flex items-center gap-4">
+                    <Skeleton className="h-2.5 w-20" />
+                    <Skeleton className="h-2.5 w-16" />
+                    <Skeleton className="h-2.5 w-24" />
+                  </div>
+                </div>
+              ))}
             </div>
           ) : broadcasts.length === 0 ? (
-            <EmptyState status={activeTab} />
+            activeTab === null ? (
+              <EmptyStateUI
+                icon={<Megaphone className="h-12 w-12" />}
+                title="Рассылок пока нет"
+                description="Создайте первую рассылку, чтобы отправлять сообщения сразу в несколько чатов."
+                action={
+                  <button
+                    onClick={() => router.push('/broadcast/new')}
+                    className="flex items-center gap-2 rounded bg-accent px-4 py-2 text-sm font-medium text-white shadow-accent-sm transition-colors hover:bg-accent-hover"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Новая рассылка
+                  </button>
+                }
+              />
+            ) : (
+              <EmptyState status={activeTab} />
+            )
           ) : (
             <div className="space-y-3">
               {broadcasts.map((broadcast) => {

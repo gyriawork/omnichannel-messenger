@@ -14,6 +14,9 @@ import { cn } from '@/lib/utils';
 import { useActivity } from '@/hooks/useActivity';
 import type { ActivityCategory, ActivityFilters } from '@/types/activity';
 import { RequireOrgContext } from '@/components/layout/RequireOrgContext';
+import { Skeleton } from '@/components/ui/Skeleton';
+import { EmptyState as EmptyStateUI } from '@/components/ui/EmptyState';
+import { History } from 'lucide-react';
 
 const CATEGORIES: Array<{ value: ActivityCategory | null; label: string }> = [
   { value: null, label: 'All Categories' },
@@ -169,11 +172,35 @@ export default function ActivityPage() {
 
       {/* Activity list */}
       {isLoading && entries.length === 0 ? (
-        <div className="flex items-center justify-center py-20">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+        <div className="rounded-xl bg-white shadow-xs">
+          {Array.from({ length: 10 }).map((_, i) => (
+            <div
+              key={i}
+              className={cn(
+                'flex items-start gap-4 px-5 py-4',
+                i > 0 && 'border-t border-slate-50',
+              )}
+            >
+              <Skeleton className="mt-1.5 h-2.5 w-2.5 rounded-full" />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-start justify-between gap-3">
+                  <Skeleton className="h-3.5 w-2/3" />
+                  <Skeleton className="h-2.5 w-14" />
+                </div>
+                <div className="mt-2 flex items-center gap-2">
+                  <Skeleton className="h-4 w-16 rounded-full" />
+                  <Skeleton className="h-2.5 w-24" />
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       ) : entries.length === 0 ? (
-        <EmptyState />
+        <EmptyStateUI
+          icon={<History className="h-12 w-12" />}
+          title="Истории действий пока нет"
+          description="Записи будут появляться здесь по мере выполнения действий в вашем рабочем пространстве."
+        />
       ) : (
         <>
           <div className="rounded-xl bg-white shadow-xs">
@@ -261,21 +288,6 @@ export default function ActivityPage() {
       )}
     </div>
     </RequireOrgContext>
-  );
-}
-
-function EmptyState() {
-  return (
-    <div className="flex flex-col items-center justify-center py-20 text-center">
-      <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-slate-100">
-        <Clock className="h-7 w-7 text-slate-300" />
-      </div>
-      <h3 className="text-sm font-semibold text-slate-700">No activity found</h3>
-      <p className="mt-1 max-w-xs text-sm text-slate-400">
-        Activity entries will appear here as actions are performed in your
-        workspace.
-      </p>
-    </div>
   );
 }
 

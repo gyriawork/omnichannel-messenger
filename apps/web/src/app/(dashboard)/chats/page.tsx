@@ -26,6 +26,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { ImportChatsModal } from '@/components/messenger/ImportChatsModal';
 import { ChatAvatar } from '@/components/ui/ChatAvatar';
+import { Skeleton } from '@/components/ui/Skeleton';
+import { EmptyState } from '@/components/ui/EmptyState';
 import type { Chat, MessengerType } from '@/types/chat';
 import { RequireOrgContext } from '@/components/layout/RequireOrgContext';
 import { groupGmailChats, isChatGroup, type ChatRow, type ChatGroup } from '@/lib/chat-grouping';
@@ -647,6 +649,37 @@ export default function ChatsPage() {
 
       {/* Mobile card list */}
       <div className="flex flex-col gap-2 md:hidden">
+        {isLoading &&
+          Array.from({ length: 6 }).map((_, i) => (
+            <div
+              key={`sk-${i}`}
+              className="rounded-xl border border-slate-200 bg-white p-3"
+            >
+              <div className="flex items-center gap-3">
+                <Skeleton className="h-2 w-2 rounded-full" />
+                <Skeleton className="h-3.5 flex-1" />
+                <Skeleton className="h-2.5 w-12" />
+              </div>
+              <Skeleton className="mt-2 ml-5 h-2.5 w-3/4" />
+            </div>
+          ))}
+        {!isLoading && sorted.length === 0 && (
+          <EmptyState
+            icon={<MessageSquare className="h-10 w-10" />}
+            title="Чатов пока нет"
+            description="Импортируйте чаты, чтобы начать работу."
+            compact
+            action={
+              <button
+                onClick={() => setShowImport(true)}
+                className="inline-flex items-center gap-2 rounded bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover"
+              >
+                <Plus className="h-4 w-4" />
+                Импортировать чаты
+              </button>
+            }
+          />
+        )}
         {sorted.map((row) => {
           if (isChatGroup(row)) {
             const cfg = messengerConfig.gmail;
@@ -707,24 +740,47 @@ export default function ChatsPage() {
       {/* Table */}
       <div className="hidden overflow-hidden rounded-lg bg-white shadow-xs md:block">
         {isLoading ? (
-          <div className="flex items-center justify-center py-20">
-            <Loader2 className="h-6 w-6 animate-spin text-accent" />
+          <div className="divide-y divide-slate-100">
+            {/* Header skeleton */}
+            <div className="flex items-center gap-4 bg-slate-50/50 px-4 py-3">
+              <Skeleton className="h-4 w-4 rounded" />
+              <Skeleton className="h-3 w-16" />
+              <Skeleton className="h-3 w-20" />
+              <Skeleton className="h-3 w-14" />
+              <Skeleton className="h-3 w-16" />
+              <Skeleton className="ml-auto h-3 w-20" />
+            </div>
+            {/* Row skeletons */}
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-4 px-4 py-3">
+                <Skeleton className="h-4 w-4 rounded" />
+                <Skeleton className="h-9 w-9 rounded-full" />
+                <div className="flex-1 space-y-1.5">
+                  <Skeleton className="h-3.5 w-40" />
+                  <Skeleton className="h-2.5 w-24" />
+                </div>
+                <Skeleton className="h-5 w-16 rounded-full" />
+                <Skeleton className="h-3 w-14" />
+                <Skeleton className="h-3 w-10" />
+                <Skeleton className="h-3 w-16" />
+              </div>
+            ))}
           </div>
         ) : sorted.length === 0 ? (
-          <div className="py-20 text-center">
-            <MessageSquare className="mx-auto mb-3 h-10 w-10 text-slate-300" />
-            <p className="text-sm font-medium text-slate-600">No chats found</p>
-            <p className="mt-1 text-xs text-slate-400">
-              Import chats from your connected messengers
-            </p>
-            <button
-              onClick={() => setShowImport(true)}
-              className="mt-4 inline-flex items-center gap-2 rounded bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px"
-            >
-              <Plus className="h-4 w-4" />
-              Import Chats
-            </button>
-          </div>
+          <EmptyState
+            icon={<MessageSquare className="h-12 w-12" />}
+            title="Чатов пока нет"
+            description="Импортируйте чаты из подключённых мессенджеров, чтобы начать работу."
+            action={
+              <button
+                onClick={() => setShowImport(true)}
+                className="inline-flex items-center gap-2 rounded bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px"
+              >
+                <Plus className="h-4 w-4" />
+                Импортировать чаты
+              </button>
+            }
+          />
         ) : (
           <table className="w-full">
             <thead>

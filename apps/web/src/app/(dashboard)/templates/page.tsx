@@ -24,6 +24,8 @@ import {
 } from '@/hooks/useTemplates';
 import type { Template } from '@/types/template';
 import { RequireOrgContext } from '@/components/layout/RequireOrgContext';
+import { Skeleton } from '@/components/ui/Skeleton';
+import { EmptyState as EmptyStateUI } from '@/components/ui/EmptyState';
 
 export default function TemplatesPage() {
   const [search, setSearch] = useState('');
@@ -123,11 +125,37 @@ export default function TemplatesPage() {
 
       {/* Template grid */}
       {isLoading ? (
-        <div className="flex items-center justify-center py-20">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="rounded-xl bg-white p-5 shadow-xs">
+              <div className="mb-2 flex items-start justify-between">
+                <Skeleton className="h-4 w-32" />
+              </div>
+              <Skeleton className="mb-1.5 h-3 w-full" />
+              <Skeleton className="mb-1.5 h-3 w-full" />
+              <Skeleton className="mb-3 h-3 w-2/3" />
+              <div className="flex items-center gap-3 border-t border-slate-50 pt-3">
+                <Skeleton className="h-2.5 w-20" />
+                <Skeleton className="h-2.5 w-16" />
+              </div>
+            </div>
+          ))}
         </div>
       ) : templates.length === 0 ? (
-        <EmptyState onCreateClick={() => setIsCreating(true)} />
+        <EmptyStateUI
+          icon={<FileText className="h-12 w-12" />}
+          title="Шаблонов пока нет"
+          description="Создавайте переиспользуемые шаблоны сообщений, чтобы ускорить рассылки и сохранять единый стиль."
+          action={
+            <button
+              onClick={() => setIsCreating(true)}
+              className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white shadow-accent-sm transition-all hover:bg-accent-hover hover:-translate-y-px"
+            >
+              <Plus className="h-4 w-4" />
+              Создать первый шаблон
+            </button>
+          }
+        />
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {templates.map((template) => (
@@ -289,26 +317,3 @@ function TemplateEditor({
   );
 }
 
-function EmptyState({ onCreateClick }: { onCreateClick: () => void }) {
-  return (
-    <div className="flex flex-col items-center justify-center py-20 text-center">
-      <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-slate-100">
-        <FileText className="h-7 w-7 text-slate-300" />
-      </div>
-      <h3 className="text-sm font-semibold text-slate-700">
-        No templates yet
-      </h3>
-      <p className="mt-1 max-w-xs text-sm text-slate-400">
-        Create reusable message templates to speed up your broadcasts and
-        maintain consistency.
-      </p>
-      <button
-        onClick={onCreateClick}
-        className="mt-4 flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white shadow-accent-sm transition-all hover:bg-accent-hover hover:-translate-y-px"
-      >
-        <Plus className="h-4 w-4" />
-        Create First Template
-      </button>
-    </div>
-  );
-}
