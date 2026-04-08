@@ -56,6 +56,12 @@ interface GmailAutoImportPayload {
   importCount: number;
 }
 
+interface GmailRehydratePayload {
+  chatIds: string[];
+  integrationId: string;
+  organizationId: string;
+}
+
 interface AntibanConfig {
   messagesPerBatch: number;
   delayBetweenMessages: number;
@@ -729,6 +735,127 @@ async function processChatHistorySync(job: Job<MessageSyncPayload>): Promise<voi
   log.info('Chat history sync job complete', { chatCount: chatIds.length });
 }
 
+// ─── Gmail Rehydrate Processor ───
+// Re-fetches Gmail threads with format:'full' and UPDATEs existing Message rows
+// with the new email-rendering fields (subject, htmlBody, plainBody, fromEmail,
+// toEmails, ccEmails, bccEmails, inReplyTo). Does not insert new rows, does not
+// touch non-email fields. Safe to run on already-synced Gmail chats.
+
+async function processGmailRehydrate(job: Job<GmailRehydratePayload>): Promise<void> {
+  const { chatIds, integrationId, organizationId } = job.data;
+  log.info('Processing sync:gmail-rehydrate', { integrationId, chatCount: chatIds.length });
+
+  const integration = await prisma.integration.findUnique({
+    where: { id: integrationId },
+    select: { credentials: true, messenger: true },
+  });
+
+  if (!integration) {
+    log.warn('Integration not found, skipping gmail rehydrate', { integrationId });
+    return;
+  }
+
+  if (integration.messenger !== 'gmail') {
+    log.warn('Rehydrate only supported for gmail', { integrationId, messenger: integration.messenger });
+    return;
+  }
+
+  const credentials = decryptCredentials<Record<string, unknown>>(integration.credentials as string);
+  const adapter = await createAdapter('gmail', credentials);
+
+  try {
+    await adapter.connect();
+  } catch (err) {
+    log.error('Failed to connect Gmail adapter for rehydrate', { error: String(err) });
+    return;
+  }
+
+  if (!adapter.getMessages) {
+    log.warn('Gmail adapter missing getMessages, cannot rehydrate');
+    try { await adapter.disconnect(); } catch {}
+    return;
+  }
+
+  let totalUpdated = 0;
+
+  for (const chatId of chatIds) {
+    try {
+      const chat = await prisma.chat.findUnique({
+        where: { id: chatId },
+        select: { id: true, externalChatId: true },
+      });
+
+      if (!chat) continue;
+
+      log.info(`Rehydrating Gmail thread ${chat.externalChatId}`, { chatId });
+
+      let cursor: string | undefined;
+      let chatUpdated = 0;
+
+      // Paginate through the thread — threads.get returns everything in one call,
+      // but the adapter slices client-side, so we still need to loop.
+      while (true) {
+        let result;
+        try {
+          result = await adapter.getMessages(chat.externalChatId, 100, cursor);
+        } catch (err) {
+          log.error(`Failed to fetch Gmail thread ${chat.externalChatId}`, { error: String(err) });
+          break;
+        }
+
+        if (result.messages.length === 0) break;
+
+        for (const m of result.messages) {
+          const res = await prisma.message.updateMany({
+            where: {
+              chatId: chat.id,
+              externalMessageId: m.id,
+            },
+            data: {
+              subject: m.subject,
+              htmlBody: m.htmlBody,
+              plainBody: m.plainBody,
+              fromEmail: m.fromEmail,
+              toEmails: m.toEmails ?? [],
+              ccEmails: m.ccEmails ?? [],
+              bccEmails: m.bccEmails ?? [],
+              inReplyTo: m.inReplyTo,
+              // Refresh senderName from parsed From header if it's still empty
+              ...(m.senderName ? { senderName: m.senderName } : {}),
+            },
+          });
+          chatUpdated += res.count;
+        }
+
+        if (!result.hasMore || !result.nextCursor) break;
+        cursor = result.nextCursor;
+      }
+
+      totalUpdated += chatUpdated;
+      log.info(`Rehydrated ${chatUpdated} messages for chat ${chatId}`);
+
+      // Notify frontend so it refetches and re-renders with HTML
+      pubClient.publish('ws:events', JSON.stringify({
+        event: 'chat_updated',
+        room: `org:${organizationId}`,
+        data: { chatId: chat.id },
+      })).catch(() => {});
+
+      // Small pause between chats to avoid Gmail rate limits
+      await sleep(1);
+    } catch (err) {
+      log.error(`Error rehydrating chat ${chatId}`, { error: String(err) });
+    }
+  }
+
+  try { await adapter.disconnect(); } catch {}
+
+  log.info('Gmail rehydrate job complete', {
+    chatCount: chatIds.length,
+    totalUpdated,
+  });
+}
+
 // ─── Gmail Auto-Import Processor ───
 
 async function processGmailAutoImport(job: Job<GmailAutoImportPayload>): Promise<void> {
@@ -1044,6 +1171,8 @@ const messageSyncWorker = new Worker<any>(
   async (job) => {
     if (job.name === 'sync:chat-history') {
       await processChatHistorySync(job as Job<MessageSyncPayload>);
+    } else if (job.name === 'sync:gmail-rehydrate') {
+      await processGmailRehydrate(job as Job<GmailRehydratePayload>);
     } else if (job.name === 'gmail:auto-import') {
       await processGmailAutoImport(job as Job<GmailAutoImportPayload>);
     } else if (job.name === 'gmail:renew-watch') {

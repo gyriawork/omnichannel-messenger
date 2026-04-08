@@ -11,6 +11,7 @@ import { getPlatformCredentials, invalidatePlatformCache } from '../lib/platform
 import { logActivity } from '../lib/activity-logger.js';
 import { MESSENGERS, MESSENGER_PLATFORM_FIELDS, MESSENGER_ENV_VARS } from '../lib/platform-constants.js';
 import type { Messenger } from '../lib/platform-constants.js';
+import { messageSyncQueue } from '../lib/queue.js';
 
 // ─── Schemas ───
 
@@ -225,6 +226,98 @@ export default async function adminRoutes(fastify: FastifyInstance) {
         messenger,
         configured: hasEnvFallback,
         fallback: hasEnvFallback ? 'env' : null,
+      });
+    },
+  );
+
+  // ─── POST /admin/gmail/rehydrate ───
+  // One-shot backfill: re-fetches Gmail threads with format:'full' and UPDATEs
+  // existing Message rows with new email fields (htmlBody, subject, fromEmail,
+  // toEmails, etc). For already-imported Gmail chats that were synced before
+  // the rich-rendering update.
+  //
+  // Body: { organizationId: string, chatIds?: string[] }
+  //   If chatIds omitted → rehydrates ALL Gmail chats in the org.
+  //
+  // Dispatches sync:gmail-rehydrate jobs (batched per-integration).
+
+  fastify.post(
+    '/admin/gmail/rehydrate',
+    { preHandler: authPreHandlers },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const bodySchema = z.object({
+        organizationId: z.string().min(1),
+        chatIds: z.array(z.string()).optional(),
+      });
+
+      const parsed = bodySchema.safeParse(request.body);
+      if (!parsed.success) {
+        return sendError(reply, 'VALIDATION_ERROR', parsed.error.errors.map((e) => e.message).join(', '), 422);
+      }
+
+      const { organizationId, chatIds } = parsed.data;
+
+      // Find the Gmail integration for this organization. Chats don't carry
+      // integrationId directly — it's resolved via (messenger, organizationId).
+      const integration = await prisma.integration.findFirst({
+        where: { organizationId, messenger: 'gmail', status: 'connected' },
+        select: { id: true },
+      });
+
+      if (!integration) {
+        return sendError(reply, 'RESOURCE_NOT_FOUND', 'No connected Gmail integration for this organization', 404);
+      }
+
+      // Load Gmail chats in the org (optionally filtered by ids)
+      const chats = await prisma.chat.findMany({
+        where: {
+          organizationId,
+          messenger: 'gmail',
+          ...(chatIds && chatIds.length > 0 ? { id: { in: chatIds } } : {}),
+        },
+        select: { id: true },
+      });
+
+      if (chats.length === 0) {
+        return reply.send({ enqueued: 0, jobs: 0, message: 'No Gmail chats found' });
+      }
+
+      let totalJobs = 0;
+      let totalChats = 0;
+
+      // Chunk into batches of 20 to keep individual jobs short
+      const BATCH_SIZE = 20;
+      const allIds = chats.map((c) => c.id);
+      for (let i = 0; i < allIds.length; i += BATCH_SIZE) {
+        const batch = allIds.slice(i, i + BATCH_SIZE);
+        await messageSyncQueue.add(
+          'sync:gmail-rehydrate',
+          {
+            chatIds: batch,
+            integrationId: integration.id,
+            organizationId,
+          },
+          { removeOnComplete: true },
+        );
+        totalJobs++;
+        totalChats += batch.length;
+      }
+
+      await logActivity({
+        category: 'settings',
+        action: 'gmail_rehydrate_triggered',
+        description: `Gmail rehydrate triggered for ${totalChats} chats (${totalJobs} jobs)`,
+        targetType: 'Organization',
+        targetId: organizationId,
+        userId: request.user.id,
+        userName: request.user.name,
+        organizationId,
+        metadata: { chatCount: totalChats, jobCount: totalJobs },
+      });
+
+      return reply.send({
+        enqueued: totalChats,
+        jobs: totalJobs,
       });
     },
   );
