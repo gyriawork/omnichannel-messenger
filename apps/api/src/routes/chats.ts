@@ -188,6 +188,7 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
           name: ct.tag.name,
           color: ct.tag.color,
         })),
+        // Pass-through includes fromEmail (selected above) — required by /chats Gmail grouping.
         lastMessage: chat.messages[0] ?? null,
         preferences: chat.preferences[0]
           ? {
