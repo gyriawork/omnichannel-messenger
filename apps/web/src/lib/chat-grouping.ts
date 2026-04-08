@@ -5,6 +5,8 @@
 // All exports are pure functions — no React, no I/O, no side effects.
 // This makes them trivially unit-testable and SSR-safe.
 
+import type { Chat } from '@/types/chat';
+
 // Multi-part public suffixes we know about. Not the full Public Suffix List
 // (that would add ~150KB to the bundle). Just the common ones we see in
 // practice. Misses on exotic TLDs are acceptable — the worst that happens
@@ -89,8 +91,6 @@ export const FREEMAIL_DOMAINS: ReadonlySet<string> = new Set([
 export function isFreeMailDomain(domain: string): boolean {
   return FREEMAIL_DOMAINS.has(domain.toLowerCase());
 }
-
-import type { Chat } from '@/types/chat';
 
 /**
  * Pick the best display name for a group of chats from the same domain.
