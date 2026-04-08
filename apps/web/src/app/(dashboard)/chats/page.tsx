@@ -333,6 +333,17 @@ function ChatRowActions({ chat }: { chat: Chat }) {
   );
 }
 
+// Relative-time formatter shared by ChatsPage and GroupRow.
+function formatTime(iso?: string) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  const now = new Date();
+  const diffH = (now.getTime() - d.getTime()) / (1000 * 60 * 60);
+  if (diffH < 1) return `${Math.round(diffH * 60)}m ago`;
+  if (diffH < 24) return `${Math.round(diffH)}h ago`;
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
 // ─── GroupRow ───
 // Renders a virtual row representing a group of Gmail chats from the same
 // sender domain. Visually identical to a normal chat row. Click navigates
@@ -342,15 +353,6 @@ function ChatRowActions({ chat }: { chat: Chat }) {
 function GroupRow({ group }: { group: ChatGroup }) {
   const cfg = messengerConfig.gmail;
   const subjectPreview = group.latestChat.lastMessage?.text ?? group.latestChat.name;
-  const formatTime = (iso?: string) => {
-    if (!iso) return '—';
-    const d = new Date(iso);
-    const now = new Date();
-    const diffH = (now.getTime() - d.getTime()) / (1000 * 60 * 60);
-    if (diffH < 1) return `${Math.round(diffH * 60)}m ago`;
-    if (diffH < 24) return `${Math.round(diffH)}h ago`;
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  };
 
   return (
     <tr className="transition-colors hover:bg-slate-50/50">
@@ -515,16 +517,6 @@ export default function ChatsPage() {
     } else {
       setSelectedIds(selectableIds);
     }
-  };
-
-  const formatTime = (iso?: string) => {
-    if (!iso) return '—';
-    const d = new Date(iso);
-    const now = new Date();
-    const diffH = (now.getTime() - d.getTime()) / (1000 * 60 * 60);
-    if (diffH < 1) return `${Math.round(diffH * 60)}m ago`;
-    if (diffH < 24) return `${Math.round(diffH)}h ago`;
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
 
   return (
