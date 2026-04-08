@@ -43,3 +43,30 @@ describe('extractDomain', () => {
     expect(extractDomain('Re: A > B <user@example.com>')).toBe('example.com');
   });
 });
+
+import { isFreeMailDomain, FREEMAIL_DOMAINS } from './chat-grouping';
+
+describe('isFreeMailDomain', () => {
+  it('returns true for common free-mail providers', () => {
+    expect(isFreeMailDomain('gmail.com')).toBe(true);
+    expect(isFreeMailDomain('yahoo.com')).toBe(true);
+    expect(isFreeMailDomain('outlook.com')).toBe(true);
+    expect(isFreeMailDomain('hotmail.com')).toBe(true);
+    expect(isFreeMailDomain('icloud.com')).toBe(true);
+    expect(isFreeMailDomain('proton.me')).toBe(true);
+  });
+
+  it('returns false for corporate domains', () => {
+    expect(isFreeMailDomain('google.com')).toBe(false);
+    expect(isFreeMailDomain('allegro.pl')).toBe(false);
+    expect(isFreeMailDomain('github.com')).toBe(false);
+  });
+
+  it('is case-insensitive', () => {
+    expect(isFreeMailDomain('GMAIL.COM')).toBe(true);
+  });
+
+  it('FREEMAIL_DOMAINS is non-empty', () => {
+    expect(FREEMAIL_DOMAINS.size).toBeGreaterThan(10);
+  });
+});

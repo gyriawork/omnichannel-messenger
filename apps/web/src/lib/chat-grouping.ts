@@ -52,3 +52,40 @@ export function extractDomain(raw: string | null | undefined): string | null {
 
   return labels.slice(-2).join('.');
 }
+
+/**
+ * Common free email providers. Chats from these domains are NEVER grouped —
+ * they represent personal correspondence where each sender is a distinct
+ * person, not a company.
+ */
+export const FREEMAIL_DOMAINS: ReadonlySet<string> = new Set([
+  'gmail.com',
+  'googlemail.com',
+  'yahoo.com',
+  'yahoo.co.uk',
+  'ymail.com',
+  'outlook.com',
+  'hotmail.com',
+  'live.com',
+  'msn.com',
+  'icloud.com',
+  'me.com',
+  'mac.com',
+  'aol.com',
+  'gmx.com',
+  'gmx.net',
+  'mail.ru',
+  'yandex.ru',
+  'yandex.com',
+  'proton.me',
+  'protonmail.com',
+  'tutanota.com',
+  'fastmail.com',
+  'fastmail.fm',
+  'hey.com',
+  'zoho.com',
+]);
+
+export function isFreeMailDomain(domain: string): boolean {
+  return FREEMAIL_DOMAINS.has(domain.toLowerCase());
+}
