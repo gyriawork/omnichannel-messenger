@@ -25,6 +25,7 @@ export interface Chat {
     text: string;
     senderName: string;
     createdAt: string;
+    fromEmail?: string | null; // Gmail only — used for sender-domain grouping
   };
   tags?: Array<{
     id: string;

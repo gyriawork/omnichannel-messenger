@@ -44,8 +44,9 @@ describe('extractDomain', () => {
   });
 });
 
-import { isFreeMailDomain, FREEMAIL_DOMAINS, buildGroupLabel } from './chat-grouping';
+import { isFreeMailDomain, FREEMAIL_DOMAINS, buildGroupLabel, groupGmailChats, isChatGroup } from './chat-grouping';
 import type { Chat } from '@/types/chat';
+import type { ChatRow, ChatGroup } from './chat-grouping';
 
 describe('isFreeMailDomain', () => {
   it('returns true for common free-mail providers', () => {
@@ -108,5 +109,135 @@ describe('buildGroupLabel', () => {
     const chats = [makeChat('Acme'), makeChat('Other'), makeChat('Acme'), makeChat('Other')];
     // Acme and Other tie at 2 each, but Acme came first
     expect(buildGroupLabel(chats, 'acme.com')).toBe('Acme');
+  });
+});
+
+function gmailChat(opts: {
+  id: string;
+  fromEmail?: string | null;
+  senderName?: string;
+  messageCount?: number;
+  lastActivityAt?: string;
+  tags?: Array<{ id: string; name: string; color: string }>;
+}): Chat {
+  return {
+    id: opts.id,
+    name: `Subject ${opts.id}`,
+    messenger: 'gmail',
+    chatType: 'direct',
+    status: 'active',
+    messageCount: opts.messageCount ?? 1,
+    lastActivityAt: opts.lastActivityAt ?? '2026-04-01T00:00:00Z',
+    tags: opts.tags,
+    lastMessage: opts.fromEmail
+      ? {
+          text: 'body',
+          senderName: opts.senderName ?? '',
+          createdAt: opts.lastActivityAt ?? '2026-04-01T00:00:00Z',
+          fromEmail: opts.fromEmail,
+        }
+      : undefined,
+  } as Chat;
+}
+
+function tgChat(id: string): Chat {
+  return {
+    id,
+    name: `Telegram ${id}`,
+    messenger: 'telegram',
+    chatType: 'direct',
+    status: 'active',
+    messageCount: 1,
+  } as Chat;
+}
+
+describe('groupGmailChats', () => {
+  it('returns empty array for empty input', () => {
+    expect(groupGmailChats([])).toEqual([]);
+  });
+
+  it('passes through non-gmail chats untouched', () => {
+    const tg = tgChat('1');
+    const result = groupGmailChats([tg]);
+    expect(result).toEqual([tg]);
+  });
+
+  it('does not group a single gmail chat (below threshold)', () => {
+    const c = gmailChat({ id: '1', fromEmail: 'a@google.com' });
+    const result = groupGmailChats([c]);
+    expect(result).toHaveLength(1);
+    expect(isChatGroup(result[0]!)).toBe(false);
+  });
+
+  it('does not group two gmail chats from different domains', () => {
+    const a = gmailChat({ id: '1', fromEmail: 'a@google.com' });
+    const b = gmailChat({ id: '2', fromEmail: 'a@github.com' });
+    const result = groupGmailChats([a, b]);
+    expect(result).toHaveLength(2);
+    expect(result.every((r) => !isChatGroup(r))).toBe(true);
+  });
+
+  it('groups two gmail chats from the same domain', () => {
+    const a = gmailChat({ id: '1', fromEmail: 'a@google.com', senderName: 'Google', messageCount: 5 });
+    const b = gmailChat({ id: '2', fromEmail: 'b@accounts.google.com', senderName: 'Google', messageCount: 3 });
+    const result = groupGmailChats([a, b]);
+    expect(result).toHaveLength(1);
+    expect(isChatGroup(result[0]!)).toBe(true);
+    const group = result[0] as ChatGroup;
+    expect(group.domain).toBe('google.com');
+    expect(group.label).toBe('Google');
+    expect(group.chats).toHaveLength(2);
+    expect(group.totalMessages).toBe(8);
+  });
+
+  it('skips free-mail domains (each chat stays separate)', () => {
+    const a = gmailChat({ id: '1', fromEmail: 'john@gmail.com' });
+    const b = gmailChat({ id: '2', fromEmail: 'jane@gmail.com' });
+    const result = groupGmailChats([a, b]);
+    expect(result).toHaveLength(2);
+    expect(result.every((r) => !isChatGroup(r))).toBe(true);
+  });
+
+  it('passes through gmail chats with no fromEmail', () => {
+    const a = gmailChat({ id: '1', fromEmail: null });
+    const b = gmailChat({ id: '2', fromEmail: null });
+    const result = groupGmailChats([a, b]);
+    expect(result).toHaveLength(2);
+    expect(result.every((r) => !isChatGroup(r))).toBe(true);
+  });
+
+  it('latestChat is the chat with the max lastActivityAt', () => {
+    const older = gmailChat({ id: '1', fromEmail: 'a@google.com', lastActivityAt: '2026-01-01T00:00:00Z' });
+    const newer = gmailChat({ id: '2', fromEmail: 'b@google.com', lastActivityAt: '2026-04-01T00:00:00Z' });
+    const result = groupGmailChats([older, newer]) as ChatRow[];
+    const group = result[0] as ChatGroup;
+    expect(group.latestChat.id).toBe('2');
+    expect(group.lastActivityAt).toBe('2026-04-01T00:00:00Z');
+  });
+
+  it('group tags = deduped union of chat tags', () => {
+    const a = gmailChat({
+      id: '1', fromEmail: 'a@google.com',
+      tags: [{ id: 't1', name: 'A', color: '#f00' }, { id: 't2', name: 'B', color: '#0f0' }],
+    });
+    const b = gmailChat({
+      id: '2', fromEmail: 'b@google.com',
+      tags: [{ id: 't2', name: 'B', color: '#0f0' }, { id: 't3', name: 'C', color: '#00f' }],
+    });
+    const group = groupGmailChats([a, b])[0] as ChatGroup;
+    expect(group.tags).toHaveLength(3);
+    expect(group.tags.map((t) => t.id).sort()).toEqual(['t1', 't2', 't3']);
+  });
+
+  it('mixed input: telegram untouched, gmail grouped', () => {
+    const tg = tgChat('tg1');
+    const a = gmailChat({ id: 'g1', fromEmail: 'a@google.com' });
+    const b = gmailChat({ id: 'g2', fromEmail: 'b@google.com' });
+    const result = groupGmailChats([tg, a, b]);
+    expect(result).toHaveLength(2);
+    expect(isChatGroup(result.find((r) => !isChatGroup(r) && (r as Chat).id === 'tg1') as ChatRow)).toBe(false);
+    const group = result.find(isChatGroup);
+    expect(group).toBeDefined();
+    expect((group as ChatGroup).chats).toHaveLength(2);
   });
 });

@@ -101,6 +101,114 @@ export function isFreeMailDomain(domain: string): boolean {
  *   3. If none exists, capitalize the first label of the domain
  *      ("google.com" → "Google", "paypal-business.com" → "Paypal-business").
  */
+// ─── Grouping types ───
+
+export interface ChatGroup {
+  isGroup: true;
+  domain: string;          // canonical registrable domain, e.g. "google.com"
+  label: string;           // display name, e.g. "Google"
+  chats: Chat[];           // ≥ 2 chats
+  latestChat: Chat;        // chat with the most recent lastActivityAt
+  totalMessages: number;   // sum of messageCount across chats
+  lastActivityAt: string;  // max lastActivityAt across chats
+  messenger: 'gmail';
+  tags: Array<{ id: string; name: string; color: string }>;
+}
+
+export type ChatRow = Chat | ChatGroup;
+
+export function isChatGroup(row: ChatRow): row is ChatGroup {
+  return (row as ChatGroup).isGroup === true;
+}
+
+const MIN_GROUP_SIZE = 2;
+
+/**
+ * Group Gmail chats by sender domain. Returns a flat list mixing
+ * ungrouped chats (Chat) and groups (ChatGroup) in the original order.
+ *
+ * Sorting is deliberately NOT applied here — the caller controls sort.
+ *
+ * Rules:
+ *   - Non-Gmail chats are passed through untouched.
+ *   - Gmail chats with no lastMessage.fromEmail are passed through.
+ *   - Gmail chats whose domain is in FREEMAIL_DOMAINS are passed through.
+ *   - Gmail chats whose domain has < MIN_GROUP_SIZE other matches are passed through.
+ *   - Otherwise, chats are bucketed by domain and each bucket becomes a ChatGroup.
+ */
+export function groupGmailChats(chats: Chat[]): ChatRow[] {
+  if (chats.length === 0) return [];
+
+  const buckets = new Map<string, Chat[]>();
+  const passthrough: Chat[] = [];
+
+  for (const chat of chats) {
+    if (chat.messenger !== 'gmail') {
+      passthrough.push(chat);
+      continue;
+    }
+    const fromEmail = chat.lastMessage?.fromEmail;
+    if (!fromEmail) {
+      passthrough.push(chat);
+      continue;
+    }
+    const domain = extractDomain(fromEmail);
+    if (!domain || isFreeMailDomain(domain)) {
+      passthrough.push(chat);
+      continue;
+    }
+    const bucket = buckets.get(domain);
+    if (bucket) {
+      bucket.push(chat);
+    } else {
+      buckets.set(domain, [chat]);
+    }
+  }
+
+  const result: ChatRow[] = [...passthrough];
+
+  for (const [domain, bucketChats] of buckets.entries()) {
+    if (bucketChats.length < MIN_GROUP_SIZE) {
+      // Below threshold: pass through as ungrouped chats
+      result.push(...bucketChats);
+      continue;
+    }
+
+    // Build the group
+    let latestChat = bucketChats[0]!;
+    let latestTime = new Date(latestChat.lastActivityAt ?? 0).getTime();
+    let totalMessages = 0;
+    const tagMap = new Map<string, { id: string; name: string; color: string }>();
+
+    for (const c of bucketChats) {
+      totalMessages += c.messageCount ?? 0;
+      const t = new Date(c.lastActivityAt ?? 0).getTime();
+      if (t > latestTime) {
+        latestTime = t;
+        latestChat = c;
+      }
+      for (const tag of c.tags ?? []) {
+        if (!tagMap.has(tag.id)) tagMap.set(tag.id, tag);
+      }
+    }
+
+    const group: ChatGroup = {
+      isGroup: true,
+      domain,
+      label: buildGroupLabel(bucketChats, domain),
+      chats: bucketChats,
+      latestChat,
+      totalMessages,
+      lastActivityAt: latestChat.lastActivityAt ?? new Date(0).toISOString(),
+      messenger: 'gmail',
+      tags: Array.from(tagMap.values()),
+    };
+    result.push(group);
+  }
+
+  return result;
+}
+
 export function buildGroupLabel(chats: Chat[], fallbackDomain: string): string {
   const counts = new Map<string, { count: number; firstIndex: number }>();
   chats.forEach((chat, idx) => {
