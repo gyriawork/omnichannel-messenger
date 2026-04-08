@@ -799,7 +799,19 @@ async function processGmailRehydrate(job: Job<GmailRehydratePayload>): Promise<v
         try {
           result = await adapter.getMessages(chat.externalChatId, 100, cursor);
         } catch (err) {
-          log.error(`Failed to fetch Gmail thread ${chat.externalChatId}`, { error: String(err) });
+          // Surface the underlying Google API error so we can diagnose
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const anyErr = err as any;
+          const orig = anyErr?.originalError;
+          log.error(`Failed to fetch Gmail thread ${chat.externalChatId}`, {
+            error: String(err),
+            origName: orig?.name,
+            origMessage: orig?.message,
+            origCode: orig?.code,
+            origStatus: orig?.status,
+            origErrors: orig?.errors,
+            origResponseData: orig?.response?.data,
+          });
           break;
         }
 
