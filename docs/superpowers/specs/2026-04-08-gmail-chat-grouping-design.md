@@ -140,7 +140,7 @@ A full Public Suffix List is **not** required — we cover the common multi-part
 
 **`buildGroupLabel` rules:**
 - Collect `lastMessage.senderName` (or `fromName`) from each chat in the group.
-- Pick the most frequent non-empty value.
+- Pick the most frequent non-empty value. Tie-breaker: first occurrence in the input order wins.
 - If none exists: capitalize the first label of the domain (`google.com` → `Google`, `paypal-business.com` → `Paypal-business`).
 
 ### `apps/web/src/app/(dashboard)/chats/page.tsx` (modify)
@@ -215,6 +215,8 @@ if (search) {
 ```
 
 Without this change, navigating to `/messenger?search=google.com` would return zero chats because the existing search only looks at chat names (which contain the email subject, not the sender domain).
+
+**Side effect (intended):** This same change broadens the `/chats` page search box too — typing `google.com` into the `/chats` search will now return chats whose sender domain matches, not just chats whose name/text matches. This is desirable for symmetry but worth knowing during testing.
 
 No new index is added at this point; we accept the small additional cost on the existing `Message` table scan. If this becomes slow we can revisit and add `Message_fromEmail_idx`.
 
