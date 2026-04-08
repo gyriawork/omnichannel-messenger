@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useMemo, useState, useRef, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'next/navigation';
 import {
   Search,
   Pin,
@@ -207,6 +208,19 @@ export function ChatList() {
   } = useChatStore();
 
   const [localSearch, setLocalSearch] = useState(searchQuery);
+
+  // Seed search from ?search=... URL param (set by /chats group rows
+  // navigating to /messenger?search=<domain>). Runs once on mount only.
+  const searchParams = useSearchParams();
+  useEffect(() => {
+    const fromUrl = searchParams?.get('search');
+    if (fromUrl && fromUrl !== searchQuery) {
+      setSearchQuery(fromUrl);
+      setLocalSearch(fromUrl);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const debounceRef = useRef<NodeJS.Timeout>();
   const handleSearchChange = useCallback((value: string) => {
     setLocalSearch(value);
