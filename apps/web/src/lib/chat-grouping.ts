@@ -89,3 +89,46 @@ export const FREEMAIL_DOMAINS: ReadonlySet<string> = new Set([
 export function isFreeMailDomain(domain: string): boolean {
   return FREEMAIL_DOMAINS.has(domain.toLowerCase());
 }
+
+import type { Chat } from '@/types/chat';
+
+/**
+ * Pick the best display name for a group of chats from the same domain.
+ *
+ * Strategy:
+ *   1. Collect non-empty senderName from each chat's lastMessage.
+ *   2. Pick the most frequent value. Tie-break: first occurrence wins.
+ *   3. If none exists, capitalize the first label of the domain
+ *      ("google.com" → "Google", "paypal-business.com" → "Paypal-business").
+ */
+export function buildGroupLabel(chats: Chat[], fallbackDomain: string): string {
+  const counts = new Map<string, { count: number; firstIndex: number }>();
+  chats.forEach((chat, idx) => {
+    const name = chat.lastMessage?.senderName?.trim();
+    if (!name) return;
+    const existing = counts.get(name);
+    if (existing) {
+      existing.count += 1;
+    } else {
+      counts.set(name, { count: 1, firstIndex: idx });
+    }
+  });
+
+  if (counts.size > 0) {
+    let bestName = '';
+    let bestCount = 0;
+    let bestIndex = Infinity;
+    for (const [name, { count, firstIndex }] of counts.entries()) {
+      if (count > bestCount || (count === bestCount && firstIndex < bestIndex)) {
+        bestName = name;
+        bestCount = count;
+        bestIndex = firstIndex;
+      }
+    }
+    return bestName;
+  }
+
+  // Fallback: capitalize the first label of the domain.
+  const firstLabel = fallbackDomain.split('.')[0] ?? fallbackDomain;
+  return firstLabel.charAt(0).toUpperCase() + firstLabel.slice(1);
+}

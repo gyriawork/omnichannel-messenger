@@ -44,7 +44,8 @@ describe('extractDomain', () => {
   });
 });
 
-import { isFreeMailDomain, FREEMAIL_DOMAINS } from './chat-grouping';
+import { isFreeMailDomain, FREEMAIL_DOMAINS, buildGroupLabel } from './chat-grouping';
+import type { Chat } from '@/types/chat';
 
 describe('isFreeMailDomain', () => {
   it('returns true for common free-mail providers', () => {
@@ -68,5 +69,44 @@ describe('isFreeMailDomain', () => {
 
   it('FREEMAIL_DOMAINS is non-empty', () => {
     expect(FREEMAIL_DOMAINS.size).toBeGreaterThan(10);
+  });
+});
+
+function makeChat(senderName: string | undefined): Chat {
+  return {
+    id: Math.random().toString(),
+    name: 'subject',
+    messenger: 'gmail',
+    chatType: 'direct',
+    status: 'active',
+    messageCount: 1,
+    lastMessage: senderName
+      ? { text: '', senderName, createdAt: new Date().toISOString() }
+      : undefined,
+  } as Chat;
+}
+
+describe('buildGroupLabel', () => {
+  it('returns capitalized domain label when no chats have a sender name', () => {
+    const chats = [makeChat(undefined), makeChat(undefined)];
+    expect(buildGroupLabel(chats, 'google.com')).toBe('Google');
+    expect(buildGroupLabel(chats, 'paypal-business.com')).toBe('Paypal-business');
+    expect(buildGroupLabel(chats, 'allegro.pl')).toBe('Allegro');
+  });
+
+  it('uses majority sender name', () => {
+    const chats = [makeChat('Google'), makeChat('Google'), makeChat('google.com noreply')];
+    expect(buildGroupLabel(chats, 'google.com')).toBe('Google');
+  });
+
+  it('falls back to capitalized domain when all sender names empty', () => {
+    const chats = [makeChat(''), makeChat('   ')];
+    expect(buildGroupLabel(chats, 'github.com')).toBe('Github');
+  });
+
+  it('tie-break: first occurrence wins', () => {
+    const chats = [makeChat('Acme'), makeChat('Other'), makeChat('Acme'), makeChat('Other')];
+    // Acme and Other tie at 2 each, but Acme came first
+    expect(buildGroupLabel(chats, 'acme.com')).toBe('Acme');
   });
 });
