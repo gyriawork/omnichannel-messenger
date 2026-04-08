@@ -28,6 +28,7 @@ import { ImportChatsModal } from '@/components/messenger/ImportChatsModal';
 import { ChatAvatar } from '@/components/ui/ChatAvatar';
 import type { Chat, MessengerType } from '@/types/chat';
 import { RequireOrgContext } from '@/components/layout/RequireOrgContext';
+import { groupGmailChats, isChatGroup, type ChatRow, type ChatGroup } from '@/lib/chat-grouping';
 
 // ─── Constants ───
 
@@ -332,6 +333,100 @@ function ChatRowActions({ chat }: { chat: Chat }) {
   );
 }
 
+// ─── GroupRow ───
+// Renders a virtual row representing a group of Gmail chats from the same
+// sender domain. Visually identical to a normal chat row. Click navigates
+// to /messenger?search=<domain> so the existing left-panel search shows
+// the constituent threads.
+
+function GroupRow({ group }: { group: ChatGroup }) {
+  const cfg = messengerConfig.gmail;
+  const subjectPreview = group.latestChat.lastMessage?.text ?? group.latestChat.name;
+  const formatTime = (iso?: string) => {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    const now = new Date();
+    const diffH = (now.getTime() - d.getTime()) / (1000 * 60 * 60);
+    if (diffH < 1) return `${Math.round(diffH * 60)}m ago`;
+    if (diffH < 24) return `${Math.round(diffH)}h ago`;
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  };
+
+  return (
+    <tr className="transition-colors hover:bg-slate-50/50">
+      {/* Empty checkbox cell — groups are not bulk-selectable */}
+      <td className="px-4 py-3" />
+
+      {/* Chat: avatar + label + subject preview */}
+      <td className="px-4 py-3">
+        <div className="flex items-center gap-3">
+          <ChatAvatar name={group.label} messenger="gmail" size={36} />
+          <div className="min-w-0">
+            <a
+              href={`/messenger?search=${encodeURIComponent(group.domain)}`}
+              className="text-sm font-medium text-slate-800 hover:text-accent"
+            >
+              {group.label}
+            </a>
+            <div className="truncate text-xs text-slate-400">{subjectPreview}</div>
+          </div>
+        </div>
+      </td>
+
+      {/* Messenger badge */}
+      <td className="px-4 py-3">
+        <span
+          className={cn(
+            'inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium',
+            cfg.bgClass,
+            cfg.textClass,
+          )}
+        >
+          {cfg.label}
+        </span>
+      </td>
+
+      {/* Type — N/A for groups */}
+      <td className="px-4 py-3 text-xs text-slate-300">—</td>
+
+      {/* Owner — N/A for groups */}
+      <td className="px-4 py-3 text-xs text-slate-300">—</td>
+
+      {/* Total messages */}
+      <td className="px-4 py-3 text-xs font-medium text-slate-600">
+        {group.totalMessages.toLocaleString()}
+      </td>
+
+      {/* Tags union */}
+      <td className="px-4 py-3">
+        <div className="flex flex-wrap gap-1">
+          {group.tags.length === 0 ? (
+            <span className="text-[10px] text-slate-300">—</span>
+          ) : (
+            group.tags.map((tag) => (
+              <span
+                key={tag.id}
+                className="rounded-full px-2 py-0.5 text-[10px] font-medium"
+                style={{ backgroundColor: tag.color + '18', color: tag.color }}
+              >
+                {tag.name}
+              </span>
+            ))
+          )}
+        </div>
+      </td>
+
+      {/* Last active */}
+      <td className="px-4 py-3 text-xs text-slate-500">
+        {formatTime(group.lastActivityAt)}
+      </td>
+
+      {/* Actions — N/A for groups */}
+      <td className="px-3 py-3" />
+    </tr>
+  );
+}
+
 // ─── Main Page ───
 
 export default function ChatsPage() {
@@ -359,32 +454,49 @@ export default function ChatsPage() {
   const chats = data?.chats ?? [];
   const total = data?.total ?? 0;
 
-  const sorted = useMemo(() => {
-    let filtered = [...chats];
+  const sorted = useMemo<ChatRow[]>(() => {
+    // 1. Apply chat-type filter (existing logic).
+    let filtered = chats;
     if (chatTypeFilter) {
       filtered = filtered.filter((c) => c.chatType === chatTypeFilter);
     }
-    return filtered.sort((a, b) => {
+
+    // 2. Group eligible Gmail chats by sender domain.
+    const rows = groupGmailChats(filtered);
+
+    // 3. Sort. Helper functions handle both Chat and ChatGroup.
+    const getName = (r: ChatRow) => (isChatGroup(r) ? r.label : r.name);
+    const getMessageCount = (r: ChatRow) =>
+      isChatGroup(r) ? r.totalMessages : (r.messageCount ?? 0);
+    const getChatType = (r: ChatRow) => (isChatGroup(r) ? '' : (r.chatType ?? ''));
+    const getFirstTagName = (r: ChatRow) =>
+      isChatGroup(r) ? r.tags[0]?.name : r.tags?.[0]?.name;
+    const getLastMessageTime = (r: ChatRow) => {
+      if (isChatGroup(r)) return new Date(r.lastActivityAt).getTime();
+      return r.lastMessage?.createdAt ? new Date(r.lastMessage.createdAt).getTime() : 0;
+    };
+    const getLastActivity = (r: ChatRow) =>
+      new Date(r.lastActivityAt ?? 0).getTime();
+
+    return [...rows].sort((a, b) => {
       let cmp = 0;
       if (sortBy === 'name') {
-        cmp = a.name.localeCompare(b.name);
+        cmp = getName(a).localeCompare(getName(b));
       } else if (sortBy === 'messageCount') {
-        cmp = (a.messageCount ?? 0) - (b.messageCount ?? 0);
+        cmp = getMessageCount(a) - getMessageCount(b);
       } else if (sortBy === 'chatType') {
-        cmp = (a.chatType ?? '').localeCompare(b.chatType ?? '');
+        cmp = getChatType(a).localeCompare(getChatType(b));
       } else if (sortBy === 'tags') {
-        const aTag = a.tags?.[0]?.name;
-        const bTag = b.tags?.[0]?.name;
+        const aTag = getFirstTagName(a);
+        const bTag = getFirstTagName(b);
         if (!aTag && !bTag) cmp = 0;
         else if (!aTag) cmp = 1;
         else if (!bTag) cmp = -1;
         else cmp = aTag.localeCompare(bTag);
       } else if (sortBy === 'lastMessageDate') {
-        const aDate = a.lastMessage?.createdAt ? new Date(a.lastMessage.createdAt).getTime() : 0;
-        const bDate = b.lastMessage?.createdAt ? new Date(b.lastMessage.createdAt).getTime() : 0;
-        cmp = aDate - bDate;
+        cmp = getLastMessageTime(a) - getLastMessageTime(b);
       } else {
-        cmp = new Date(a.lastActivityAt ?? 0).getTime() - new Date(b.lastActivityAt ?? 0).getTime();
+        cmp = getLastActivity(a) - getLastActivity(b);
       }
       return sortDir === 'desc' ? -cmp : cmp;
     });
@@ -397,10 +509,11 @@ export default function ChatsPage() {
   };
 
   const toggleSelectAll = () => {
-    if (selectedIds.length === sorted.length) {
+    const selectableIds = sorted.filter((r) => !isChatGroup(r)).map((r) => (r as Chat).id);
+    if (selectedIds.length === selectableIds.length) {
       setSelectedIds([]);
     } else {
-      setSelectedIds(sorted.map((c) => c.id));
+      setSelectedIds(selectableIds);
     }
   };
 
@@ -539,7 +652,31 @@ export default function ChatsPage() {
 
       {/* Mobile card list */}
       <div className="flex flex-col gap-2 md:hidden">
-        {sorted.map((chat) => {
+        {sorted.map((row) => {
+          if (isChatGroup(row)) {
+            const cfg = messengerConfig.gmail;
+            return (
+              <a
+                key={`group-${row.domain}`}
+                href={`/messenger?search=${encodeURIComponent(row.domain)}`}
+                className="rounded-xl border border-slate-200 bg-white p-3 transition-colors block"
+              >
+                <div className="flex items-center gap-3">
+                  <div className={cn('h-2 w-2 rounded-full', cfg.dotColor)} />
+                  <span className="flex-1 truncate text-sm font-medium text-slate-900">
+                    {row.label}
+                  </span>
+                  <span className="text-xs text-slate-400">
+                    {row.totalMessages} msgs
+                  </span>
+                </div>
+                <p className="mt-1 truncate pl-5 text-xs text-slate-500">
+                  {row.latestChat.lastMessage?.text ?? row.latestChat.name}
+                </p>
+              </a>
+            );
+          }
+          const chat = row;
           const cfg = messengerConfig[chat.messenger];
           const isSelected = selectedIds.includes(chat.id);
           return (
@@ -600,7 +737,10 @@ export default function ChatsPage() {
                 <th className="w-10 px-4 py-3">
                   <input
                     type="checkbox"
-                    checked={selectedIds.length === sorted.length && sorted.length > 0}
+                    checked={
+                      selectedIds.length > 0 &&
+                      selectedIds.length === sorted.filter((r) => !isChatGroup(r)).length
+                    }
                     onChange={toggleSelectAll}
                     className="h-4 w-4 rounded border-slate-300 text-accent focus:ring-accent/30"
                   />
@@ -630,7 +770,11 @@ export default function ChatsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {sorted.map((chat) => {
+              {sorted.map((row) => {
+                if (isChatGroup(row)) {
+                  return <GroupRow key={`group-${row.domain}`} group={row} />;
+                }
+                const chat = row;
                 const mcfg = messengerConfig[chat.messenger];
                 const TypeIcon = chatTypeIcons[chat.chatType] ?? MessageSquare;
                 const isSelected = selectedIds.includes(chat.id);
