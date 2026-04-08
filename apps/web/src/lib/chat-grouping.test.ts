@@ -38,4 +38,8 @@ describe('extractDomain', () => {
     expect(extractDomain('"Google" <noreply@google.com>')).toBe('google.com');
     expect(extractDomain('Google <noreply@google.com>')).toBe('google.com');
   });
+
+  it('handles display names containing > (anchors to final angle pair)', () => {
+    expect(extractDomain('Re: A > B <user@example.com>')).toBe('example.com');
+  });
 });

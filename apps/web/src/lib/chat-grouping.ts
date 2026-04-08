@@ -11,6 +11,7 @@
 // is a domain like `something.co.za` collapses to `co.za` instead of
 // `something.co.za`, which only matters if there's actually more than one
 // distinct sender on that suffix.
+// All entries must be lowercase — the lookup string is always lowercased before comparison.
 const MULTI_PART_SUFFIXES: ReadonlySet<string> = new Set([
   'co.uk', 'org.uk', 'gov.uk', 'ac.uk', 'me.uk',
   'com.au', 'net.au', 'org.au', 'edu.au', 'gov.au',
@@ -31,7 +32,7 @@ export function extractDomain(raw: string | null | undefined): string | null {
   if (!raw || typeof raw !== 'string') return null;
 
   // Pull the part inside <...> if present, otherwise use the whole string.
-  const angleMatch = raw.match(/<([^>]+)>/);
+  const angleMatch = raw.match(/<([^>]+)>\s*$/);
   const candidate = (angleMatch ? angleMatch[1] : raw).trim();
 
   const atIdx = candidate.lastIndexOf('@');
