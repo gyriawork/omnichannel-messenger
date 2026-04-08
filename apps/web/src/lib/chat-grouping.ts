@@ -115,8 +115,9 @@ export function isChatGroup(row: ChatRow): row is ChatGroup {
 const MIN_GROUP_SIZE = 2;
 
 /**
- * Group Gmail chats by sender domain. Returns a flat list mixing
- * ungrouped chats (Chat) and groups (ChatGroup) in the original order.
+ * Group Gmail chats by sender domain. Returns a flat list of ChatRow:
+ * passthrough chats first (in their original relative order), then any
+ * groups appended after.
  *
  * Sorting is deliberately NOT applied here — the caller controls sort.
  *
@@ -124,7 +125,7 @@ const MIN_GROUP_SIZE = 2;
  *   - Non-Gmail chats are passed through untouched.
  *   - Gmail chats with no lastMessage.fromEmail are passed through.
  *   - Gmail chats whose domain is in FREEMAIL_DOMAINS are passed through.
- *   - Gmail chats whose domain has < MIN_GROUP_SIZE other matches are passed through.
+ *   - Gmail chats whose domain has fewer than 2 matches are passed through.
  *   - Otherwise, chats are bucketed by domain and each bucket becomes a ChatGroup.
  */
 export function groupGmailChats(chats: Chat[]): ChatRow[] {
