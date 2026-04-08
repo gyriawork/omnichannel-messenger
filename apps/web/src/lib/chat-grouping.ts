@@ -92,15 +92,6 @@ export function isFreeMailDomain(domain: string): boolean {
   return FREEMAIL_DOMAINS.has(domain.toLowerCase());
 }
 
-/**
- * Pick the best display name for a group of chats from the same domain.
- *
- * Strategy:
- *   1. Collect non-empty senderName from each chat's lastMessage.
- *   2. Pick the most frequent value. Tie-break: first occurrence wins.
- *   3. If none exists, capitalize the first label of the domain
- *      ("google.com" → "Google", "paypal-business.com" → "Paypal-business").
- */
 // ─── Grouping types ───
 
 export interface ChatGroup {
@@ -209,6 +200,15 @@ export function groupGmailChats(chats: Chat[]): ChatRow[] {
   return result;
 }
 
+/**
+ * Pick the best display name for a group of chats from the same domain.
+ *
+ * Strategy:
+ *   1. Collect non-empty senderName from each chat's lastMessage.
+ *   2. Pick the most frequent value. Tie-break: first occurrence wins.
+ *   3. If none exists, capitalize the first label of the domain
+ *      ("google.com" → "Google", "paypal-business.com" → "Paypal-business").
+ */
 export function buildGroupLabel(chats: Chat[], fallbackDomain: string): string {
   const counts = new Map<string, { count: number; firstIndex: number }>();
   chats.forEach((chat, idx) => {
