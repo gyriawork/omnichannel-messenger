@@ -1,5 +1,6 @@
 'use client';
 
+import { Suspense } from 'react';
 import { ChatList } from '@/components/messenger/ChatList';
 import { ChatArea } from '@/components/messenger/ChatArea';
 import { ChatInfo } from '@/components/messenger/ChatInfo';
@@ -15,7 +16,11 @@ export default function MessengerPage() {
     return (
       <RequireOrgContext>
       <div className="flex h-full flex-col">
-        {mobileView === 'list' && <ChatList />}
+        {mobileView === 'list' && (
+          <Suspense fallback={null}>
+            <ChatList />
+          </Suspense>
+        )}
         {mobileView === 'chat' && <ChatArea />}
         {mobileView === 'info' && <ChatInfo />}
       </div>
@@ -26,7 +31,9 @@ export default function MessengerPage() {
   return (
     <RequireOrgContext>
     <div className="flex h-full">
-      <ChatList />
+      <Suspense fallback={null}>
+        <ChatList />
+      </Suspense>
       <ChatArea />
       <ChatInfo />
     </div>
