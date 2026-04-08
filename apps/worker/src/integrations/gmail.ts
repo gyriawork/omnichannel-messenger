@@ -6,6 +6,7 @@ import { google } from 'googleapis';
 import type { gmail_v1 } from 'googleapis';
 import type { MessengerAdapter, GetMessagesResult, HistoryMessage } from './base.js';
 import { MessengerError } from './base.js';
+import { parseGmailMessage } from './gmail-parser.js';
 
 interface GmailCredentials {
   clientId: string;
@@ -301,12 +302,12 @@ export class GmailAdapter implements MessengerAdapter {
     this.ensureConnected();
 
     try {
-      // externalChatId IS the thread ID for Gmail — fetch only this thread
+      // externalChatId IS the thread ID for Gmail — fetch only this thread.
+      // Use format: 'full' to get the complete MIME payload (HTML + plain text + headers).
       const threadResult = await this.gmail!.users.threads.get({
         userId: 'me',
         id: externalChatId,
-        format: 'metadata',
-        metadataHeaders: ['From', 'Subject', 'Date'],
+        format: 'full',
       });
 
       const allMessages = threadResult.data.messages ?? [];
@@ -321,17 +322,33 @@ export class GmailAdapter implements MessengerAdapter {
       const historyMessages: HistoryMessage[] = slice
         .filter((msg) => msg.id)
         .map((msg) => {
-          const headers = msg.payload?.headers ?? [];
-          const from = headers.find((h) => h.name === 'From')?.value ?? '';
-          const dateStr = headers.find((h) => h.name === 'Date')?.value ?? '';
+          const parsed = parseGmailMessage(msg);
+          const dateStr = msg.payload?.headers?.find((h) => h.name === 'Date')?.value ?? '';
+
+          // Build senderName from parsed From header.
+          const senderName =
+            parsed.fromName || parsed.fromEmail || '(unknown sender)';
+
+          // Text field is used by search and by other messenger logic —
+          // keep it populated with plain body (or snippet as fallback).
+          const text = parsed.plainBody || msg.snippet || '';
 
           return {
             id: msg.id!,
-            text: msg.snippet ?? '',
-            senderId: from,
-            senderName: from.replace(/<.*>/, '').trim(),
+            text,
+            senderId: parsed.fromEmail ?? '',
+            senderName,
             date: dateStr ? new Date(dateStr) : new Date(),
             isSelf: msg.labelIds?.includes('SENT') ?? false,
+            // Email-specific fields
+            subject: parsed.subject,
+            htmlBody: parsed.htmlBody,
+            plainBody: parsed.plainBody,
+            fromEmail: parsed.fromEmail,
+            toEmails: parsed.toEmails,
+            ccEmails: parsed.ccEmails,
+            bccEmails: parsed.bccEmails,
+            inReplyTo: parsed.inReplyTo,
           };
         });
 

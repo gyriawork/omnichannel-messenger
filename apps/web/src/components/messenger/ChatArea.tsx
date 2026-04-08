@@ -40,6 +40,7 @@ import { getAvatarColor, getInitials } from '@/lib/chat-utils';
 import { ChatAvatar } from '@/components/ui/ChatAvatar';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { EmptyState as UIEmptyState } from '@/components/ui/EmptyState';
+import { EmailThread } from './EmailThread';
 import { api } from '@/lib/api';
 import { useChatStore } from '@/stores/chat';
 import { useAuthStore } from '@/stores/auth';
@@ -762,7 +763,11 @@ function ComposeBar({ chatId, messenger }: { chatId: string; messenger?: string 
   const { mutate: sendMessage, isPending } = useSendMessage();
   const { sendTyping } = useSocket();
 
-  // Check if user has a connected integration for this messenger
+  // Check if user has a connected integration for this messenger.
+  // The actual `hasIntegration` early return lives at the bottom of the
+  // function, so that all hooks below are still called regardless — otherwise
+  // toggling between chats with/without an integration violates the Rules of
+  // Hooks and crashes with "Rendered fewer hooks than expected".
   const { data: integrationsData } = useIntegrations();
   const hasIntegration = useMemo(() => {
     if (!messenger || !integrationsData?.integrations) return true;
@@ -770,19 +775,6 @@ function ComposeBar({ chatId, messenger }: { chatId: string; messenger?: string 
       (i) => i.messenger === messenger && i.status === 'connected',
     );
   }, [messenger, integrationsData]);
-
-  if (!hasIntegration) {
-    const messengerLabel = messenger ? messenger.charAt(0).toUpperCase() + messenger.slice(1) : 'this messenger';
-    return (
-      <div className="border-t border-slate-200 bg-slate-50 px-5 py-4 text-center">
-        <p className="text-sm text-slate-500">
-          Connect {messengerLabel} in{' '}
-          <a href="/settings" className="font-medium text-accent hover:text-accent-hover">Settings</a>
-          {' '}to send messages
-        </p>
-      </div>
-    );
-  }
 
   // Notify server when user is typing
   useEffect(() => {
@@ -921,6 +913,21 @@ function ComposeBar({ chatId, messenger }: { chatId: string; messenger?: string 
     setTemplateSearch('');
     textareaRef.current?.focus();
   }, [trackTemplateUse]);
+
+  // ── No integration connected → show CTA instead of composer ──
+  // Placed AFTER all hooks above to satisfy the Rules of Hooks.
+  if (!hasIntegration) {
+    const messengerLabel = messenger ? messenger.charAt(0).toUpperCase() + messenger.slice(1) : 'this messenger';
+    return (
+      <div className="border-t border-slate-200 bg-slate-50 px-5 py-4 text-center">
+        <p className="text-sm text-slate-500">
+          Connect {messengerLabel} in{' '}
+          <a href="/settings" className="font-medium text-accent hover:text-accent-hover">Settings</a>
+          {' '}to send messages
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex-shrink-0 border-t border-slate-200 bg-white px-5 pb-4 pt-3">
@@ -1222,6 +1229,12 @@ function MessageFeed({ chatId, messenger }: { chatId: string; messenger?: string
         </div>
       </div>
     );
+  }
+
+  // ── Gmail-specific rendering: accordion email thread ──
+  // Skips bubble-style grouping, date separators and MessageBubble entirely.
+  if (messenger === 'gmail') {
+    return <EmailThread messages={messages} isLoading={isLoading} />;
   }
 
   if (messages.length === 0) {

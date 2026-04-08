@@ -52,6 +52,15 @@ export interface HistoryMessage {
   senderName?: string;
   date: Date;
   isSelf: boolean;
+  // Email-specific fields (populated by Gmail adapter). Undefined for other messengers.
+  subject?: string;
+  htmlBody?: string;
+  plainBody?: string;
+  fromEmail?: string;
+  toEmails?: string[];
+  ccEmails?: string[];
+  bccEmails?: string[];
+  inReplyTo?: string;
 }
 
 /** Result of a paginated getMessages call */

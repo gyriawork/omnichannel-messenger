@@ -15,6 +15,9 @@ interface ChatStore {
   replyingTo: Message | null;
   mobileView: 'list' | 'chat' | 'info';
   setMobileView: (view: 'list' | 'chat' | 'info') => void;
+  // Email thread: which message is currently expanded (Gmail chats only)
+  expandedMessageId: string | null;
+  setExpandedMessageId: (id: string | null) => void;
 
   setActiveChat: (chat: Chat | null) => void;
   setSearchQuery: (q: string) => void;
@@ -40,9 +43,16 @@ export const useChatStore = create<ChatStore>((set) => ({
   infoPanelOpen: false,
   replyingTo: null,
   mobileView: 'list' as const,
+  expandedMessageId: null,
 
   setActiveChat: (chat) =>
-    set({ activeChat: chat, messages: [], replyingTo: null, mobileView: chat ? 'chat' : 'list' }),
+    set({
+      activeChat: chat,
+      messages: [],
+      replyingTo: null,
+      mobileView: chat ? 'chat' : 'list',
+      expandedMessageId: null,
+    }),
 
   setSearchQuery: (searchQuery) => set({ searchQuery }),
 
@@ -75,4 +85,6 @@ export const useChatStore = create<ChatStore>((set) => ({
   setReplyingTo: (replyingTo) => set({ replyingTo }),
 
   setMobileView: (mobileView) => set({ mobileView }),
+
+  setExpandedMessageId: (expandedMessageId) => set({ expandedMessageId }),
 }));

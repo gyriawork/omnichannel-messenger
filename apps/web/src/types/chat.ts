@@ -66,6 +66,15 @@ export interface Message {
     size: number;
   }>;
   createdAt: string;
+  // Email-specific fields (Gmail). Undefined/null for other messengers.
+  subject?: string | null;
+  htmlBody?: string | null;
+  plainBody?: string | null;
+  fromEmail?: string | null;
+  toEmails?: string[];
+  ccEmails?: string[];
+  bccEmails?: string[];
+  inReplyTo?: string | null;
 }
 
 export interface AvailableChat {

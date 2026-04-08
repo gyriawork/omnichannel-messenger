@@ -644,6 +644,16 @@ async function processChatHistorySync(job: Job<MessageSyncPayload>): Promise<voi
             isSelf: m.isSelf,
             text: m.text,
             createdAt: m.date,
+            // Email-specific fields (Gmail). Undefined for other messengers,
+            // which Prisma treats as NULL / default.
+            subject: m.subject,
+            htmlBody: m.htmlBody,
+            plainBody: m.plainBody,
+            fromEmail: m.fromEmail,
+            toEmails: m.toEmails ?? [],
+            ccEmails: m.ccEmails ?? [],
+            bccEmails: m.bccEmails ?? [],
+            inReplyTo: m.inReplyTo,
           })),
           skipDuplicates: true,
         });

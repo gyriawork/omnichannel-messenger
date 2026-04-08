@@ -183,6 +183,15 @@ model Message {
   deletedAt        DateTime?
   createdAt        DateTime @default(now())
 
+  // Email rendering fields (Gmail). NULL for other messengers.
+  subject          String?
+  htmlBody         String?  @db.Text
+  plainBody        String?  @db.Text
+  toEmails         String[] @default([])
+  ccEmails         String[] @default([])
+  bccEmails        String[] @default([])
+  inReplyTo        String?  // RFC Message-ID header for threading
+
   attachmentFiles  Attachment[]
   reactions        Reaction[]
 
