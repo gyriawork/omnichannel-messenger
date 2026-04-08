@@ -10,9 +10,12 @@ import {
   VolumeX,
   Star,
   Loader2,
+  MessageCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ChatAvatar } from '@/components/ui/ChatAvatar';
+import { Skeleton } from '@/components/ui/Skeleton';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { useChatStore } from '@/stores/chat';
 import { useChats, useChatPreferences } from '@/hooks/useChats';
 import type { Chat, MessengerType } from '@/types/chat';
@@ -308,31 +311,25 @@ export function ChatList() {
         {/* Chat list */}
         <div className="flex-1 overflow-y-auto">
           {isLoading ? (
-            <div className="flex flex-col gap-1 p-2">
+            // Skeleton list: 6 chat-item shaped placeholders so the left
+            // panel keeps its layout instead of collapsing into a spinner.
+            <div className="flex flex-col gap-1 p-2" aria-busy="true" aria-live="polite">
               {Array.from({ length: 6 }).map((_, i) => (
                 <div key={i} className="flex items-center gap-3 px-4 py-3">
-                  <div className="h-10 w-10 flex-shrink-0 animate-pulse rounded-avatar bg-slate-200" />
+                  <Skeleton className="h-10 w-10 flex-shrink-0 rounded-full" />
                   <div className="flex-1 space-y-2">
-                    <div className="h-3.5 w-24 animate-pulse rounded bg-slate-200" />
-                    <div className="h-3 w-36 animate-pulse rounded bg-slate-100" />
+                    <Skeleton className="h-3.5 w-24" />
+                    <Skeleton className="h-3 w-36" />
                   </div>
                 </div>
               ))}
             </div>
           ) : sortedChats.length === 0 ? (
-            <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
-              <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100">
-                <Search className="h-5 w-5 text-slate-400" />
-              </div>
-              <p className="text-sm font-medium text-slate-600">
-                {searchQuery ? 'No chats found' : 'No chats imported yet'}
-              </p>
-              <p className="mt-1 text-xs text-slate-400">
-                {searchQuery
-                  ? 'Try a different search term'
-                  : 'Click "+ Add Chat" to import your conversations'}
-              </p>
-            </div>
+            <EmptyState
+              icon={<MessageCircle className="h-10 w-10" />}
+              title="Чатов пока нет"
+              description="Импортируйте чаты из подключённого мессенджера"
+            />
           ) : (
             <div className="py-1">
               {sortedChats.map((chat) => (

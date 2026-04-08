@@ -38,6 +38,8 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { getAvatarColor, getInitials } from '@/lib/chat-utils';
 import { ChatAvatar } from '@/components/ui/ChatAvatar';
+import { Skeleton } from '@/components/ui/Skeleton';
+import { EmptyState as UIEmptyState } from '@/components/ui/EmptyState';
 import { api } from '@/lib/api';
 import { useChatStore } from '@/stores/chat';
 import { useAuthStore } from '@/stores/auth';
@@ -695,7 +697,8 @@ function SearchBar({
           className="flex-1 bg-transparent text-sm text-slate-700 placeholder-slate-400 outline-none"
         />
         {isLoading && (
-          <div className="h-4 w-4 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+          // Small skeleton block while the search query is running.
+          <Skeleton className="h-4 w-16" />
         )}
         <button
           onClick={onClose}
@@ -1114,6 +1117,30 @@ function ComposeBar({ chatId, messenger }: { chatId: string; messenger?: string 
   );
 }
 
+// Single chat-bubble placeholder used while messages are loading. Mimics
+// the MessageBubble layout (avatar + rounded bubble body) so the feed
+// keeps its visual rhythm instead of jumping when real data arrives.
+function MessageBubbleSkeleton({
+  side,
+  width,
+}: {
+  side: 'left' | 'right';
+  width: string;
+}) {
+  const isRight = side === 'right';
+  return (
+    <div
+      className={cn(
+        'flex items-end gap-2',
+        isRight ? 'flex-row-reverse' : 'flex-row',
+      )}
+    >
+      {!isRight && <Skeleton className="h-8 w-8 flex-shrink-0 rounded-full" />}
+      <Skeleton className={cn('h-10 rounded-2xl', width)} />
+    </div>
+  );
+}
+
 function MessageFeed({ chatId, messenger }: { chatId: string; messenger?: string }) {
   const feedRef = useRef<HTMLDivElement>(null);
   const setReplyingTo = useChatStore((s) => s.setReplyingTo);
@@ -1166,21 +1193,45 @@ function MessageFeed({ chatId, messenger }: { chatId: string; messenger?: string
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   if (isLoading) {
+    // Content-shaped placeholder: a header strip plus alternating
+    // left/right bubble skeletons of varying widths so the area doesn't
+    // collapse into a spinner while messages are loading.
     return (
-      <div className="flex flex-1 items-center justify-center bg-[#f8fafc]">
-        <div className="h-6 w-6 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+      <div
+        className="flex flex-1 flex-col bg-[#f8fafc]"
+        aria-busy="true"
+        aria-live="polite"
+      >
+        {/* Header strip skeleton */}
+        <div className="flex h-[60px] flex-shrink-0 items-center gap-3 border-b border-slate-200 bg-white px-5">
+          <Skeleton className="h-9 w-9 rounded-full" />
+          <div className="flex-1 space-y-2">
+            <Skeleton className="h-3.5 w-40" />
+            <Skeleton className="h-3 w-24" />
+          </div>
+        </div>
+
+        {/* Message bubble skeletons — alternating sides, varying widths */}
+        <div className="flex-1 space-y-3 overflow-hidden px-5 py-4">
+          <MessageBubbleSkeleton side="left" width="w-56" />
+          <MessageBubbleSkeleton side="right" width="w-40" />
+          <MessageBubbleSkeleton side="left" width="w-72" />
+          <MessageBubbleSkeleton side="right" width="w-52" />
+          <MessageBubbleSkeleton side="left" width="w-32" />
+          <MessageBubbleSkeleton side="right" width="w-64" />
+        </div>
       </div>
     );
   }
 
   if (messages.length === 0) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center bg-[#f8fafc]">
-        <MessageSquare className="mb-2 h-8 w-8 text-slate-300" />
-        <p className="text-sm text-slate-400">No messages yet</p>
-        <p className="mt-0.5 text-xs text-slate-400">
-          Send the first message to start the conversation
-        </p>
+      <div className="flex flex-1 items-center justify-center bg-[#f8fafc]">
+        <UIEmptyState
+          icon={<MessageSquare className="h-12 w-12" />}
+          title="Сообщений ещё нет"
+          description="Напишите первое сообщение в этот чат"
+        />
       </div>
     );
   }
@@ -1192,8 +1243,9 @@ function MessageFeed({ chatId, messenger }: { chatId: string; messenger?: string
       className="flex-1 overflow-y-auto bg-[#f8fafc] px-5 py-4"
     >
       {isFetchingNextPage && (
-        <div className="flex justify-center py-3">
-          <div className="h-5 w-5 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+        // Skeleton bubble at the top while older messages are fetched in.
+        <div className="py-2">
+          <MessageBubbleSkeleton side="left" width="w-48" />
         </div>
       )}
 
