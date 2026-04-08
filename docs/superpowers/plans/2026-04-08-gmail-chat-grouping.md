@@ -726,6 +726,8 @@ git commit -m "feat(chat-grouping): add groupGmailChats and ChatGroup type"
 
 The grouping function reads `chat.lastMessage.fromEmail`. Currently the API does not project this field. Without this change, every Gmail chat will fall through to the `passthrough` branch and nothing will ever group.
 
+**Precondition:** The migration `20260408000001_add_email_fields` must already be applied (it adds `Message.fromEmail`). If you pulled the repo fresh, run `cd apps/api && npx prisma migrate deploy && npx prisma generate` before starting this task.
+
 - [ ] **Step 5.1: Extend the `lastMessage` projection**
 
 In `apps/api/src/routes/chats.ts`, find:
@@ -838,7 +840,7 @@ Find the existing `sorted` `useMemo` (around lines 362-391). Replace with:
       return r.lastMessage?.createdAt ? new Date(r.lastMessage.createdAt).getTime() : 0;
     };
     const getLastActivity = (r: ChatRow) =>
-      new Date((isChatGroup(r) ? r.lastActivityAt : r.lastActivityAt) ?? 0).getTime();
+      new Date(r.lastActivityAt ?? 0).getTime();
 
     return [...rows].sort((a, b) => {
       let cmp = 0;
@@ -891,7 +893,7 @@ Also update the "select all" checkbox `checked` prop similarly:
 
 - [ ] **Step 6.4: Branch the desktop table row rendering**
 
-Find the `sorted.map((chat) => { … })` block in the table body (around line 633). Replace the inner of the map with:
+Find the `sorted.map((chat) => { … })` block in the table body (around line 633). Replace the inner of the map with the code below. **Important:** keep the existing `<tr>` body for the chat case exactly as it is today — only the wrapping is changing. The `/* ...existing content unchanged... */` placeholder below means "leave the existing JSX for that row verbatim".
 
 ```tsx
               {sorted.map((row) => {
@@ -1019,7 +1021,7 @@ function GroupRow({ group }: { group: ChatGroup }) {
 
 - [ ] **Step 6.6: Update mobile card list**
 
-Find the mobile card list block (around line 542). Replace `sorted.map((chat) => { … })` with:
+Find the mobile card list block (around line 542). Replace `sorted.map((chat) => { … })` with the code below. Same convention as Step 6.4: the `// ...existing card markup unchanged...` placeholder means keep the existing chat-card JSX verbatim.
 
 ```tsx
         {sorted.map((row) => {
@@ -1138,6 +1140,8 @@ This task uses the seed Gmail chat (`69840d07-da19-451e-8302-f636ac345fa4`) that
 - [ ] **Step 8.1: Inject a second Gmail chat from `acme.example`**
 
 Use a temporary Node script via Bash to insert a second chat with at least one Gmail message whose `fromEmail` is on the same `acme.example` domain. Reuse the same `organizationId` and `importedById` as the existing seed chat.
+
+If `scripts/` does not exist at the repo root, create it (`mkdir scripts`).
 
 Sketch:
 
