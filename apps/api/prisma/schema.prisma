@@ -170,6 +170,7 @@ model Message {
   externalMessageId String?
   senderName       String
   senderExternalId String?
+  fromEmail        String?  // Gmail sender address — used for chat grouping by domain
   isSelf           Boolean  @default(false)
   text             String
   editedAt         DateTime?
