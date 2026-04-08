@@ -502,6 +502,9 @@ export default function ChatsPage() {
       }
       return sortDir === 'desc' ? -cmp : cmp;
     });
+    // `search` intentionally absent from deps: server-side filtering already
+    // narrows `chats` for that input, so adding it would only cause redundant
+    // recomputes.
   }, [chats, chatTypeFilter, sortBy, sortDir]);
 
   const toggleSelect = (id: string) => {

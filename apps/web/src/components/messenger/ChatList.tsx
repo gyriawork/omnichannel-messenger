@@ -210,7 +210,10 @@ export function ChatList() {
   const [localSearch, setLocalSearch] = useState(searchQuery);
 
   // Seed search from ?search=... URL param (set by /chats group rows
-  // navigating to /messenger?search=<domain>). Runs once on mount only.
+  // navigating to /messenger?search=<domain>). Runs once on mount only —
+  // intentional, because the only entry point that uses this param is a full
+  // navigation from /chats. If client-side ?search= changes ever become a
+  // requirement, switch to depending on `searchParams`.
   const searchParams = useSearchParams();
   useEffect(() => {
     const fromUrl = searchParams?.get('search');
