@@ -131,6 +131,8 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
         where.OR = [
           { name: { contains: search, mode: 'insensitive' } },
           { messages: { some: { text: { contains: search, mode: 'insensitive' } } } },
+          // Match Gmail sender domain so /messenger?search=google.com works.
+          { messages: { some: { fromEmail: { contains: search, mode: 'insensitive' } } } },
         ];
       }
       if (tagId) {
@@ -150,7 +152,7 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
             messages: {
               take: 1,
               orderBy: { createdAt: 'desc' },
-              select: { id: true, text: true, senderName: true, createdAt: true },
+              select: { id: true, text: true, senderName: true, createdAt: true, fromEmail: true },
             },
             preferences: {
               where: { userId: request.user.id },
