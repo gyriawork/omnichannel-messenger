@@ -21,7 +21,9 @@ import { messageSyncQueue } from '../lib/queue.js';
 
 /**
  * Queue a one-shot initial chat-list sync for a freshly (re)connected integration.
- * Fires and forgets — the worker drives the blocking sync overlay via WS events.
+ * Drives the blocking sync overlay via WS events. If Redis/BullMQ is unavailable
+ * we flip the integration into `failed` so the frontend can show an error
+ * instead of hanging on an eternal "syncing" state.
  */
 async function queueInitialSync(
   integrationId: string,
@@ -36,7 +38,19 @@ async function queueInitialSync(
       { jobId: `initial-sync-${integrationId}-${Date.now()}` },
     );
   } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
     console.warn('[integrations] Failed to queue initial-sync job', err);
+    try {
+      await prisma.integration.update({
+        where: { id: integrationId },
+        data: {
+          syncStatus: 'failed',
+          syncError: `Queue unavailable: ${message}`,
+        },
+      });
+    } catch (dbErr) {
+      console.error('[integrations] Failed to mark integration as failed', dbErr);
+    }
   }
 }
 

@@ -20,6 +20,8 @@ const MESSENGER_LABELS: Record<string, string> = {
 
 export function InitialSyncOverlay() {
   const active = useInitialSyncStore((s) => s.active);
+  const setProgress = useInitialSyncStore((s) => s.setProgress);
+  const setFailed = useInitialSyncStore((s) => s.setFailed);
   const clear = useInitialSyncStore((s) => s.clear);
   const queryClient = useQueryClient();
 
@@ -34,11 +36,22 @@ export function InitialSyncOverlay() {
       : null;
 
   const handleRetry = async () => {
+    // Flip to "syncing" immediately so the user sees feedback right away —
+    // otherwise the failed state lingers until the first WS progress event.
+    const snapshot = active;
+    setProgress({
+      integrationId: snapshot.integrationId,
+      messenger: snapshot.messenger,
+      done: 0,
+      total: null,
+    });
     try {
-      await api.post(`/api/integrations/${active.messenger}/resync`, {});
+      await api.post(`/api/integrations/${snapshot.messenger}/resync`, {});
       queryClient.invalidateQueries({ queryKey: ['integrations'] });
     } catch (err) {
       console.error('[InitialSync] retry failed', err);
+      const message = err instanceof Error ? err.message : 'Не удалось перезапустить синхронизацию';
+      setFailed(snapshot.integrationId, message);
     }
   };
 

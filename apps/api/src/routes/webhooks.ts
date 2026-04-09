@@ -112,12 +112,26 @@ function verifySlackRequest(request: FastifyRequest): boolean {
 export default async function webhookRoutes(fastify: FastifyInstance): Promise<void> {
 
   // ── Telegram Webhook ──
-  // Telegram sends updates as POST to this endpoint
+  // Telegram sends updates as POST to this endpoint. The path carries the
+  // integration id so each bot's updates land in exactly one tenant — no
+  // cross-tenant fan-out. V1.1 primarily uses user-session (gramjs in the
+  // worker); this bot-webhook path is a fallback for bot-only setups.
   fastify.post(
-    '/webhooks/telegram',
+    '/webhooks/telegram/:integrationId',
     async (request: FastifyRequest, reply: FastifyReply) => {
       if (!verifyTelegramSecret(request)) {
         return reply.status(403).send({ error: 'Invalid secret' });
+      }
+
+      const { integrationId } = request.params as { integrationId: string };
+
+      const integration = await prisma.integration.findUnique({
+        where: { id: integrationId },
+        select: { id: true, messenger: true, organizationId: true, userId: true, status: true },
+      });
+
+      if (!integration || integration.messenger !== 'telegram') {
+        return reply.status(404).send({ error: 'Integration not found' });
       }
 
       const body = request.body as Record<string, unknown>;
@@ -145,29 +159,18 @@ export default async function webhookRoutes(fastify: FastifyInstance): Promise<v
       const chatType: 'direct' | 'group' | 'channel' =
         chatTypeRaw === 'private' ? 'direct' : chatTypeRaw === 'channel' ? 'channel' : 'group';
 
-      // NOTE: Telegram bot webhooks are shared across all connected bots. Without
-      // per-bot routing we fan out to every connected Telegram integration and
-      // let ensureChat() upsert per-org. In practice V1.1 uses user-session
-      // (gramjs) via the worker, so this path is largely a fallback.
-      const telegramIntegrations = await prisma.integration.findMany({
-        where: { messenger: 'telegram', status: 'connected' },
-        select: { organizationId: true, userId: true },
+      await saveIncomingMessage({
+        externalChatId: chatId,
+        messenger: 'telegram',
+        organizationId: integration.organizationId,
+        importedById: integration.userId,
+        senderName,
+        senderExternalId: senderId,
+        text,
+        externalMessageId: String(message.message_id),
+        chatName: chatTitle,
+        chatType,
       });
-
-      for (const integration of telegramIntegrations) {
-        await saveIncomingMessage({
-          externalChatId: chatId,
-          messenger: 'telegram',
-          organizationId: integration.organizationId,
-          importedById: integration.userId,
-          senderName,
-          senderExternalId: senderId,
-          text,
-          externalMessageId: String(message.message_id),
-          chatName: chatTitle,
-          chatType,
-        });
-      }
 
       return reply.send({ ok: true });
     },
@@ -247,11 +250,18 @@ export default async function webhookRoutes(fastify: FastifyInstance): Promise<v
         }
       });
 
-      // Fallback: if no credential match (older integrations missing teamId),
-      // process for all connected Slack integrations — ensureChat will dedupe.
-      const targets = matchedIntegrations.length > 0 ? matchedIntegrations : slackIntegrations;
+      // No fan-out: if we cannot resolve the Slack workspace to exactly one
+      // tenant, drop the event rather than leak data across organizations.
+      // Older integrations missing teamId must be re-connected to route events.
+      if (matchedIntegrations.length === 0) {
+        request.log.warn(
+          { teamId },
+          '[webhooks/slack] No integration matched team_id — dropping event',
+        );
+        return reply.send({ ok: true });
+      }
 
-      for (const integration of targets) {
+      for (const integration of matchedIntegrations) {
         const senderName = await resolveSlackUserName(integration.organizationId, userId);
 
         await saveIncomingMessage({

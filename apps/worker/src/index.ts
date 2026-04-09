@@ -3,6 +3,7 @@ import IORedis from 'ioredis';
 import prisma from './lib/prisma.js';
 import { decryptCredentials } from './lib/crypto.js';
 import { createAdapter } from './integrations/factory.js';
+import { ensureChat } from './services/chat-service.js';
 type Messenger = 'telegram' | 'slack' | 'whatsapp' | 'gmail';
 
 const DEFAULT_ANTIBAN: Record<Messenger, {
@@ -1246,26 +1247,13 @@ async function processInitialSync(job: Job<InitialSyncPayload>): Promise<void> {
         const chatType: 'direct' | 'group' | 'channel' =
           c.chatType === 'channel' ? 'channel' : c.chatType === 'group' ? 'group' : 'direct';
 
-        await prisma.chat.upsert({
-          where: {
-            externalChatId_messenger_organizationId: {
-              externalChatId: c.externalChatId,
-              messenger,
-              organizationId,
-            },
-          },
-          create: {
-            name: c.name || c.externalChatId,
-            messenger,
-            externalChatId: c.externalChatId,
-            chatType,
-            organizationId,
-            importedById: userId,
-            syncStatus: 'synced',
-            hasFullHistory: false,
-            lastActivityAt: new Date(),
-          },
-          update: {},
+        await ensureChat({
+          organizationId,
+          importedById: userId,
+          messenger,
+          externalChatId: c.externalChatId,
+          name: c.name || c.externalChatId,
+          chatType,
         });
         done++;
       }
@@ -1282,9 +1270,6 @@ async function processInitialSync(job: Job<InitialSyncPayload>): Promise<void> {
         total,
         currentName: batch[batch.length - 1]?.name,
       });
-
-      // Small pause to avoid hammering the messenger API.
-      await sleep(0.5);
     }
 
     await prisma.integration.update({

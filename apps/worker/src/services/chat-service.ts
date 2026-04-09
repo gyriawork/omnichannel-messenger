@@ -1,7 +1,8 @@
-// ─── Chat service ───
-// Central helper for ensuring a Chat row exists for a given external conversation.
-// Used by webhooks, real-time listeners, and the initial-sync worker job so that
-// unknown chats are auto-created instead of dropped (mirrors the Gmail pattern).
+// ─── Chat service (worker) ───
+// Mirrors apps/api/src/services/chat-service.ts so the worker's initial-sync
+// path uses the exact same upsert semantics as webhooks/runtime. Keeping the
+// logic in one shape prevents drift between "chat auto-created from a webhook"
+// and "chat auto-created during bulk import".
 
 import type { Chat } from '@prisma/client';
 import prisma from '../lib/prisma.js';
@@ -20,10 +21,8 @@ export interface EnsureChatParams {
 
 /**
  * Upsert a Chat row by its (externalChatId, messenger, organizationId) composite
- * key. Safe to call repeatedly — existing rows are left completely untouched
- * (update: {}) so re-running initial-sync or replaying webhooks cannot corrupt
- * `lastActivityAt` with stale values. Real activity timestamps are maintained
- * by the message-ingestion path, not by chat discovery.
+ * key. `update: {}` means repeated calls are completely safe — existing chats
+ * are never modified, so replays and reconnects cannot corrupt state.
  */
 export async function ensureChat(params: EnsureChatParams): Promise<Chat> {
   const {

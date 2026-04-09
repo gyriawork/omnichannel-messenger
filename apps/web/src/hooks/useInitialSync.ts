@@ -34,13 +34,16 @@ export function useInitialSync() {
   const setFailed = useInitialSyncStore((s) => s.setFailed);
   const active = useInitialSyncStore((s) => s.active);
 
-  // Fetch once on mount so the overlay can reappear after a page reload.
-  // Subsequent updates come via WebSocket, so we keep staleTime high.
+  // Fetch on mount so the overlay can reappear after a page reload, and
+  // refetch each time the store clears (`!active`) — e.g. after the user
+  // dismisses a failed sync and retries. Using `refetchOnMount: 'always'`
+  // prevents a stale cache from masking a fresh syncing/failed state.
   const { data } = useQuery({
     queryKey: ['integrations', 'initial-sync-rehydrate'],
     queryFn: () => api.get<IntegrationsResponse>('/api/integrations'),
     enabled: isAuthenticated && !active,
-    staleTime: Infinity,
+    staleTime: 15_000,
+    refetchOnMount: 'always',
     refetchOnWindowFocus: false,
   });
 
