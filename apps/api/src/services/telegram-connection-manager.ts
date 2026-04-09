@@ -234,27 +234,39 @@ export class TelegramConnectionManager {
         }
       }
 
-      // Find all orgs that have this chat imported
-      const importedChats = await prisma.chat.findMany({
-        where: { externalChatId, messenger: 'telegram' },
-        select: { organizationId: true },
-      });
+      // Resolve chat display name — prefer the chat entity's title for groups/channels.
+      let chatName = senderName;
+      let chatType: 'direct' | 'group' | 'channel' = 'direct';
+      if (msg.peerId instanceof Api.PeerChat || msg.peerId instanceof Api.PeerChannel) {
+        chatType = msg.peerId instanceof Api.PeerChannel ? 'channel' : 'group';
+        try {
+          const chatEntity = await Promise.race([
+            active.client.getEntity(msg.peerId),
+            new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000)),
+          ]);
+          if (chatEntity && 'title' in (chatEntity as unknown as Record<string, unknown>)) {
+            chatName = (chatEntity as unknown as { title: string }).title || senderName;
+          }
+        } catch {
+          // Use senderName as fallback
+        }
+      }
 
-      // Save to all orgs in parallel
-      await Promise.allSettled(
-        importedChats.map((ic) =>
-          saveIncomingMessage({
-            externalChatId,
-            messenger: 'telegram',
-            organizationId: ic.organizationId,
-            senderName,
-            senderExternalId: senderId,
-            text,
-            externalMessageId,
-            isSelf,
-          }),
-        ),
-      );
+      // Auto-upsert chat and save — this client is bound to a single (org, user),
+      // so multi-tenancy is satisfied by construction.
+      await saveIncomingMessage({
+        externalChatId,
+        messenger: 'telegram',
+        organizationId: active.organizationId,
+        importedById: active.userId,
+        senderName,
+        senderExternalId: senderId,
+        text,
+        externalMessageId,
+        isSelf,
+        chatName,
+        chatType,
+      });
     } catch (err) {
       console.error('[TelegramManager] Error handling incoming message:', err);
     }

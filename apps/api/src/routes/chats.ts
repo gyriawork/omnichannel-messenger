@@ -4,9 +4,6 @@ import { createHash } from 'node:crypto';
 import prisma from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
 import { requireMinRole } from '../middleware/rbac.js';
-import { decryptCredentials } from '../lib/crypto.js';
-import { createAdapter } from '../integrations/factory.js';
-import { MessengerError } from '../integrations/base.js';
 import { messageSyncQueue } from '../lib/queue.js';
 import { cacheGet, cacheSet, cacheInvalidate, cacheKey } from '../lib/cache.js';
 
@@ -29,26 +26,11 @@ const chatIdParamSchema = z.object({
   id: z.string().uuid(),
 });
 
-const messengerParamSchema = z.object({
-  messenger: messengerEnum,
-});
-
 const updateChatBodySchema = z.object({
   ownerId: z.string().uuid().nullable().optional(),
   status: z.enum(['active', 'read-only']).optional(),
   tags: z.array(z.string().uuid()).optional(),
   externalChatId: z.string().min(1).optional(),
-});
-
-const importChatsBodySchema = z.object({
-  messenger: messengerEnum,
-  chats: z.array(
-    z.object({
-      externalChatId: z.string().min(1).max(500),
-      name: z.string().min(1).max(500),
-      chatType: z.enum(['direct', 'group', 'channel']).default('direct'),
-    }),
-  ).min(1).max(500),
 });
 
 const bulkAssignBodySchema = z.object({
@@ -183,6 +165,7 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
         messageCount: chat.messageCount,
         lastActivityAt: chat.lastActivityAt,
         syncStatus: chat.syncStatus,
+        hasFullHistory: chat.hasFullHistory,
         tags: chat.tags.map((ct) => ({
           id: ct.tag.id,
           name: ct.tag.name,
@@ -205,91 +188,6 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
       const response = { chats: result, total, page, limit };
       await cacheSet(ck, response, 60);
       return reply.send(response);
-    },
-  );
-
-  // ─── GET /chats/available/:messenger ───
-  // Must be registered before /chats/:id to avoid route collision
-
-  fastify.get(
-    '/chats/available/:messenger',
-    { preHandler: authPreHandlers },
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      const paramsParsed = messengerParamSchema.safeParse(request.params);
-      if (!paramsParsed.success) {
-        return sendError(reply, 'VALIDATION_ERROR', 'Invalid messenger type', 422);
-      }
-
-      const { messenger } = paramsParsed.data;
-      const organizationId = getOrgId(request);
-      if (!organizationId) {
-        return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
-      }
-
-      // Look up active integration for this messenger + org (scoped to user for non-admins)
-      const integrationWhere: Record<string, unknown> = {
-        messenger,
-        organizationId,
-        status: 'connected',
-      };
-      if (request.user.role === 'user') {
-        integrationWhere.userId = request.user.id;
-      }
-      const integration = await prisma.integration.findFirst({
-        where: integrationWhere,
-      });
-
-      if (integration) {
-        // Try to list chats via the adapter
-        let adapter: Awaited<ReturnType<typeof createAdapter>> | null = null;
-        try {
-          const credentials = decryptCredentials(integration.credentials as string);
-          adapter = await createAdapter(messenger, credentials);
-          await adapter.connect();
-          const rawChats = await adapter.listChats();
-          const chats = rawChats.map((c: Record<string, unknown>) => ({
-            externalChatId: c.externalChatId ?? c.externalId,
-            name: c.name,
-            chatType: c.chatType ?? 'direct',
-            memberCount: c.memberCount,
-          }));
-          return reply.send({ chats });
-        } catch (err) {
-          // If adapter fails, log and fall through to mock data
-          fastify.log.warn(
-            { messenger, error: err instanceof MessengerError ? err.message : String(err) },
-            'Adapter listChats failed, falling back to mock data',
-          );
-        } finally {
-          if (adapter) {
-            try { await adapter.disconnect(); } catch (e) { fastify.log.warn(e, 'adapter disconnect error'); }
-          }
-        }
-      }
-
-      // Fallback: mock data when no integration is connected or adapter fails
-      const mockChats: Record<string, Array<{ externalChatId: string; name: string; chatType: string }>> = {
-        telegram: [
-          { externalChatId: 'tg_001', name: 'Telegram Support Group', chatType: 'group' },
-          { externalChatId: 'tg_002', name: 'John Doe', chatType: 'direct' },
-          { externalChatId: 'tg_003', name: 'Announcements Channel', chatType: 'channel' },
-        ],
-        slack: [
-          { externalChatId: 'sl_001', name: '#general', chatType: 'channel' },
-          { externalChatId: 'sl_002', name: '#support', chatType: 'channel' },
-          { externalChatId: 'sl_003', name: 'Jane Smith', chatType: 'direct' },
-        ],
-        whatsapp: [
-          { externalChatId: 'wa_001', name: 'Family Group', chatType: 'group' },
-          { externalChatId: 'wa_002', name: '+1 555-0100', chatType: 'direct' },
-        ],
-        gmail: [
-          { externalChatId: 'gm_001', name: 'support@example.com', chatType: 'direct' },
-          { externalChatId: 'gm_002', name: 'team@example.com', chatType: 'direct' },
-        ],
-      };
-
-      return reply.send({ chats: mockChats[messenger] ?? [] });
     },
   );
 
@@ -349,6 +247,7 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
         messageCount: chat.messageCount,
         lastActivityAt: chat.lastActivityAt,
         syncStatus: chat.syncStatus,
+        hasFullHistory: chat.hasFullHistory,
         tags: chat.tags.map((ct) => ({
           id: ct.tag.id,
           name: ct.tag.name,
@@ -518,88 +417,74 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
     },
   );
 
-  // ─── POST /chats/import ───
+  // ─── POST /chats/:id/load-full-history ───
+  // Queues a background job to pull the full message history for a single chat.
+  // Used by the "Load full history" button in the chat header (lazy-history model).
 
   fastify.post(
-    '/chats/import',
+    '/chats/:id/load-full-history',
     { preHandler: authPreHandlers },
     async (request: FastifyRequest, reply: FastifyReply) => {
-      const parsed = importChatsBodySchema.safeParse(request.body);
-      if (!parsed.success) {
-        return sendError(reply, 'VALIDATION_ERROR', parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '), 422);
+      const paramsParsed = chatIdParamSchema.safeParse(request.params);
+      if (!paramsParsed.success) {
+        return sendError(reply, 'VALIDATION_ERROR', 'Invalid chat id', 422);
       }
 
-      const { messenger, chats: chatsToImport } = parsed.data;
-
+      const { id } = paramsParsed.data;
       const organizationId = getOrgId(request);
       if (!organizationId) {
         return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
       }
 
-      // Find existing chats to skip duplicates
-      const externalIds = chatsToImport.map((c) => c.externalChatId);
-      const existingChats = await prisma.chat.findMany({
-        where: {
+      const chat = await prisma.chat.findFirst({
+        where: { id, organizationId, deletedAt: null },
+        select: { id: true, messenger: true, syncStatus: true, hasFullHistory: true },
+      });
+
+      if (!chat) {
+        return sendError(reply, 'RESOURCE_NOT_FOUND', `Chat with id ${id} not found`, 404);
+      }
+
+      if (chat.hasFullHistory) {
+        return reply.send({ queued: false, reason: 'already_fetched' });
+      }
+
+      if (chat.syncStatus === 'syncing') {
+        return reply.send({ queued: false, reason: 'already_syncing' });
+      }
+
+      const integration = await prisma.integration.findFirst({
+        where: { messenger: chat.messenger, organizationId, status: 'connected' },
+        select: { id: true },
+      });
+
+      if (!integration) {
+        return sendError(
+          reply,
+          'MESSENGER_API_ERROR',
+          `No connected ${chat.messenger} integration found`,
+          502,
+        );
+      }
+
+      // Mark the chat as pending so the existing sync-history processor picks it up.
+      await prisma.chat.update({
+        where: { id },
+        data: { syncStatus: 'pending' },
+      });
+
+      await messageSyncQueue.add(
+        'sync:chat-history',
+        {
+          chatIds: [id],
+          integrationId: integration.id,
           organizationId,
-          messenger,
-          externalChatId: { in: externalIds },
+          messenger: chat.messenger,
         },
-        select: { externalChatId: true },
-      });
+        { jobId: `load-full-history-${id}-${Date.now()}` },
+      );
 
-      const existingSet = new Set(existingChats.map((c) => c.externalChatId));
-      const newChats = chatsToImport.filter((c) => !existingSet.has(c.externalChatId));
-
-      let imported: Awaited<ReturnType<typeof prisma.chat.findMany>> = [];
-
-      if (newChats.length > 0) {
-        await prisma.chat.createMany({
-          data: newChats.map((c) => ({
-            name: c.name,
-            messenger,
-            externalChatId: c.externalChatId,
-            chatType: c.chatType,
-            organizationId,
-            importedById: request.user.id,
-          })),
-        });
-
-        // Fetch the newly created chats
-        imported = await prisma.chat.findMany({
-          where: {
-            organizationId,
-            messenger,
-            externalChatId: { in: newChats.map((c) => c.externalChatId) },
-          },
-        });
-      }
-
-      // Queue background history sync for imported chats
-      if (imported.length > 0) {
-        const integration = await prisma.integration.findFirst({
-          where: { messenger, organizationId, status: 'connected' },
-          select: { id: true },
-        });
-
-        if (integration) {
-          messageSyncQueue.add('sync:chat-history', {
-            chatIds: imported.map((c) => c.id),
-            integrationId: integration.id,
-            organizationId,
-            messenger,
-          }).catch((err) => {
-            fastify.log.warn({ err }, 'Failed to queue chat history sync');
-          });
-        }
-      }
-
-      await cacheInvalidate(cacheKey(organizationId, 'chats', '*'));
-
-      return reply.status(201).send({
-        imported: newChats.length,
-        skipped: chatsToImport.length - newChats.length,
-        chats: imported,
-      });
+      return reply.send({ queued: true });
     },
   );
 

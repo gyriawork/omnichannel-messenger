@@ -62,6 +62,15 @@ interface GmailRehydratePayload {
   organizationId: string;
 }
 
+interface InitialSyncPayload {
+  integrationId: string;
+  organizationId: string;
+  userId: string;
+  messenger: Messenger;
+  /** Gmail-only: how many threads to pull during initial import. Defaults to 200. */
+  importCount?: number;
+}
+
 interface AntibanConfig {
   messagesPerBatch: number;
   delayBetweenMessages: number;
@@ -126,6 +135,27 @@ async function getAntibanSettings(
     maxRetryAttempts: 3,
     retryWindowHours: 6,
   };
+}
+
+/**
+ * Emit integration sync status via Redis pub/sub. The API's WebSocket server
+ * subscribes to these events and pushes them to connected browsers so the
+ * initial-sync overlay can show live progress.
+ */
+function emitIntegrationSyncStatus(
+  organizationId: string,
+  integrationId: string,
+  event: 'integration_sync_progress' | 'integration_sync_complete' | 'integration_sync_failed',
+  data: Record<string, unknown>,
+) {
+  const payload = JSON.stringify({
+    event,
+    room: `org:${organizationId}`,
+    data: { integrationId, ...data },
+  });
+  pubClient.publish('ws:events', payload).catch((err) => {
+    log.warn('Failed to publish integration sync status', { error: String(err) });
+  });
 }
 
 /**
@@ -705,6 +735,7 @@ async function processChatHistorySync(job: Job<MessageSyncPayload>): Promise<voi
         data: {
           syncStatus: 'synced',
           syncCursor: null,
+          hasFullHistory: true,
           messageCount: totalMessages,
           lastActivityAt: latestMessage?.createdAt ?? new Date(),
         },
@@ -1090,6 +1121,212 @@ async function processGmailAutoImport(job: Job<GmailAutoImportPayload>): Promise
   log.info(`Gmail auto-import complete: ${importedCount}/${allThreadIds.length} threads imported`, { organizationId });
 }
 
+// ─── Integration Initial Sync Processor ───
+// Triggered right after an integration is connected. Pulls the full list of
+// chats from the messenger and upserts a Chat row for each — messages
+// themselves stay lazy (a "Load full history" button pulls them later).
+// For Gmail we delegate to the existing processGmailAutoImport which already
+// does thread-level import.
+
+async function processInitialSync(job: Job<InitialSyncPayload>): Promise<void> {
+  const { integrationId, organizationId, userId, messenger, importCount } = job.data;
+  log.info('Processing integration:initial-sync', { integrationId, messenger });
+
+  // Gmail has its own thread-based import path — reuse it.
+  if (messenger === 'gmail') {
+    emitIntegrationSyncStatus(organizationId, integrationId, 'integration_sync_progress', {
+      messenger,
+      status: 'syncing',
+      done: 0,
+      total: null,
+    });
+    await prisma.integration.update({
+      where: { id: integrationId },
+      data: { syncStatus: 'syncing', syncStartedAt: new Date(), syncError: null },
+    });
+    try {
+      // Delegate to the existing Gmail auto-import.
+      await processGmailAutoImport({
+        data: { integrationId, organizationId, userId, importCount: importCount ?? 200 },
+      } as Job<GmailAutoImportPayload>);
+      await prisma.integration.update({
+        where: { id: integrationId },
+        data: { syncStatus: 'synced' },
+      });
+      emitIntegrationSyncStatus(organizationId, integrationId, 'integration_sync_complete', {
+        messenger,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      await prisma.integration.update({
+        where: { id: integrationId },
+        data: { syncStatus: 'failed', syncError: message },
+      });
+      emitIntegrationSyncStatus(organizationId, integrationId, 'integration_sync_failed', {
+        messenger,
+        error: message,
+      });
+    }
+    return;
+  }
+
+  // Non-Gmail messengers: list chats + upsert.
+  const integration = await prisma.integration.findUnique({
+    where: { id: integrationId },
+    select: { credentials: true },
+  });
+
+  if (!integration) {
+    log.warn('Integration not found for initial sync', { integrationId });
+    return;
+  }
+
+  await prisma.integration.update({
+    where: { id: integrationId },
+    data: {
+      syncStatus: 'syncing',
+      syncStartedAt: new Date(),
+      syncCompletedChats: 0,
+      syncTotalChats: null,
+      syncError: null,
+    },
+  });
+
+  emitIntegrationSyncStatus(organizationId, integrationId, 'integration_sync_progress', {
+    messenger,
+    status: 'syncing',
+    done: 0,
+    total: null,
+  });
+
+  let adapter;
+  try {
+    const credentials = decryptCredentials<Record<string, unknown>>(integration.credentials as string);
+    adapter = await createAdapter(messenger, credentials);
+    await adapter.connect();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    log.error('Failed to connect adapter for initial sync', { error: message });
+    await prisma.integration.update({
+      where: { id: integrationId },
+      data: { syncStatus: 'failed', syncError: `Connect failed: ${message}` },
+    });
+    emitIntegrationSyncStatus(organizationId, integrationId, 'integration_sync_failed', {
+      messenger,
+      error: `Connect failed: ${message}`,
+    });
+    return;
+  }
+
+  try {
+    const chats = await adapter.listChats();
+    const total = chats.length;
+
+    await prisma.integration.update({
+      where: { id: integrationId },
+      data: { syncTotalChats: total },
+    });
+
+    emitIntegrationSyncStatus(organizationId, integrationId, 'integration_sync_progress', {
+      messenger,
+      status: 'syncing',
+      done: 0,
+      total,
+    });
+
+    log.info(`Initial sync: ${total} chats to import`, { integrationId, messenger });
+
+    let done = 0;
+    const BATCH_SIZE = 25;
+
+    for (let i = 0; i < chats.length; i += BATCH_SIZE) {
+      const batch = chats.slice(i, i + BATCH_SIZE);
+
+      for (const c of batch) {
+        const chatType: 'direct' | 'group' | 'channel' =
+          c.chatType === 'channel' ? 'channel' : c.chatType === 'group' ? 'group' : 'direct';
+
+        await prisma.chat.upsert({
+          where: {
+            externalChatId_messenger_organizationId: {
+              externalChatId: c.externalChatId,
+              messenger,
+              organizationId,
+            },
+          },
+          create: {
+            name: c.name || c.externalChatId,
+            messenger,
+            externalChatId: c.externalChatId,
+            chatType,
+            organizationId,
+            importedById: userId,
+            syncStatus: 'synced',
+            hasFullHistory: false,
+            lastActivityAt: new Date(),
+          },
+          update: {},
+        });
+        done++;
+      }
+
+      await prisma.integration.update({
+        where: { id: integrationId },
+        data: { syncCompletedChats: done },
+      });
+
+      emitIntegrationSyncStatus(organizationId, integrationId, 'integration_sync_progress', {
+        messenger,
+        status: 'syncing',
+        done,
+        total,
+        currentName: batch[batch.length - 1]?.name,
+      });
+
+      // Small pause to avoid hammering the messenger API.
+      await sleep(0.5);
+    }
+
+    await prisma.integration.update({
+      where: { id: integrationId },
+      data: { syncStatus: 'synced', syncCompletedChats: done },
+    });
+
+    // Invalidate chat list cache so the frontend picks up the new chats
+    let cursor = '0';
+    const pattern = `cache:${organizationId}:chats:*`;
+    do {
+      const [nextCursor, keys] = await connection.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
+      cursor = nextCursor;
+      if (keys.length > 0) {
+        await connection.del(...keys);
+      }
+    } while (cursor !== '0');
+
+    emitIntegrationSyncStatus(organizationId, integrationId, 'integration_sync_complete', {
+      messenger,
+      total,
+    });
+
+    log.info(`Initial sync complete for ${messenger}: ${done}/${total} chats imported`, {
+      integrationId,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    log.error('Initial sync failed', { error: message });
+    await prisma.integration.update({
+      where: { id: integrationId },
+      data: { syncStatus: 'failed', syncError: message },
+    });
+    emitIntegrationSyncStatus(organizationId, integrationId, 'integration_sync_failed', {
+      messenger,
+      error: message,
+    });
+  } finally {
+    try { await adapter.disconnect(); } catch {}
+  }
+}
+
 // ─── Gmail Watch Renewal Processor ───
 
 async function processGmailWatchRenewal(): Promise<void> {
@@ -1189,6 +1426,8 @@ const messageSyncWorker = new Worker<any>(
       await processGmailAutoImport(job as Job<GmailAutoImportPayload>);
     } else if (job.name === 'gmail:renew-watch') {
       await processGmailWatchRenewal();
+    } else if (job.name === 'integration:initial-sync') {
+      await processInitialSync(job as Job<InitialSyncPayload>);
     } else {
       log.warn(`Unknown message-sync job name: ${job.name}`, { jobId: job.id });
     }

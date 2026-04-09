@@ -6,6 +6,7 @@ import { v5 as uuidv5 } from 'uuid';
 import prisma from '../lib/prisma.js';
 import { getIO } from '../websocket/index.js';
 import { cacheInvalidate, cacheKey } from '../lib/cache.js';
+import { ensureChat, type MessengerType } from './chat-service.js';
 
 // Fixed namespace for generating deterministic UUIDs for external users
 const EXTERNAL_USER_UUID_NAMESPACE = '6ba7b810-9dad-11d1-80b4-00c04fd430c8'; // DNS namespace UUID
@@ -19,6 +20,8 @@ export interface SaveIncomingMessageParams {
   externalChatId: string;
   messenger: string;
   organizationId: string;
+  /** User who "owns" auto-created chats (importer). Required for auto-upsert of unknown chats. */
+  importedById: string;
   senderName: string;
   senderExternalId: string;
   text?: string;
@@ -26,19 +29,25 @@ export interface SaveIncomingMessageParams {
   externalMessageId?: string;
   isSelf?: boolean;
   createdAt?: Date;
+  /** Display name for the chat if it needs to be auto-created. Falls back to senderName. */
+  chatName?: string;
+  /** Chat type for auto-created chats. Defaults to 'direct'. */
+  chatType?: 'direct' | 'group' | 'channel';
 }
 
 export async function saveIncomingMessage(params: SaveIncomingMessageParams) {
-  // Find the chat this message belongs to
-  const chat = await prisma.chat.findFirst({
-    where: {
-      externalChatId: params.externalChatId,
-      messenger: params.messenger,
-      organizationId: params.organizationId,
-    },
+  // Auto-upsert the chat — unknown chats from webhooks/real-time listeners are
+  // created on the fly instead of dropped. This mirrors the Gmail pattern and
+  // is the foundation of the "full messenger mirror" model.
+  const chat = await ensureChat({
+    organizationId: params.organizationId,
+    importedById: params.importedById,
+    messenger: params.messenger as MessengerType,
+    externalChatId: params.externalChatId,
+    name: params.chatName || params.senderName,
+    chatType: params.chatType ?? 'direct',
+    lastActivityAt: params.createdAt ?? new Date(),
   });
-
-  if (!chat) return null;
 
   const messageData = {
     chatId: chat.id,

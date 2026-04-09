@@ -32,6 +32,7 @@ import {
   FileText,
   ArrowLeft,
   Info,
+  History,
 } from 'lucide-react';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { toast } from 'sonner';
@@ -51,6 +52,7 @@ import {
   useDeleteMessage,
   usePinMessage,
   useSearchMessages,
+  useLoadFullHistory,
   type MessageAttachment,
 } from '@/hooks/useChats';
 import EmojiPicker, { Theme, type EmojiClickData } from 'emoji-picker-react';
@@ -610,6 +612,11 @@ function ChatHeader({
 }) {
   const toggleInfoPanel = useChatStore((s) => s.toggleInfoPanel);
   const ChatTypeIcon = getChatTypeIcon(chat.chatType);
+  const loadFullHistory = useLoadFullHistory();
+  const canLoadHistory =
+    !chat.hasFullHistory &&
+    chat.syncStatus !== 'syncing' &&
+    chat.messenger !== 'gmail'; // Gmail auto-imports full threads
 
   return (
     <div className="hidden h-[60px] flex-shrink-0 items-center justify-between border-b border-slate-200 bg-white px-5 md:flex">
@@ -641,6 +648,25 @@ function ChatHeader({
       </div>
 
       <div className="flex items-center gap-1">
+        {canLoadHistory && (
+          <button
+            onClick={() => loadFullHistory.mutate(chat.id)}
+            disabled={loadFullHistory.isPending}
+            className="flex h-8 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700 disabled:opacity-60"
+            title="Подтянуть всю историю сообщений"
+          >
+            <History className="h-4 w-4" />
+            <span className="hidden lg:inline">
+              {loadFullHistory.isPending ? 'Загружаем…' : 'Вся история'}
+            </span>
+          </button>
+        )}
+        {chat.syncStatus === 'syncing' && (
+          <span className="flex h-8 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-slate-500">
+            <div className="h-3 w-3 animate-spin rounded-full border-2 border-slate-300 border-t-slate-600" />
+            <span className="hidden lg:inline">Загружаем историю…</span>
+          </span>
+        )}
         <button
           className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
           title="Pin"

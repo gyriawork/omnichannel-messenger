@@ -140,28 +140,33 @@ export default async function webhookRoutes(fastify: FastifyInstance): Promise<v
         (chat.title as string) ||
         'Unknown';
       const senderId = String(from.id ?? (senderChat?.id ?? chat.id));
+      const chatTitle = (chat.title as string) || senderName;
+      const chatTypeRaw = (chat.type as string) || 'private';
+      const chatType: 'direct' | 'group' | 'channel' =
+        chatTypeRaw === 'private' ? 'direct' : chatTypeRaw === 'channel' ? 'channel' : 'group';
 
-      // Find all orgs that have this chat imported
-      const importedChats = await prisma.chat.findMany({
-        where: { externalChatId: chatId, messenger: 'telegram' },
-        select: { organizationId: true },
+      // NOTE: Telegram bot webhooks are shared across all connected bots. Without
+      // per-bot routing we fan out to every connected Telegram integration and
+      // let ensureChat() upsert per-org. In practice V1.1 uses user-session
+      // (gramjs) via the worker, so this path is largely a fallback.
+      const telegramIntegrations = await prisma.integration.findMany({
+        where: { messenger: 'telegram', status: 'connected' },
+        select: { organizationId: true, userId: true },
       });
 
-      for (const ic of importedChats) {
-        console.log(`[Telegram webhook] Saving message: chatId=${chatId}, sender=${senderName}, text=${text.slice(0, 50)}`);
+      for (const integration of telegramIntegrations) {
         await saveIncomingMessage({
           externalChatId: chatId,
           messenger: 'telegram',
-          organizationId: ic.organizationId,
+          organizationId: integration.organizationId,
+          importedById: integration.userId,
           senderName,
           senderExternalId: senderId,
           text,
           externalMessageId: String(message.message_id),
+          chatName: chatTitle,
+          chatType,
         });
-      }
-
-      if (importedChats.length === 0) {
-        console.log(`[Telegram webhook] No imported chats found for externalChatId=${chatId}`);
       }
 
       return reply.send({ ok: true });
@@ -222,23 +227,44 @@ export default async function webhookRoutes(fastify: FastifyInstance): Promise<v
       const text = (event.text as string) || '';
       const ts = event.ts as string;
 
-      const importedChats = await prisma.chat.findMany({
-        where: { externalChatId: channelId, messenger: 'slack' },
-        select: { organizationId: true },
+      // Resolve the correct org via Slack team_id (each Slack workspace maps to
+      // one Integration per-org). Without this we'd either drop multi-tenancy
+      // or fan messages out to every Slack integration in the database.
+      const teamId = (body.team_id as string) || ((event as Record<string, unknown>).team as string);
+      const slackIntegrations = await prisma.integration.findMany({
+        where: { messenger: 'slack', status: 'connected' },
+        select: { organizationId: true, userId: true, credentials: true },
       });
 
-      for (const ic of importedChats) {
-        // Resolve the Slack user ID to a real display name (cached per org)
-        const senderName = await resolveSlackUserName(ic.organizationId, userId);
+      const matchedIntegrations = slackIntegrations.filter((integration) => {
+        try {
+          const creds = decryptCredentials<{ teamId?: string; team?: { id?: string } }>(
+            integration.credentials as string,
+          );
+          return creds.teamId === teamId || creds.team?.id === teamId;
+        } catch {
+          return false;
+        }
+      });
+
+      // Fallback: if no credential match (older integrations missing teamId),
+      // process for all connected Slack integrations — ensureChat will dedupe.
+      const targets = matchedIntegrations.length > 0 ? matchedIntegrations : slackIntegrations;
+
+      for (const integration of targets) {
+        const senderName = await resolveSlackUserName(integration.organizationId, userId);
 
         await saveIncomingMessage({
           externalChatId: channelId,
           messenger: 'slack',
-          organizationId: ic.organizationId,
+          organizationId: integration.organizationId,
+          importedById: integration.userId,
           senderName,
           senderExternalId: userId,
           text,
           externalMessageId: ts,
+          chatName: channelId,
+          chatType: 'channel',
         });
       }
 
@@ -287,21 +313,28 @@ export default async function webhookRoutes(fastify: FastifyInstance): Promise<v
         const msgId = payload.id || `waha_${Date.now()}`;
         const senderName = payload._data?.notifyName || payload.from || 'Unknown';
 
-        // Find imported chats matching this external chat ID
-        const importedChats = await prisma.chat.findMany({
-          where: { externalChatId: chatId, messenger: 'whatsapp' },
-          select: { organizationId: true },
+        // Resolve the owning integration via WAHA session name — session names
+        // are unique per (org, user) pair so this picks the right tenant.
+        const integration = await prisma.integration.findFirst({
+          where: {
+            messenger: 'whatsapp',
+            credentials: { path: ['wahaSessionName'], equals: sessionName },
+          },
+          select: { organizationId: true, userId: true },
         });
 
-        for (const ic of importedChats) {
+        if (integration) {
           await saveIncomingMessage({
             externalChatId: chatId,
             messenger: 'whatsapp',
-            organizationId: ic.organizationId,
+            organizationId: integration.organizationId,
+            importedById: integration.userId,
             senderName,
             senderExternalId: payload.from || chatId,
             text,
             externalMessageId: msgId,
+            chatName: senderName,
+            chatType: chatId.endsWith('@g.us') ? 'group' : 'direct',
           });
         }
       }
@@ -504,10 +537,13 @@ export default async function webhookRoutes(fastify: FastifyInstance): Promise<v
                   externalChatId: threadId,
                   messenger: 'gmail',
                   organizationId: integration.organizationId,
+                  importedById: integration.userId,
                   senderName: msgSenderName || 'Unknown',
                   senderExternalId: msgSenderEmail,
                   text: lastMsg.snippet ?? '',
                   externalMessageId: lastMsg.id,
+                  chatName: chatName,
+                  chatType: 'direct',
                 });
               }
             } catch (err) {

@@ -5,6 +5,7 @@ import { io, Socket } from 'socket.io-client';
 import { useAuthStore } from '@/stores/auth';
 import { useQueryClient } from '@tanstack/react-query';
 import type { Message } from '@/types/chat';
+import { useInitialSyncStore, type InitialSyncMessenger } from '@/stores/initial-sync';
 
 const SOCKET_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
@@ -118,6 +119,28 @@ export function useSocket() {
     // Broadcast status update
     socket.on('broadcast_status', () => {
       queryClientRef.current.invalidateQueries({ queryKey: ['broadcasts'] });
+    });
+
+    // Initial integration sync — drives the blocking overlay
+    socket.on('integration_sync_progress', (data: {
+      integrationId: string;
+      messenger: InitialSyncMessenger;
+      done: number;
+      total: number | null;
+      currentName?: string;
+    }) => {
+      useInitialSyncStore.getState().setProgress(data);
+    });
+
+    socket.on('integration_sync_complete', (data: { integrationId: string }) => {
+      useInitialSyncStore.getState().setComplete(data.integrationId);
+      // Freshly imported chats should appear immediately
+      queryClientRef.current.invalidateQueries({ queryKey: ['chats'] });
+      queryClientRef.current.invalidateQueries({ queryKey: ['integrations'] });
+    });
+
+    socket.on('integration_sync_failed', (data: { integrationId: string; error: string }) => {
+      useInitialSyncStore.getState().setFailed(data.integrationId, data.error);
     });
 
     // Typing indicator

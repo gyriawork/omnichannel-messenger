@@ -11,8 +11,6 @@ import type {
   Chat,
   Message,
   ChatFilters,
-  AvailableChat,
-  MessengerType,
 } from '@/types/chat';
 
 interface ChatsResponse {
@@ -143,34 +141,16 @@ export function useSendMessage() {
   });
 }
 
-export function useAvailableChats(messenger: MessengerType | null) {
-  return useQuery({
-    queryKey: ['available-chats', messenger],
-    queryFn: () =>
-      api.get<{ chats: AvailableChat[] }>(
-        `/api/chats/available/${messenger}`,
-      ),
-    enabled: !!messenger,
-  });
-}
-
-export function useImportChats() {
+export function useLoadFullHistory() {
   const queryClient = useQueryClient();
-
   return useMutation({
-    mutationFn: async ({
-      messenger,
-      chats,
-    }: {
-      messenger: MessengerType;
-      chats: { externalChatId: string; name: string; chatType: string }[];
-    }) => {
-      return api.post<{ imported: number }>('/api/chats/import', {
-        messenger,
-        chats,
-      });
-    },
-    onSuccess: () => {
+    mutationFn: (chatId: string) =>
+      api.post<{ queued: boolean; reason?: string }>(
+        `/api/chats/${chatId}/load-full-history`,
+        {},
+      ),
+    onSuccess: (_data, chatId) => {
+      queryClient.invalidateQueries({ queryKey: ['chat', chatId] });
       queryClient.invalidateQueries({ queryKey: ['chats'] });
     },
   });

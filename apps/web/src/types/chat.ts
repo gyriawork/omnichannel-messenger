@@ -12,6 +12,7 @@ export interface Chat {
   ownerName?: string;
   messageCount: number;
   syncStatus?: string; // pending | syncing | synced | failed
+  hasFullHistory?: boolean;
   createdAt?: string;
   lastActivityAt?: string;
   externalChatId?: string;
@@ -75,14 +76,6 @@ export interface Message {
   ccEmails?: string[];
   bccEmails?: string[];
   inReplyTo?: string | null;
-}
-
-export interface AvailableChat {
-  externalChatId: string;
-  name: string;
-  chatType: ChatType;
-  memberCount?: number;
-  lastActivity?: string;
 }
 
 export interface ChatFilters {

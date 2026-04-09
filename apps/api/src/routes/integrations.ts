@@ -17,6 +17,28 @@ import { getTelegramManager } from '../services/telegram-connection-manager.js';
 import { cacheGet, cacheSet, cacheInvalidate, cacheKey } from '../lib/cache.js';
 import { getPlatformCredentials } from '../lib/platform-credentials.js';
 import { MESSENGERS } from '../lib/platform-constants.js';
+import { messageSyncQueue } from '../lib/queue.js';
+
+/**
+ * Queue a one-shot initial chat-list sync for a freshly (re)connected integration.
+ * Fires and forgets — the worker drives the blocking sync overlay via WS events.
+ */
+async function queueInitialSync(
+  integrationId: string,
+  organizationId: string,
+  userId: string,
+  messenger: 'telegram' | 'slack' | 'whatsapp' | 'gmail',
+): Promise<void> {
+  try {
+    await messageSyncQueue.add(
+      'integration:initial-sync',
+      { integrationId, organizationId, userId, messenger },
+      { jobId: `initial-sync-${integrationId}-${Date.now()}` },
+    );
+  } catch (err) {
+    console.warn('[integrations] Failed to queue initial-sync job', err);
+  }
+}
 
 // ─── Zod Schemas ───
 
@@ -98,6 +120,11 @@ function sanitizeIntegration(integration: {
   connectedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+  syncStatus?: string | null;
+  syncTotalChats?: number | null;
+  syncCompletedChats?: number | null;
+  syncStartedAt?: Date | null;
+  syncError?: string | null;
 }) {
   return {
     id: integration.id,
@@ -109,6 +136,11 @@ function sanitizeIntegration(integration: {
     connectedAt: integration.connectedAt,
     createdAt: integration.createdAt,
     updatedAt: integration.updatedAt,
+    syncStatus: integration.syncStatus ?? 'idle',
+    syncTotalChats: integration.syncTotalChats ?? null,
+    syncCompletedChats: integration.syncCompletedChats ?? null,
+    syncStartedAt: integration.syncStartedAt ?? null,
+    syncError: integration.syncError ?? null,
   };
 }
 
@@ -308,6 +340,9 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
         });
       }
 
+      // Queue the blocking initial chat-list sync
+      await queueInitialSync(integration.id, organizationId, request.user.id, messenger);
+
       return reply.status(201).send({
         integration: sanitizeIntegration(integration),
       });
@@ -468,6 +503,58 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
       return reply.send({
         integration: sanitizeIntegration(updated),
       });
+    },
+  );
+
+  // ─── POST /integrations/:messenger/resync ───
+  // Re-queue the initial-sync job (used by the overlay "Retry" button when the
+  // previous sync failed mid-way).
+
+  fastify.post(
+    '/integrations/:messenger/resync',
+    { preHandler: authPreHandlers },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const paramsParsed = messengerParamSchema.safeParse(request.params);
+      if (!paramsParsed.success) {
+        return sendError(reply, 'VALIDATION_ERROR', 'Invalid messenger type', 422);
+      }
+
+      const { messenger } = paramsParsed.data;
+      const organizationId = getOrgId(request);
+      if (!organizationId) {
+        return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
+      }
+
+      const integration = await prisma.integration.findFirst({
+        where: { messenger, organizationId, userId: request.user.id },
+      });
+
+      if (!integration) {
+        return sendError(
+          reply,
+          'RESOURCE_NOT_FOUND',
+          `No ${messenger} integration found for this user`,
+          404,
+        );
+      }
+
+      // Reset sync bookkeeping so the overlay shows fresh progress
+      await prisma.integration.update({
+        where: { id: integration.id },
+        data: {
+          syncStatus: 'pending',
+          syncError: null,
+          syncStartedAt: null,
+          syncCompletedChats: 0,
+          syncTotalChats: null,
+        },
+      });
+
+      await queueInitialSync(integration.id, organizationId, request.user.id, messenger);
+      await cacheInvalidate(cacheKey(organizationId, 'integrations'));
+      await cacheInvalidate(cacheKey(organizationId, 'integrations', `u:${request.user.id}`));
+
+      return reply.send({ queued: true });
     },
   );
 
@@ -665,6 +752,9 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
         getTelegramManager().startListening(integration.id).catch((err) => {
           fastify.log.warn({ err }, 'Failed to start Telegram listener after verify-code');
         });
+
+        // Queue the blocking initial chat-list sync
+        await queueInitialSync(integration.id, organizationId, request.user.id, 'telegram');
 
         return reply.status(201).send({
           integration: sanitizeIntegration(integration),
@@ -885,7 +975,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
             phoneNumber,
           });
 
-          await prisma.integration.upsert({
+          const whatsappIntegration = await prisma.integration.upsert({
             where: {
               messenger_organizationId_userId: {
                 messenger: 'whatsapp',
@@ -910,6 +1000,9 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
 
           await cacheInvalidate(cacheKey(organizationId, 'integrations'));
       await cacheInvalidate(cacheKey(organizationId, 'integrations', `u:${request.user.id}`));
+
+          // Queue the blocking initial chat-list sync
+          await queueInitialSync(whatsappIntegration.id, organizationId, userId, 'whatsapp');
 
           return reply.send({ status: 'connected' });
         }

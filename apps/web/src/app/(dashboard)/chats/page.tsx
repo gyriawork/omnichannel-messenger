@@ -24,7 +24,6 @@ import { useChats, useBulkDeleteChats, useBulkAssignChats, useBulkTagChats } fro
 import { useTags } from '@/hooks/useTags';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-import { ImportChatsModal } from '@/components/messenger/ImportChatsModal';
 import { ChatAvatar } from '@/components/ui/ChatAvatar';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -438,7 +437,6 @@ export default function ChatsPage() {
   const [ownerFilter, setOwnerFilter] = useState<string | null>(null);
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [showImport, setShowImport] = useState(false);
   const [sortBy, setSortBy] = useState<'lastActivityAt' | 'name' | 'messageCount' | 'chatType' | 'tags' | 'lastMessageDate'>('lastActivityAt');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [chatTypeFilter, setChatTypeFilter] = useState<string | null>(null);
@@ -530,16 +528,9 @@ export default function ChatsPage() {
         <div>
           <h1 className="text-xl font-semibold text-slate-900">Chats</h1>
           <p className="text-sm text-slate-500">
-            {total} chat{total !== 1 ? 's' : ''} imported across all messengers
+            {total} chat{total !== 1 ? 's' : ''} across all messengers
           </p>
         </div>
-        <button
-          onClick={() => setShowImport(true)}
-          className="flex items-center gap-2 rounded bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px"
-        >
-          <Plus className="h-4 w-4" />
-          Import Chats
-        </button>
       </div>
 
       {/* Filters bar */}
@@ -665,16 +656,16 @@ export default function ChatsPage() {
           <EmptyState
             icon={<MessageSquare className="h-10 w-10" />}
             title="Чатов пока нет"
-            description="Импортируйте чаты, чтобы начать работу."
+            description="Подключите мессенджер — все ваши чаты подтянутся автоматически."
             compact
             action={
-              <button
-                onClick={() => setShowImport(true)}
+              <a
+                href="/settings/integrations"
                 className="inline-flex items-center gap-2 rounded bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover"
               >
                 <Plus className="h-4 w-4" />
-                Импортировать чаты
-              </button>
+                Подключить мессенджер
+              </a>
             }
           />
         )}
@@ -760,15 +751,15 @@ export default function ChatsPage() {
           <EmptyState
             icon={<MessageSquare className="h-12 w-12" />}
             title="Чатов пока нет"
-            description="Импортируйте чаты из подключённых мессенджеров, чтобы начать работу."
+            description="Подключите мессенджер — мы автоматически подтянем все ваши чаты."
             action={
-              <button
-                onClick={() => setShowImport(true)}
+              <a
+                href="/settings/integrations"
                 className="inline-flex items-center gap-2 rounded bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px"
               >
                 <Plus className="h-4 w-4" />
-                Импортировать чаты
-              </button>
+                Подключить мессенджер
+              </a>
             }
           />
         ) : (
@@ -925,8 +916,6 @@ export default function ChatsPage() {
         )}
       </div>
 
-      {/* Import Modal */}
-      <ImportChatsModal open={showImport} onClose={() => setShowImport(false)} />
     </div>
     </RequireOrgContext>
   );
