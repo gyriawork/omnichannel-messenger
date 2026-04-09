@@ -18,6 +18,7 @@ import {
   Shield,
   ChevronsLeft,
   ChevronsRight,
+  BarChart3,
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth';
 import { cn } from '@/lib/utils';
@@ -28,6 +29,7 @@ const baseNavItems = [
   { icon: Inbox, href: '/chats', label: 'Chats' },
   { icon: MessageSquare, href: '/messenger', label: 'Messenger' },
   { icon: BookOpen, href: '/wiki', label: 'Wiki' },
+  { icon: BarChart3, href: '/analytics', label: 'Analytics' },
   { icon: Activity, href: '/activity', label: 'Activity Log' },
 ];
 
