@@ -354,14 +354,13 @@ function formatTime(iso?: string) {
 
 function GroupRow({ group }: { group: ChatGroup }) {
   const cfg = messengerConfig.gmail;
-  const subjectPreview = group.latestChat.lastMessage?.text ?? group.latestChat.name;
 
   return (
     <tr className="transition-colors hover:bg-slate-50/50">
       {/* Empty checkbox cell — groups are not bulk-selectable */}
       <td className="px-4 py-3" />
 
-      {/* Chat: avatar + label + subject preview */}
+      {/* Chat: avatar + label (no preview — visually consistent with other rows) */}
       <td className="px-4 py-3">
         <div className="flex items-center gap-3">
           <ChatAvatar name={group.label} messenger="gmail" size={36} />
@@ -372,7 +371,6 @@ function GroupRow({ group }: { group: ChatGroup }) {
             >
               {group.label}
             </a>
-            <div className="truncate text-xs text-slate-400">{subjectPreview}</div>
           </div>
         </div>
       </td>
@@ -698,9 +696,6 @@ export default function ChatsPage() {
                     {row.totalMessages} msgs
                   </span>
                 </div>
-                <p className="mt-1 truncate pl-5 text-xs text-slate-500">
-                  {row.latestChat.lastMessage?.text ?? row.latestChat.name}
-                </p>
               </a>
             );
           }
@@ -727,11 +722,6 @@ export default function ChatsPage() {
                     : ''}
                 </span>
               </div>
-              {chat.lastMessage && (
-                <p className="mt-1 truncate pl-5 text-xs text-slate-500">
-                  {chat.lastMessage.text ?? ''}
-                </p>
-              )}
             </div>
           );
         })}

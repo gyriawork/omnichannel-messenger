@@ -5,7 +5,14 @@
 // Falls back to plain text if HTML is missing.
 //
 // Security & isolation:
-//   - sandbox without "allow-scripts" — no JS can run inside the email
+//   - sandbox WITHOUT "allow-scripts" — no JS can run inside the email
+//   - sandbox WITH "allow-same-origin" — required so the parent can read
+//     `iframe.contentDocument` to measure body.scrollHeight for auto-sizing.
+//     Without allow-same-origin, contentDocument is null (opaque origin)
+//     and the iframe stays at INITIAL_HEIGHT forever. This combo
+//     (same-origin but no scripts) is documented as safe in the MDN
+//     sandbox attribute reference — no untrusted JS can exploit the
+//     same-origin relationship.
 //   - <base target="_blank"> — every link opens in a new tab
 //   - CSS reset injected so email styles don't leak into the app
 //   - Images constrained to max-width:100% so wide emails don't overflow
@@ -17,6 +24,13 @@ interface EmailBodyProps {
   fallbackText?: string | null;
 }
 
+// Initial height is generous so the iframe is visible *before* we get a
+// chance to measure the real content. If we started at a tiny value and
+// `body.scrollHeight` came back 0 on the initial `onLoad` tick (e.g. because
+// images haven't loaded yet or layout hasn't settled), the user would see an
+// empty sliver. A bigger initial gives us breathing room; the real height
+// takes over as soon as the ResizeObserver fires.
+const INITIAL_HEIGHT = 400;
 const MIN_HEIGHT = 80;
 const EXTRA_PAD = 24;
 
@@ -86,41 +100,86 @@ function buildSrcDoc(html: string | null | undefined, fallback: string | null | 
 
 export function EmailBody({ html, fallbackText }: EmailBodyProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const [height, setHeight] = useState<number>(MIN_HEIGHT);
+  const observerRef = useRef<ResizeObserver | null>(null);
+  const [height, setHeight] = useState<number>(INITIAL_HEIGHT);
 
   const srcDoc = useMemo(() => buildSrcDoc(html, fallbackText), [html, fallbackText]);
 
   const recalcHeight = () => {
     const iframe = iframeRef.current;
     if (!iframe?.contentDocument) return;
-    const body = iframe.contentDocument.body;
-    if (!body) return;
-    const h = Math.max(body.scrollHeight, body.offsetHeight);
+    const doc = iframe.contentDocument;
+    const body = doc.body;
+    const root = doc.documentElement;
+    if (!body && !root) return;
+    const h = Math.max(
+      body?.scrollHeight ?? 0,
+      body?.offsetHeight ?? 0,
+      root?.scrollHeight ?? 0,
+      root?.offsetHeight ?? 0,
+    );
     setHeight(Math.max(h + EXTRA_PAD, MIN_HEIGHT));
   };
 
-  // Recalculate when iframe content loads
-  const handleLoad = () => {
-    recalcHeight();
-    // Some emails load images after the initial load event — recalc after a short delay.
-    const timer1 = setTimeout(recalcHeight, 200);
-    const timer2 = setTimeout(recalcHeight, 800);
-    return () => {
-      clearTimeout(timer1);
-      clearTimeout(timer2);
-    };
-  };
-
-  // Reset height when srcDoc changes (new email opened)
+  // Clean up any previous observer when srcDoc changes (new email opened).
+  // We intentionally do NOT reset to MIN_HEIGHT — keep the previous (or
+  // initial) height so there is no empty-sliver flash while the new iframe
+  // loads. The observer will update to the correct size on load.
   useEffect(() => {
-    setHeight(MIN_HEIGHT);
+    return () => {
+      if (observerRef.current) {
+        observerRef.current.disconnect();
+        observerRef.current = null;
+      }
+    };
   }, [srcDoc]);
+
+  // Recalculate when iframe content loads. We install a ResizeObserver on
+  // the iframe's internal <body> so that layout changes (images loading,
+  // web fonts, lazy content) continue to re-measure after the initial
+  // `load` event. Also attach per-image load/error listeners as a safety
+  // net for browsers where ResizeObserver doesn't fire on img replacement.
+  const handleLoad = () => {
+    const iframe = iframeRef.current;
+    const doc = iframe?.contentDocument;
+    const body = doc?.body;
+    if (!iframe || !doc || !body) return;
+
+    recalcHeight();
+
+    // Tear down any previous observer before installing a new one.
+    if (observerRef.current) {
+      observerRef.current.disconnect();
+      observerRef.current = null;
+    }
+
+    if (typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(() => recalcHeight());
+      ro.observe(body);
+      if (doc.documentElement) ro.observe(doc.documentElement);
+      observerRef.current = ro;
+    }
+
+    // Recalculate once each image finishes loading. Images in Gmail emails
+    // are fetched through the API image-proxy and can land after `load`.
+    const images = Array.from(body.querySelectorAll('img')) as HTMLImageElement[];
+    images.forEach((img) => {
+      if (!img.complete) {
+        img.addEventListener('load', recalcHeight, { once: true });
+        img.addEventListener('error', recalcHeight, { once: true });
+      }
+    });
+
+    // Safety-net delayed recalculations for web fonts and slow images.
+    setTimeout(recalcHeight, 300);
+    setTimeout(recalcHeight, 1500);
+  };
 
   return (
     <iframe
       ref={iframeRef}
       srcDoc={srcDoc}
-      sandbox="allow-popups allow-popups-to-escape-sandbox"
+      sandbox="allow-popups allow-popups-to-escape-sandbox allow-same-origin"
       onLoad={handleLoad}
       title="email-body"
       className="block w-full border-0 bg-white"
