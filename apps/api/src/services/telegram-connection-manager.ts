@@ -8,6 +8,7 @@ import { StringSession } from 'telegram/sessions/index.js';
 import { NewMessage, type NewMessageEvent, Raw } from 'telegram/events/index.js';
 import prisma from '../lib/prisma.js';
 import { decryptCredentials } from '../lib/crypto.js';
+import { getPlatformCredentials } from '../lib/platform-credentials.js';
 import { saveIncomingMessage, ingestReaction } from './message-service.js';
 
 interface ActiveClient {
@@ -94,7 +95,9 @@ export class TelegramConnectionManager {
       return;
     }
 
-    let credentials: { apiId: number; apiHash: string; session?: string };
+    // User-level credentials: session + phone. apiId/apiHash live in
+    // PlatformConfig (or env fallback) so they can be rotated centrally.
+    let credentials: { session?: string; phoneNumber?: string };
     try {
       credentials = decryptCredentials(integration.credentials as string);
     } catch (err) {
@@ -102,13 +105,28 @@ export class TelegramConnectionManager {
       return;
     }
 
-    if (!credentials.apiId || !credentials.apiHash || !credentials.session) {
-      console.warn(`[TelegramManager] Incomplete credentials for ${integrationId}, skipping`);
+    if (!credentials.session) {
+      console.warn(`[TelegramManager] Missing session for ${integrationId}, skipping`);
+      return;
+    }
+
+    const platform = await getPlatformCredentials('telegram');
+    const apiIdRaw = platform.credentials?.apiId;
+    const apiHash = platform.credentials?.apiHash;
+    if (!apiIdRaw || !apiHash) {
+      console.warn(
+        `[TelegramManager] Platform apiId/apiHash not configured — cannot start ${integrationId}`,
+      );
+      return;
+    }
+    const apiId = Number(apiIdRaw);
+    if (!Number.isFinite(apiId) || apiId <= 0) {
+      console.warn(`[TelegramManager] Invalid platform apiId for ${integrationId}`);
       return;
     }
 
     const session = new StringSession(credentials.session);
-    const client = new TelegramClient(session, credentials.apiId, credentials.apiHash, {
+    const client = new TelegramClient(session, apiId, apiHash, {
       connectionRetries: 5,
     });
 
