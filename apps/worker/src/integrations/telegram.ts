@@ -4,6 +4,7 @@
 
 import { TelegramClient, Api } from 'telegram';
 import { StringSession } from 'telegram/sessions/index.js';
+import { CustomFile } from 'telegram/client/uploads.js';
 import IORedis from 'ioredis';
 import type { MessengerAdapter, GetMessagesResult, HistoryMessage } from './base.js';
 import { MessengerError } from './base.js';
@@ -229,9 +230,12 @@ export class TelegramAdapter implements MessengerAdapter {
       const peer = await this.resolvePeer(externalChatId);
       const replyTo = options?.replyToExternalId ? parseInt(options.replyToExternalId, 10) : undefined;
 
-      // Send attachments first (if any)
+      // Send attachments (if any) — first attachment carries the text as caption
       if (options?.attachments && options.attachments.length > 0) {
-        for (const attachment of options.attachments) {
+        let firstMessageId: string | undefined;
+
+        for (let i = 0; i < options.attachments.length; i++) {
+          const attachment = options.attachments[i];
           try {
             const fileUrl = attachment.url.startsWith('http')
               ? attachment.url
@@ -239,21 +243,37 @@ export class TelegramAdapter implements MessengerAdapter {
             const response = await fetch(fileUrl);
             if (!response.ok) throw new Error(`Failed to download attachment: ${response.status}`);
             const buffer = Buffer.from(await response.arrayBuffer());
-            // gramjs expects a Buffer with a .name property for the filename
-            const namedBuffer = Object.assign(Buffer.from(buffer), { name: attachment.filename });
-            await this.client!.sendFile(peer, {
-              file: namedBuffer,
-              caption: '',
-              replyTo,
+            const customFile = new CustomFile(attachment.filename, buffer.length, '', buffer);
+
+            const result = await this.client!.sendFile(peer, {
+              file: customFile,
+              caption: i === 0 ? text : '',
+              replyTo: i === 0 ? replyTo : undefined,
             });
+
+            if (i === 0) {
+              firstMessageId = result.id.toString();
+            }
           } catch (fileErr) {
-            // Log but don't fail the whole message for one attachment
-            console.warn(`Failed to send attachment ${attachment.filename}:`, fileErr);
+            console.warn(`[Telegram] Failed to send attachment "${attachment.filename}" to ${externalChatId}:`, fileErr instanceof Error ? fileErr.message : fileErr);
           }
+        }
+
+        // If all attachment sends failed, fall back to text-only
+        if (!firstMessageId && text) {
+          const result = await this.client!.sendMessage(peer, {
+            message: text,
+            replyTo,
+          });
+          return { externalMessageId: result.id.toString() };
+        }
+
+        if (firstMessageId) {
+          return { externalMessageId: firstMessageId };
         }
       }
 
-      // Send the text message
+      // Text-only path
       const result = await this.client!.sendMessage(peer, {
         message: text,
         replyTo,

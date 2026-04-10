@@ -195,11 +195,17 @@ export class WhatsAppAdapter implements MessengerAdapter {
 
     try {
       const chats = await this.client.listChats(this.sessionName);
-      return chats.map((chat) => ({
-        externalChatId: chat.id,
-        name: chat.name || chat.id,
-        chatType: chat.isGroup ? 'group' : 'private',
-      }));
+      return chats.map((chat) => {
+        // WAHA may return chat.id as an object (e.g. {server, user, _serialized}) — ensure string
+        const chatId = typeof chat.id === 'object' && chat.id !== null
+          ? (chat.id as Record<string, unknown>)._serialized as string ?? JSON.stringify(chat.id)
+          : String(chat.id);
+        return {
+          externalChatId: chatId,
+          name: chat.name || chatId,
+          chatType: chat.isGroup ? 'group' : 'direct',
+        };
+      });
     } catch (err) {
       throw new MessengerError('whatsapp', err, 'Failed to list WhatsApp chats');
     }

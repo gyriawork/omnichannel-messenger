@@ -127,7 +127,10 @@ export class TelegramConnectionManager {
 
     const session = new StringSession(credentials.session);
     const client = new TelegramClient(session, apiId, apiHash, {
-      connectionRetries: 5,
+      connectionRetries: 10,
+      retryDelay: 2000,
+      autoReconnect: true,
+      timeout: 30,
     });
 
     try {
@@ -169,6 +172,14 @@ export class TelegramConnectionManager {
         (update: Api.TypeUpdate) => this.handleReactionUpdate(update, activeClient),
         new Raw({ types: [Api.UpdateMessageReactions] }),
       );
+
+      // Monitor disconnections — log for diagnostics
+      client.addEventHandler((update: Api.TypeUpdate) => {
+        const name = (update as unknown as { className?: string }).className;
+        if (name && name.includes('ConnectionState')) {
+          console.warn(`[TelegramManager] Connection state change for ${integrationId}:`, name);
+        }
+      });
 
       this.clients.set(integrationId, activeClient);
       console.log(`[TelegramManager] Listening on integration ${integrationId} (selfId: ${selfId})`);

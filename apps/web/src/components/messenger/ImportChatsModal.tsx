@@ -80,9 +80,17 @@ export function ImportChatsModal({ onClose }: ImportChatsModalProps) {
     if (!selectedMessenger || selectedIds.size === 0) return;
     setIsImporting(true);
     try {
+      // Send full chat info (name + chatType) so the backend can store real names
+      const selectedChats = availableChats
+        .filter((c) => selectedIds.has(c.externalChatId))
+        .map((c) => ({
+          externalChatId: String(c.externalChatId),
+          name: c.name,
+          chatType: c.chatType === 'group' ? 'group' : c.chatType === 'channel' ? 'channel' : 'direct',
+        }));
       await api.post('/api/chats/import', {
         messenger: selectedMessenger,
-        externalChatIds: Array.from(selectedIds),
+        externalChatIds: selectedChats,
       });
       queryClient.invalidateQueries({ queryKey: ['chats'] });
       toast.success(`Imported ${selectedIds.size} chat(s)`);

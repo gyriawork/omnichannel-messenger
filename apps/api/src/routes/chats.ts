@@ -444,9 +444,19 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
   // ─── POST /chats/import ───
   // Import selected chats from a connected messenger.
 
+  const importChatItemSchema = z.object({
+    externalChatId: z.string(),
+    name: z.string().optional(),
+    chatType: z.enum(['direct', 'group', 'channel']).optional(),
+  });
+
   const importBodySchema = z.object({
     messenger: z.enum(['telegram', 'slack', 'whatsapp', 'gmail']),
-    externalChatIds: z.array(z.string()).min(1).max(500),
+    // Accept either legacy string array or rich objects with name/chatType
+    externalChatIds: z.union([
+      z.array(z.string()).min(1).max(500),
+      z.array(importChatItemSchema).min(1).max(500),
+    ]),
   });
 
   fastify.post(
@@ -458,30 +468,41 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
         return sendError(reply, 'VALIDATION_ERROR', parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '), 422);
       }
 
-      const { messenger, externalChatIds } = parsed.data;
+      const { messenger, externalChatIds: rawChatIds } = parsed.data;
       const organizationId = getOrgId(request);
       if (!organizationId) {
         return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
       }
 
+      // Normalize input: accept both string[] and {externalChatId, name, chatType}[]
+      const chatItems = rawChatIds.map((item) =>
+        typeof item === 'string'
+          ? { externalChatId: item, name: undefined as string | undefined, chatType: undefined as string | undefined }
+          : item,
+      );
+
       const imported: Array<{ id: string; name: string; externalChatId: string }> = [];
 
-      for (const externalChatId of externalChatIds) {
+      for (const { externalChatId, name, chatType } of chatItems) {
         // Skip if already imported
         const existing = await prisma.chat.findFirst({
           where: { externalChatId, organizationId, messenger, deletedAt: null },
         });
         if (existing) {
-          imported.push({ id: existing.id, name: existing.name, externalChatId });
+          // Update name if we have a better one now
+          if (name && existing.name === externalChatId) {
+            await prisma.chat.update({ where: { id: existing.id }, data: { name } });
+          }
+          imported.push({ id: existing.id, name: name || existing.name, externalChatId });
           continue;
         }
 
         const chat = await prisma.chat.create({
           data: {
-            name: externalChatId, // Will be updated by sync worker
+            name: name || externalChatId,
             messenger,
             externalChatId,
-            chatType: 'direct',
+            chatType: (chatType as 'direct' | 'group' | 'channel') || 'direct',
             organizationId,
             importedById: request.user.id,
             ownerId: request.user.id,

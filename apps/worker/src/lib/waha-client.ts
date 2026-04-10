@@ -75,7 +75,7 @@ export interface WahaSendResult {
 // ─── Types: Chats ───
 
 export interface WahaChat {
-  id: string;
+  id: string | { _serialized: string; server: string; user: string };
   name: string;
   isGroup: boolean;
   timestamp?: number;

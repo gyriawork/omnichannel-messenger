@@ -253,8 +253,8 @@ export class TelegramAdapter implements MessengerAdapter {
             if (i === 0) {
               firstMessageId = result.id.toString();
             }
-          } catch {
-            // If attachment send fails, continue with remaining attachments
+          } catch (attachErr) {
+            console.error(`[Telegram] Failed to send attachment "${attachment.filename}" to ${externalChatId}:`, attachErr instanceof Error ? attachErr.message : attachErr);
           }
         }
 
