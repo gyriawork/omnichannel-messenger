@@ -50,6 +50,7 @@ async function getAccessToken(): Promise<string | null> {
 
 function setAccessToken(token: string) {
   localStorage.setItem('accessToken', token);
+  scheduleProactiveRefresh(token);
 }
 
 function clearTokens() {
@@ -58,6 +59,48 @@ function clearTokens() {
 
 // Singleton promise lock — prevents multiple concurrent refresh calls
 let refreshPromise: Promise<string | null> | null = null;
+
+// ─── Proactive token refresh ───
+// Schedules a refresh 2 minutes before the JWT access token expires, so the
+// user never hits a 401 during normal usage. Also refreshes when the browser
+// tab becomes visible after being hidden (covers laptop-lid-close scenarios).
+let proactiveRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleProactiveRefresh(token: string) {
+  if (proactiveRefreshTimer) clearTimeout(proactiveRefreshTimer);
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    const expiresAt = payload.exp * 1000;
+    const refreshAt = expiresAt - 2 * 60 * 1000; // 2 min before expiry
+    const delay = refreshAt - Date.now();
+    if (delay > 0) {
+      proactiveRefreshTimer = setTimeout(() => {
+        refreshAccessToken();
+      }, delay);
+    }
+  } catch {
+    // Ignore JWT parse errors — reactive refresh will still work
+  }
+}
+
+// Refresh on tab visibility change (covers returning after sleep/idle)
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return;
+    const token = localStorage.getItem('accessToken');
+    if (!token) return;
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      const expiresAt = payload.exp * 1000;
+      // If token expires within 3 minutes, refresh now
+      if (expiresAt - Date.now() < 3 * 60 * 1000) {
+        refreshAccessToken();
+      }
+    } catch {
+      // Ignore — reactive refresh handles it
+    }
+  });
+}
 
 async function refreshAccessToken(): Promise<string | null> {
   try {

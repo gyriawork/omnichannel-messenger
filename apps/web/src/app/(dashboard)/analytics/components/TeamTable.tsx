@@ -48,8 +48,8 @@ export function TeamTable({ members, onDrillDown }: TeamTableProps) {
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border border-slate-200">
-      <table className="w-full text-left text-sm">
+    <div className="overflow-x-auto rounded-lg border border-slate-200">
+      <table className="w-full text-left text-sm" style={{ minWidth: '600px' }}>
         <thead>
           <tr className="border-b border-slate-200 bg-slate-50">
             <SortableHeader

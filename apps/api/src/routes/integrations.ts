@@ -1064,12 +1064,12 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
     },
   );
 
-  // ─── POST /integrations/whatsapp/list-chats ───
-  // Fetch available WhatsApp chats (groups + contacts) after pairing.
+  // ─── POST /integrations/:messenger/list-chats ───
+  // Fetch available chats from any connected messenger.
   // Returns chats directly in the HTTP response.
 
   fastify.post(
-    '/integrations/whatsapp/list-chats',
+    '/integrations/:messenger/list-chats',
     { preHandler: authPreHandlers },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const organizationId = getOrgId(request);
@@ -1077,14 +1077,19 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
         return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
       }
 
+      const paramsParsed = messengerParamSchema.safeParse(request.params);
+      if (!paramsParsed.success) {
+        return sendError(reply, 'VALIDATION_ERROR', 'Invalid messenger type', 422);
+      }
+      const { messenger } = paramsParsed.data;
       const userId = request.user.id;
 
       try {
-        // Get user's WhatsApp integration
+        // Get user's integration for this messenger
         const integration = await prisma.integration.findUnique({
           where: {
             messenger_organizationId_userId: {
-              messenger: 'whatsapp',
+              messenger,
               organizationId,
               userId,
             },
@@ -1095,7 +1100,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
           return sendError(
             reply,
             'RESOURCE_NOT_FOUND',
-            'No WhatsApp integration found. Please pair via QR code first.',
+            `No ${messenger} integration found. Please connect it first.`,
             404,
           );
         }
@@ -1104,14 +1109,14 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
           return sendError(
             reply,
             'VALIDATION_ERROR',
-            'WhatsApp integration is not connected',
+            `${messenger} integration is not connected`,
             400,
           );
         }
 
         // Decrypt credentials and list chats via adapter
         const decrypted = decryptCredentials<Record<string, unknown>>(integration.credentials as string);
-        const adapter = new WhatsAppAdapter(decrypted);
+        const adapter = await createAdapter(messenger, decrypted);
 
         try {
           await adapter.connect();
@@ -1128,7 +1133,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
             ? err.message
             : err instanceof Error
               ? err.message
-              : 'Failed to list WhatsApp chats',
+              : `Failed to list ${messenger} chats`,
           502,
         );
       }

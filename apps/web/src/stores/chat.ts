@@ -11,6 +11,7 @@ interface ChatStore {
   isLoadingMessages: boolean;
   searchQuery: string;
   messengerFilter: MessengerType | null;
+  tagFilter: string | null;
   infoPanelOpen: boolean;
   replyingTo: Message | null;
   mobileView: 'list' | 'chat' | 'info';
@@ -22,6 +23,7 @@ interface ChatStore {
   setActiveChat: (chat: Chat | null) => void;
   setSearchQuery: (q: string) => void;
   setMessengerFilter: (m: MessengerType | null) => void;
+  setTagFilter: (tagId: string | null) => void;
   setChats: (chats: Chat[]) => void;
   setMessages: (messages: Message[]) => void;
   addMessage: (message: Message) => void;
@@ -40,6 +42,7 @@ export const useChatStore = create<ChatStore>((set) => ({
   isLoadingMessages: false,
   searchQuery: '',
   messengerFilter: null,
+  tagFilter: null,
   infoPanelOpen: false,
   replyingTo: null,
   mobileView: 'list' as const,
@@ -57,6 +60,8 @@ export const useChatStore = create<ChatStore>((set) => ({
   setSearchQuery: (searchQuery) => set({ searchQuery }),
 
   setMessengerFilter: (messengerFilter) => set({ messengerFilter }),
+
+  setTagFilter: (tagFilter) => set({ tagFilter }),
 
   setChats: (chats) => set({ chats }),
 

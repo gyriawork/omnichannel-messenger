@@ -144,15 +144,15 @@ export default function TemplatesPage() {
       ) : templates.length === 0 ? (
         <EmptyStateUI
           icon={<FileText className="h-12 w-12" />}
-          title="Шаблонов пока нет"
-          description="Создавайте переиспользуемые шаблоны сообщений, чтобы ускорить рассылки и сохранять единый стиль."
+          title="No templates yet"
+          description="Create reusable message templates to speed up broadcasts and maintain a consistent style."
           action={
             <button
               onClick={() => setIsCreating(true)}
               className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white shadow-accent-sm transition-all hover:bg-accent-hover hover:-translate-y-px"
             >
               <Plus className="h-4 w-4" />
-              Создать первый шаблон
+              Create first template
             </button>
           }
         />

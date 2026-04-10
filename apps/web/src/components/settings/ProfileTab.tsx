@@ -1,10 +1,9 @@
 'use client';
 
-import { useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Save, Loader2, Lock, Camera } from 'lucide-react';
+import { Save, Loader2, Lock } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { api } from '@/lib/api';
@@ -45,63 +44,6 @@ export function ProfileTab() {
         .toUpperCase()
         .slice(0, 2)
     : '?';
-
-  // Avatar upload
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(user?.avatar ?? null);
-
-  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const maxSize = 2 * 1024 * 1024;
-    if (file.size > maxSize) {
-      toast.error('File size must be under 2MB');
-      return;
-    }
-    if (!['image/jpeg', 'image/png', 'image/gif'].includes(file.type)) {
-      toast.error('Only JPG, PNG, and GIF files are allowed');
-      return;
-    }
-
-    setIsUploadingAvatar(true);
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-      const response = await fetch(`${apiUrl}/api/uploads`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${useAuthStore.getState().accessToken}`,
-        },
-        body: formData,
-      });
-
-      if (!response.ok) throw new Error('Upload failed');
-
-      const data = await response.json();
-      setAvatarUrl(data.url);
-
-      await api.patch('/api/users/me', { avatar: data.url });
-
-      // Update local auth store
-      const currentUser = useAuthStore.getState().user;
-      if (currentUser) {
-        const updated = { ...currentUser, avatar: data.url };
-        useAuthStore.setState({ user: updated });
-        localStorage.setItem('user', JSON.stringify(updated));
-      }
-
-      toast.success('Profile picture updated');
-    } catch {
-      toast.error('Failed to upload profile picture');
-    } finally {
-      setIsUploadingAvatar(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
-  };
 
   // Profile form
   const profileForm = useForm<ProfileFormValues>({
@@ -169,47 +111,9 @@ export function ProfileTab() {
         </h3>
 
         {/* Avatar */}
-        <div className="mb-6 flex items-center gap-4">
-          <div className="relative">
-            {avatarUrl ? (
-              <img
-                src={avatarUrl}
-                alt="Profile"
-                className="h-16 w-16 rounded-avatar object-cover"
-              />
-            ) : (
-              <div className="flex h-16 w-16 items-center justify-center rounded-avatar bg-accent-bg text-xl font-semibold text-accent">
-                {initials}
-              </div>
-            )}
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/jpeg,image/png,image/gif"
-              onChange={handleAvatarUpload}
-              className="hidden"
-            />
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isUploadingAvatar}
-              className="absolute -bottom-1 -right-1 flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-slate-100 text-slate-500 transition-colors hover:bg-slate-200 disabled:opacity-50"
-              title="Upload avatar"
-            >
-              {isUploadingAvatar ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Camera className="h-3.5 w-3.5" />
-              )}
-            </button>
-          </div>
-          <div>
-            <p className="text-sm font-medium text-slate-700">
-              Profile Picture
-            </p>
-            <p className="text-xs text-slate-500">
-              JPG, PNG or GIF. Max 2MB.
-            </p>
+        <div className="mb-6">
+          <div className="flex h-16 w-16 items-center justify-center rounded-avatar bg-accent-bg text-xl font-semibold text-accent">
+            {initials}
           </div>
         </div>
 

@@ -388,7 +388,7 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
 
   fastify.delete(
     '/chats/:id',
-    { preHandler: adminPreHandlers },
+    { preHandler: authPreHandlers },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const paramsParsed = chatIdParamSchema.safeParse(request.params);
       if (!paramsParsed.success) {
@@ -414,6 +414,61 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
       await cacheInvalidate(cacheKey(organizationId, 'chats', '*'));
 
       return reply.status(204).send();
+    },
+  );
+
+  // ─── POST /chats/import ───
+  // Import selected chats from a connected messenger.
+
+  const importBodySchema = z.object({
+    messenger: z.enum(['telegram', 'slack', 'whatsapp', 'gmail']),
+    externalChatIds: z.array(z.string()).min(1).max(500),
+  });
+
+  fastify.post(
+    '/chats/import',
+    { preHandler: authPreHandlers },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const parsed = importBodySchema.safeParse(request.body);
+      if (!parsed.success) {
+        return sendError(reply, 'VALIDATION_ERROR', parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '), 422);
+      }
+
+      const { messenger, externalChatIds } = parsed.data;
+      const organizationId = getOrgId(request);
+      if (!organizationId) {
+        return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
+      }
+
+      const imported: Array<{ id: string; name: string; externalChatId: string }> = [];
+
+      for (const externalChatId of externalChatIds) {
+        // Skip if already imported
+        const existing = await prisma.chat.findFirst({
+          where: { externalChatId, organizationId, messenger, deletedAt: null },
+        });
+        if (existing) {
+          imported.push({ id: existing.id, name: existing.name, externalChatId });
+          continue;
+        }
+
+        const chat = await prisma.chat.create({
+          data: {
+            name: externalChatId, // Will be updated by sync worker
+            messenger,
+            externalChatId,
+            chatType: 'direct',
+            organizationId,
+            importedById: request.user.id,
+            ownerId: request.user.id,
+          },
+        });
+        imported.push({ id: chat.id, name: chat.name, externalChatId });
+      }
+
+      await cacheInvalidate(cacheKey(organizationId, 'chats', '*'));
+
+      return reply.send({ imported, count: imported.length });
     },
   );
 
@@ -618,7 +673,7 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
 
   fastify.delete(
     '/chats/bulk',
-    { preHandler: adminPreHandlers },
+    { preHandler: authPreHandlers },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const parsed = bulkDeleteBodySchema.safeParse(request.body);
       if (!parsed.success) {

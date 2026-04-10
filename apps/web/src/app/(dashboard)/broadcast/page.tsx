@@ -219,15 +219,15 @@ export default function BroadcastPage() {
             activeTab === null ? (
               <EmptyStateUI
                 icon={<Megaphone className="h-12 w-12" />}
-                title="Рассылок пока нет"
-                description="Создайте первую рассылку, чтобы отправлять сообщения сразу в несколько чатов."
+                title="No broadcasts yet"
+                description="Create your first broadcast to send messages to multiple chats at once."
                 action={
                   <button
                     onClick={() => router.push('/broadcast/new')}
                     className="flex items-center gap-2 rounded bg-accent px-4 py-2 text-sm font-medium text-white shadow-accent-sm transition-colors hover:bg-accent-hover"
                   >
                     <Plus className="h-4 w-4" />
-                    Новая рассылка
+                    New broadcast
                   </button>
                 }
               />

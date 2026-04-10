@@ -38,31 +38,6 @@ interface OrgUser {
 
 // ─── Constants ───
 
-const timezones = [
-  'UTC',
-  'America/New_York',
-  'America/Chicago',
-  'America/Denver',
-  'America/Los_Angeles',
-  'Europe/London',
-  'Europe/Berlin',
-  'Europe/Moscow',
-  'Asia/Tokyo',
-  'Asia/Shanghai',
-  'Asia/Kolkata',
-  'Australia/Sydney',
-];
-
-const languages = [
-  { value: 'en', label: 'English' },
-  { value: 'es', label: 'Spanish' },
-  { value: 'fr', label: 'French' },
-  { value: 'de', label: 'German' },
-  { value: 'ru', label: 'Russian' },
-  { value: 'pt', label: 'Portuguese' },
-  { value: 'zh', label: 'Chinese' },
-  { value: 'ja', label: 'Japanese' },
-];
 
 const roleConfig = {
   superadmin: {
@@ -493,15 +468,11 @@ export function WorkspaceTab() {
   const updateMutation = useUpdateWorkspace();
 
   const [orgName, setOrgName] = useState('');
-  const [timezone, setTimezone] = useState('UTC');
-  const [language, setLanguage] = useState('en');
   const [chatVisibility, setChatVisibility] = useState(true);
 
   useEffect(() => {
     if (settings) {
       setOrgName(settings.name || '');
-      setTimezone(settings.timezone || 'UTC');
-      setLanguage(settings.defaultLanguage || 'en');
       setChatVisibility(settings.chatVisibilityAll ?? true);
     }
   }, [settings]);
@@ -510,8 +481,6 @@ export function WorkspaceTab() {
     updateMutation.mutate(
       {
         name: orgName,
-        timezone,
-        defaultLanguage: language,
         chatVisibilityAll: chatVisibility,
       },
       {
@@ -563,41 +532,6 @@ export function WorkspaceTab() {
               />
             </div>
 
-            {/* Timezone */}
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                Timezone
-              </label>
-              <select
-                value={timezone}
-                onChange={(e) => setTimezone(e.target.value)}
-                className={inputClass}
-              >
-                {timezones.map((tz) => (
-                  <option key={tz} value={tz}>
-                    {tz.replace(/_/g, ' ')}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Language */}
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                Language
-              </label>
-              <select
-                value={language}
-                onChange={(e) => setLanguage(e.target.value)}
-                className={inputClass}
-              >
-                {languages.map((lang) => (
-                  <option key={lang.value} value={lang.value}>
-                    {lang.label}
-                  </option>
-                ))}
-              </select>
-            </div>
 
             {/* Chat Visibility Toggle — hidden for now */}
           </div>

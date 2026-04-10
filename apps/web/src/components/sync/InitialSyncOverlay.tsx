@@ -50,7 +50,7 @@ export function InitialSyncOverlay() {
       queryClient.invalidateQueries({ queryKey: ['integrations'] });
     } catch (err) {
       console.error('[InitialSync] retry failed', err);
-      const message = err instanceof Error ? err.message : 'Не удалось перезапустить синхронизацию';
+      const message = err instanceof Error ? err.message : 'Failed to restart sync';
       setFailed(snapshot.integrationId, message);
     }
   };
@@ -67,13 +67,13 @@ export function InitialSyncOverlay() {
 
           <h2 className="mt-5 text-xl font-semibold text-slate-900 dark:text-slate-100">
             {isFailed
-              ? `Не удалось синхронизировать ${label}`
-              : `Синхронизируем ${label}`}
+              ? `Failed to sync ${label}`
+              : `Syncing ${label}`}
           </h2>
 
           {!isFailed && (
             <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-              Подтягиваем все ваши чаты. Это занимает пару минут — не закрывайте вкладку.
+              Pulling in all your chats. This may take a couple of minutes — do not close the tab.
             </p>
           )}
 
@@ -96,8 +96,8 @@ export function InitialSyncOverlay() {
               <div className="mt-3 flex items-center justify-between text-sm">
                 <span className="text-slate-600 dark:text-slate-300">
                   {active.total !== null
-                    ? `${active.done} из ${active.total}`
-                    : `${active.done} чатов`}
+                    ? `${active.done} of ${active.total}`
+                    : `${active.done} chats`}
                 </span>
                 {percent !== null && (
                   <span className="font-medium text-slate-700 dark:text-slate-200">
@@ -120,14 +120,14 @@ export function InitialSyncOverlay() {
                 onClick={clear}
                 className="flex-1 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
               >
-                Закрыть
+                Close
               </button>
               <button
                 type="button"
                 onClick={handleRetry}
                 className="flex-1 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
               >
-                Повторить
+                Retry
               </button>
             </div>
           )}

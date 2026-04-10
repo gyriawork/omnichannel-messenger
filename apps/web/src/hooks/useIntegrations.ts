@@ -55,12 +55,18 @@ export function useReconnectIntegration() {
 
   return useMutation({
     mutationFn: async (messenger: MessengerType) => {
-      return api.post<Integration>(
+      const result = await api.post<Integration>(
         `/api/integrations/${messenger}/reconnect`, {},
       );
+      // Trigger a resync after successful reconnect so chats are re-imported
+      await api.post(`/api/integrations/${messenger}/resync`, {}).catch(() => {
+        // Resync is best-effort — don't fail the reconnect if it errors
+      });
+      return result;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['integrations'] });
+      queryClient.invalidateQueries({ queryKey: ['chats'] });
     },
   });
 }

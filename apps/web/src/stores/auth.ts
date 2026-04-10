@@ -130,6 +130,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     if (token && userStr) {
       try {
         const user = JSON.parse(userStr) as User;
+        setAccessToken(token); // re-set to trigger proactive refresh scheduling
         set({
           user,
           accessToken: token,

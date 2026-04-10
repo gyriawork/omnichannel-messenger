@@ -27,8 +27,8 @@ export function ActivityHeatmap({ data }: ActivityHeatmapProps) {
   }
 
   return (
-    <div className="overflow-x-auto">
-      <div className="inline-block min-w-full">
+    <div className="overflow-x-auto -mx-2 px-2">
+      <div className="inline-block" style={{ minWidth: '500px' }}>
         {/* Hour labels (every 3 hours) */}
         <div className="ml-10 flex">
           {Array.from({ length: 24 }).map((_, hour) => (

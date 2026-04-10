@@ -655,8 +655,8 @@ export default function ChatsPage() {
         {!isLoading && sorted.length === 0 && (
           <EmptyState
             icon={<MessageSquare className="h-10 w-10" />}
-            title="Чатов пока нет"
-            description="Подключите мессенджер — все ваши чаты подтянутся автоматически."
+            title="No chats yet"
+            description="Connect a messenger — your chats will be imported automatically."
             compact
             action={
               <a
@@ -664,7 +664,7 @@ export default function ChatsPage() {
                 className="inline-flex items-center gap-2 rounded bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover"
               >
                 <Plus className="h-4 w-4" />
-                Подключить мессенджер
+                Connect messenger
               </a>
             }
           />
@@ -750,15 +750,15 @@ export default function ChatsPage() {
         ) : sorted.length === 0 ? (
           <EmptyState
             icon={<MessageSquare className="h-12 w-12" />}
-            title="Чатов пока нет"
-            description="Подключите мессенджер — мы автоматически подтянем все ваши чаты."
+            title="No chats yet"
+            description="Connect a messenger — your chats will be imported automatically."
             action={
               <a
                 href="/settings/integrations"
                 className="inline-flex items-center gap-2 rounded bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px"
               >
                 <Plus className="h-4 w-4" />
-                Подключить мессенджер
+                Connect messenger
               </a>
             }
           />

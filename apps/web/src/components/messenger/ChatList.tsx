@@ -11,13 +11,16 @@ import {
   Star,
   Loader2,
   MessageCircle,
+  Plus,
 } from 'lucide-react';
+import { ImportChatsModal } from './ImportChatsModal';
 import { cn } from '@/lib/utils';
 import { ChatAvatar } from '@/components/ui/ChatAvatar';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useChatStore } from '@/stores/chat';
 import { useChats, useChatPreferences } from '@/hooks/useChats';
+import { useTags } from '@/hooks/useTags';
 import type { Chat, MessengerType } from '@/types/chat';
 
 const MESSENGER_FILTERS: Array<{
@@ -202,12 +205,15 @@ const ChatItem = React.memo(function ChatItem({ chat, isActive }: { chat: Chat; 
 
 export function ChatList() {
   const [sortBy, setSortBy] = useState<'lastActivityAt' | 'lastMessageDate' | 'name' | 'messageCount'>('lastActivityAt');
+  const [showImport, setShowImport] = useState(false);
   const {
     activeChat,
     searchQuery,
     setSearchQuery,
     messengerFilter,
     setMessengerFilter,
+    tagFilter,
+    setTagFilter,
   } = useChatStore();
 
   const [localSearch, setLocalSearch] = useState(searchQuery);
@@ -234,9 +240,13 @@ export function ChatList() {
     debounceRef.current = setTimeout(() => setSearchQuery(value), 300);
   }, [setSearchQuery]);
 
+  const { data: tagsData } = useTags();
+  const tags = tagsData?.tags ?? [];
+
   const { data, isLoading } = useChats({
     search: searchQuery || undefined,
     messenger: messengerFilter,
+    tagId: tagFilter || undefined,
   });
 
   const chats = data?.chats ?? [];
@@ -269,6 +279,14 @@ export function ChatList() {
         <div className="flex-shrink-0 border-b border-slate-100 px-4 pb-3 pt-4">
           <div className="flex items-center justify-between">
             <h2 className="text-base font-semibold text-slate-800">Messenger</h2>
+            <button
+              onClick={() => setShowImport(true)}
+              className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-accent transition-colors hover:bg-accent-bg"
+              title="Import chats"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Import
+            </button>
           </div>
 
           {/* Search */}
@@ -284,7 +302,7 @@ export function ChatList() {
           </div>
 
           {/* Filters */}
-          <div className="mt-2.5 flex items-center gap-2">
+          <div className="mt-2.5 flex flex-wrap items-center gap-2">
             <select
               value={messengerFilter ?? ''}
               onChange={(e) => setMessengerFilter((e.target.value as MessengerType) || null)}
@@ -305,6 +323,18 @@ export function ChatList() {
               <option value="name">Name</option>
               <option value="messageCount">Messages</option>
             </select>
+            {tags.length > 0 && (
+              <select
+                value={tagFilter ?? ''}
+                onChange={(e) => setTagFilter(e.target.value || null)}
+                className="flex-1 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-600 outline-none transition-colors focus:border-accent focus:bg-white"
+              >
+                <option value="">All Tags</option>
+                {tags.map((t) => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
+            )}
           </div>
         </div>
 
@@ -327,8 +357,8 @@ export function ChatList() {
           ) : sortedChats.length === 0 ? (
             <EmptyState
               icon={<MessageCircle className="h-10 w-10" />}
-              title="Чатов пока нет"
-              description="Импортируйте чаты из подключённого мессенджера"
+              title="No chats yet"
+              description="Import chats from a connected messenger"
             />
           ) : (
             <div className="py-1">
@@ -343,6 +373,7 @@ export function ChatList() {
           )}
         </div>
       </div>
+      {showImport && <ImportChatsModal onClose={() => setShowImport(false)} />}
     </>
   );
 }

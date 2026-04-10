@@ -198,8 +198,8 @@ export default function ActivityPage() {
       ) : entries.length === 0 ? (
         <EmptyStateUI
           icon={<History className="h-12 w-12" />}
-          title="Истории действий пока нет"
-          description="Записи будут появляться здесь по мере выполнения действий в вашем рабочем пространстве."
+          title="No activity history yet"
+          description="Records will appear here as actions are performed in your workspace."
         />
       ) : (
         <>

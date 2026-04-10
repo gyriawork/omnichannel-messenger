@@ -653,18 +653,18 @@ function ChatHeader({
             onClick={() => loadFullHistory.mutate(chat.id)}
             disabled={loadFullHistory.isPending}
             className="flex h-8 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700 disabled:opacity-60"
-            title="Подтянуть всю историю сообщений"
+            title="Load full message history"
           >
             <History className="h-4 w-4" />
             <span className="hidden lg:inline">
-              {loadFullHistory.isPending ? 'Загружаем…' : 'Вся история'}
+              {loadFullHistory.isPending ? 'Loading…' : 'Full history'}
             </span>
           </button>
         )}
         {chat.syncStatus === 'syncing' && (
           <span className="flex h-8 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-slate-500">
             <div className="h-3 w-3 animate-spin rounded-full border-2 border-slate-300 border-t-slate-600" />
-            <span className="hidden lg:inline">Загружаем историю…</span>
+            <span className="hidden lg:inline">Loading history…</span>
           </span>
         )}
         <button
@@ -956,7 +956,7 @@ function ComposeBar({ chatId, messenger }: { chatId: string; messenger?: string 
   }
 
   return (
-    <div className="flex-shrink-0 border-t border-slate-200 bg-white px-5 pb-4 pt-3">
+    <div className="flex-shrink-0 overflow-hidden border-t border-slate-200 bg-white px-5 pb-4 pt-3">
       {/* Reply preview */}
       {replyingTo && (
         <div className="mb-2 flex items-center gap-2 rounded-lg border-l-2 border-accent bg-accent-bg px-3 py-2">
@@ -1005,7 +1005,7 @@ function ComposeBar({ chatId, messenger }: { chatId: string; messenger?: string 
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="flex items-end gap-2">
+      <form onSubmit={handleSubmit} className="flex items-end gap-2 overflow-hidden">
         <input
           ref={fileInputRef}
           type="file"
@@ -1130,7 +1130,7 @@ function ComposeBar({ chatId, messenger }: { chatId: string; messenger?: string 
           onKeyDown={handleKeyDown}
           placeholder={attachments.length > 0 ? 'Add a caption...' : 'Type a message...'}
           rows={1}
-          className="min-h-[36px] flex-1 resize-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-700 placeholder-slate-400 outline-none transition-shadow focus:border-accent focus:bg-white focus:shadow-focus-ring"
+          className="min-h-[36px] min-w-0 flex-1 resize-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-700 placeholder-slate-400 outline-none transition-shadow focus:border-accent focus:bg-white focus:shadow-focus-ring"
         />
 
         <button
@@ -1268,8 +1268,8 @@ function MessageFeed({ chatId, messenger }: { chatId: string; messenger?: string
       <div className="flex flex-1 items-center justify-center bg-[#f8fafc]">
         <UIEmptyState
           icon={<MessageSquare className="h-12 w-12" />}
-          title="Сообщений ещё нет"
-          description="Напишите первое сообщение в этот чат"
+          title="No messages yet"
+          description="Send the first message in this chat"
         />
       </div>
     );

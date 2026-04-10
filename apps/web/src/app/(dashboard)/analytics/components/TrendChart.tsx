@@ -100,7 +100,7 @@ function TrendBar({
   const totalHeight = (bucket.total / maxTotal) * 160;
 
   return (
-    <div className="group relative flex flex-1 flex-col items-center justify-end">
+    <div className="group relative flex min-w-[3px] flex-1 flex-col items-center justify-end">
       {/* Tooltip */}
       <div className="pointer-events-none absolute -top-14 z-10 whitespace-nowrap rounded bg-slate-800 px-2 py-1 text-xs text-white opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
         <div className="font-medium">{formatBucketLabel(bucket.bucket, granularity)}</div>

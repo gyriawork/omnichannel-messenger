@@ -80,7 +80,7 @@ function setRefreshTokenCookie(reply: FastifyReply, token: string): void {
   reply.setCookie('refreshToken', token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
     path: '/api/auth',
     maxAge: REFRESH_TOKEN_EXPIRY_SECONDS,
   });
