@@ -33,6 +33,7 @@ export function useInitialSync() {
   const setProgress = useInitialSyncStore((s) => s.setProgress);
   const setFailed = useInitialSyncStore((s) => s.setFailed);
   const active = useInitialSyncStore((s) => s.active);
+  const dismissed = useInitialSyncStore((s) => s.dismissed);
 
   // Fetch on mount so the overlay can reappear after a page reload, and
   // refetch each time the store clears (`!active`) — e.g. after the user
@@ -53,11 +54,13 @@ export function useInitialSync() {
     const running = data.integrations.find(
       (i) =>
         i.syncStatus === 'syncing' &&
+        !dismissed.has(i.id) &&
         SYNCING_MESSENGERS.includes(i.messenger as InitialSyncMessenger),
     );
     const failed = data.integrations.find(
       (i) =>
         i.syncStatus === 'failed' &&
+        !dismissed.has(i.id) &&
         SYNCING_MESSENGERS.includes(i.messenger as InitialSyncMessenger),
     );
 
@@ -77,7 +80,7 @@ export function useInitialSync() {
       });
       setFailed(failed.id, failed.syncError ?? 'Sync failed');
     }
-  }, [data, active, setProgress, setFailed]);
+  }, [data, active, dismissed, setProgress, setFailed]);
 
   return active;
 }

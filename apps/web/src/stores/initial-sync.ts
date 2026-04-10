@@ -21,6 +21,7 @@ export interface ActiveSync {
 
 interface InitialSyncStore {
   active: ActiveSync | null;
+  dismissed: Set<string>; // integration IDs the user dismissed
   setProgress: (data: Omit<ActiveSync, 'status'> & { status?: 'syncing' }) => void;
   setComplete: (integrationId: string) => void;
   setFailed: (integrationId: string, error: string) => void;
@@ -29,6 +30,7 @@ interface InitialSyncStore {
 
 export const useInitialSyncStore = create<InitialSyncStore>((set) => ({
   active: null,
+  dismissed: new Set(),
 
   setProgress: (data) =>
     set({
@@ -58,5 +60,10 @@ export const useInitialSyncStore = create<InitialSyncStore>((set) => ({
       };
     }),
 
-  clear: () => set({ active: null }),
+  clear: () =>
+    set((state) => {
+      const dismissed = new Set(state.dismissed);
+      if (state.active) dismissed.add(state.active.integrationId);
+      return { active: null, dismissed };
+    }),
 }));
