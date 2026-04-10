@@ -108,6 +108,7 @@ model Chat {
   lastActivityAt   DateTime?
   syncStatus       String   @default("pending") // pending | syncing | synced | failed
   syncCursor       String?  // adapter-specific pagination cursor for resumable sync
+  hasFullHistory   Boolean  @default(false) // true once full message history has been pulled
   deletedAt        DateTime?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
@@ -302,6 +303,15 @@ model Integration {
   organization   Organization @relation(fields: [organizationId], references: [id])
   userId         String   // which user connected this integration
   connectedAt    DateTime?
+
+  // Initial sync progress (set when integration is first connected and all chats
+  // are being pulled). syncStatus values: idle | syncing | synced | failed.
+  syncStatus         String    @default("idle")
+  syncTotalChats     Int?
+  syncCompletedChats Int?
+  syncStartedAt      DateTime?
+  syncError          String?
+
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
