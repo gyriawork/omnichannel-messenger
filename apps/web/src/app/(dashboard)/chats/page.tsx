@@ -351,13 +351,32 @@ function formatTime(iso?: string) {
 // to /messenger?search=<domain> so the existing left-panel search shows
 // the constituent threads.
 
-function GroupRow({ group }: { group: ChatGroup }) {
+function GroupRow({
+  group,
+  selectedIds,
+  onToggleGroup,
+}: {
+  group: ChatGroup;
+  selectedIds: string[];
+  onToggleGroup: (chatIds: string[]) => void;
+}) {
   const cfg = messengerConfig.gmail;
+  const groupChatIds = group.chats.map((c) => c.id);
+  const allSelected = groupChatIds.length > 0 && groupChatIds.every((id) => selectedIds.includes(id));
+  const someSelected = !allSelected && groupChatIds.some((id) => selectedIds.includes(id));
 
   return (
-    <tr className="transition-colors hover:bg-slate-50/50">
-      {/* Empty checkbox cell — groups are not bulk-selectable */}
-      <td className="px-4 py-3" />
+    <tr className={cn('transition-colors hover:bg-slate-50/50', allSelected && 'bg-accent-bg/30')}>
+      {/* Group checkbox — selects/deselects all chats in the group */}
+      <td className="px-4 py-3">
+        <input
+          type="checkbox"
+          checked={allSelected}
+          ref={(el) => { if (el) el.indeterminate = someSelected; }}
+          onChange={() => onToggleGroup(groupChatIds)}
+          className="h-4 w-4 rounded border-slate-300 text-accent focus:ring-accent/30"
+        />
+      </td>
 
       {/* Chat: avatar + label (no preview — visually consistent with other rows) */}
       <td className="px-4 py-3">
@@ -512,12 +531,34 @@ export default function ChatsPage() {
   };
 
   const toggleSelectAll = () => {
-    const selectableIds = sorted.filter((r) => !isChatGroup(r)).map((r) => (r as Chat).id);
+    // Collect ALL selectable IDs: individual chats + chats inside groups
+    const selectableIds: string[] = [];
+    for (const r of sorted) {
+      if (isChatGroup(r)) {
+        for (const c of r.chats) selectableIds.push(c.id);
+      } else {
+        selectableIds.push((r as Chat).id);
+      }
+    }
     if (selectedIds.length === selectableIds.length) {
       setSelectedIds([]);
     } else {
       setSelectedIds(selectableIds);
     }
+  };
+
+  const toggleGroup = (chatIds: string[]) => {
+    setSelectedIds((prev) => {
+      const allIn = chatIds.every((id) => prev.includes(id));
+      if (allIn) {
+        // Deselect all in group
+        const remove = new Set(chatIds);
+        return prev.filter((id) => !remove.has(id));
+      }
+      // Select all in group (add missing)
+      const existing = new Set(prev);
+      return [...prev, ...chatIds.filter((id) => !existing.has(id))];
+    });
   };
 
   return (
@@ -672,11 +713,16 @@ export default function ChatsPage() {
         {sorted.map((row) => {
           if (isChatGroup(row)) {
             const cfg = messengerConfig.gmail;
+            const groupChatIds = row.chats.map((c) => c.id);
+            const allSel = groupChatIds.every((id) => selectedIds.includes(id));
             return (
-              <a
+              <div
                 key={`group-${row.domain}`}
-                href={`/messenger?search=${encodeURIComponent(row.domain)}`}
-                className="rounded-xl border border-slate-200 bg-white p-3 transition-colors block"
+                className={cn(
+                  'rounded-xl border border-slate-200 bg-white p-3 transition-colors',
+                  allSel && 'border-accent bg-accent/5',
+                )}
+                onClick={() => toggleGroup(groupChatIds)}
               >
                 <div className="flex items-center gap-3">
                   <div className={cn('h-2 w-2 rounded-full', cfg.dotColor)} />
@@ -687,7 +733,7 @@ export default function ChatsPage() {
                     {row.totalMessages} msgs
                   </span>
                 </div>
-              </a>
+              </div>
             );
           }
           const chat = row;
@@ -804,7 +850,7 @@ export default function ChatsPage() {
             <tbody className="divide-y divide-slate-100">
               {sorted.map((row) => {
                 if (isChatGroup(row)) {
-                  return <GroupRow key={`group-${row.domain}`} group={row} />;
+                  return <GroupRow key={`group-${row.domain}`} group={row} selectedIds={selectedIds} onToggleGroup={toggleGroup} />;
                 }
                 const chat = row;
                 const mcfg = messengerConfig[chat.messenger];

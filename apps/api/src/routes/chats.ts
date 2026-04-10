@@ -408,11 +408,12 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
         return sendError(reply, 'RESOURCE_NOT_FOUND', `Chat with id ${id} not found`, 404);
       }
 
-      // Hard delete: remove messages, tags, preferences, then the chat itself
+      // Hard delete: remove all related data, then the chat itself
       await prisma.message.deleteMany({ where: { chatId: id } });
       await prisma.chatTag.deleteMany({ where: { chatId: id } });
       await prisma.chatPreference.deleteMany({ where: { chatId: id } });
       await prisma.chatParticipant.deleteMany({ where: { chatId: id } });
+      await prisma.broadcastChat.deleteMany({ where: { chatId: id } });
       await prisma.chat.delete({ where: { id } });
 
       await cacheInvalidate(cacheKey(organizationId, 'chats', '*'));
@@ -690,11 +691,12 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
         return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
       }
 
-      // Hard delete: remove related data, then chats
+      // Hard delete: remove all related data, then chats
       await prisma.message.deleteMany({ where: { chatId: { in: chatIds } } });
       await prisma.chatTag.deleteMany({ where: { chatId: { in: chatIds } } });
       await prisma.chatPreference.deleteMany({ where: { chatId: { in: chatIds } } });
       await prisma.chatParticipant.deleteMany({ where: { chatId: { in: chatIds } } });
+      await prisma.broadcastChat.deleteMany({ where: { chatId: { in: chatIds } } });
       const result = await prisma.chat.deleteMany({
         where: {
           id: { in: chatIds },
