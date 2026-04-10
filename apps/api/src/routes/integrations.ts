@@ -514,6 +514,9 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
         });
       }
 
+      // Queue initial sync to import any new chats since last connection
+      await queueInitialSync(updated.id, organizationId, request.user.id, messenger);
+
       return reply.send({
         integration: sanitizeIntegration(updated),
       });

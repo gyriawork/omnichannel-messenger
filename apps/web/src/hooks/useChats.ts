@@ -285,7 +285,7 @@ export function useBulkTagChats() {
 export function useBulkDeleteChats() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (chatIds: string[]) => api.post('/api/chats/bulk', { chatIds }),
+    mutationFn: (chatIds: string[]) => api.delete('/api/chats/bulk', { body: { chatIds } }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['chats'] }),
   });
 }

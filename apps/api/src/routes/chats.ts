@@ -686,11 +686,13 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
         return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
       }
 
-      const result = await prisma.chat.deleteMany({
+      const result = await prisma.chat.updateMany({
         where: {
           id: { in: chatIds },
           organizationId,
+          deletedAt: null,
         },
+        data: { deletedAt: new Date() },
       });
 
       await cacheInvalidate(cacheKey(organizationId, 'chats', '*'));
