@@ -43,7 +43,7 @@ export async function authenticate(
   const token = authHeader.slice(7); // strip "Bearer "
 
   try {
-    const payload = jwt.verify(token, getJwtSecret()) as JwtPayload;
+    const payload = jwt.verify(token, getJwtSecret(), { algorithms: ['HS256'] }) as JwtPayload;
 
     request.user = {
       id: payload.id,

@@ -47,6 +47,11 @@ const analyticsQuerySchema = z.object({
 
 // ─── Helpers ───
 
+/** Strip HTML tags from broadcast message text to prevent XSS when rendered. */
+function stripHtml(text: string): string {
+  return text.replace(/<[^>]*>/g, '');
+}
+
 function sendError(reply: FastifyReply, code: string, message: string, statusCode: number) {
   return reply.status(statusCode).send({
     error: { code, message, statusCode },
@@ -394,7 +399,8 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
         return sendError(reply, 'VALIDATION_ERROR', parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '), 422);
       }
 
-      const { name, messageText, chatIds, scheduledAt, templateId, attachments } = parsed.data;
+      const { name, messageText: rawMessageText, chatIds, scheduledAt, templateId, attachments } = parsed.data;
+      const messageText = stripHtml(rawMessageText);
       const organizationId = getOrgId(request);
       if (!organizationId) {
         return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
@@ -485,7 +491,8 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
       }
 
       const { id } = paramsParsed.data;
-      const { name, messageText, chatIds, scheduledAt } = bodyParsed.data;
+      const { name, messageText: rawMessageText, chatIds, scheduledAt } = bodyParsed.data;
+      const messageText = rawMessageText !== undefined ? stripHtml(rawMessageText) : undefined;
       const organizationId = getOrgId(request);
       if (!organizationId) {
         return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
@@ -645,6 +652,34 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
           return sendError(reply, 'RESOURCE_NOT_FOUND', `Broadcast with id ${id} not found`, 404);
         }
         return reply.status(409).send({ error: { code: 'BROADCAST_ALREADY_SENT', message: `Broadcast is already ${broadcast.status}`, statusCode: 409 } });
+      }
+
+      // Check for overlapping chats with other active broadcasts (antiban protection)
+      const overlapping = await prisma.broadcastChat.findMany({
+        where: {
+          broadcastId: id,
+          chat: {
+            broadcastChats: {
+              some: {
+                broadcastId: { not: id },
+                broadcast: { status: 'sending', organizationId },
+              },
+            },
+          },
+        },
+        select: { chatId: true },
+        take: 5,
+      });
+      if (overlapping.length > 0) {
+        // Roll back status
+        await prisma.broadcast.update({ where: { id }, data: { status: 'draft', sentAt: null } });
+        return reply.status(409).send({
+          error: {
+            code: 'BROADCAST_CHAT_OVERLAP',
+            message: `${overlapping.length} chat(s) are already targeted by an active broadcast. Wait for it to finish or remove overlapping chats.`,
+            statusCode: 409,
+          },
+        });
       }
 
       // Verify broadcast has recipient chats

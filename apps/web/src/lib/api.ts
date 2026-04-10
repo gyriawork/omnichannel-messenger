@@ -168,6 +168,14 @@ async function request<T>(
       headers['Authorization'] = `Bearer ${newToken}`;
       config.headers = headers;
       response = await fetch(`${BASE_URL}${finalEndpoint}`, config);
+      // If retried request still returns 401, session is broken — force logout
+      if (response.status === 401) {
+        clearTokens();
+        if (typeof window !== 'undefined') {
+          window.location.href = '/login';
+        }
+        throw new ApiError(401, 'AUTH_TOKEN_EXPIRED', 'Session expired');
+      }
     } else {
       clearTokens();
       if (typeof window !== 'undefined') {

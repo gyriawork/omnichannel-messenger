@@ -82,9 +82,21 @@ const listArticlesSchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
 });
 
+// TipTap stores content as a JSON document (ProseMirror node tree).
+// We accept any valid JSON object/array but cap serialised size to 2 MB to
+// prevent abuse while still supporting large articles.
+import type { Prisma } from '@prisma/client';
+
+const tiptapContentSchema = z
+  .union([z.record(z.unknown()), z.array(z.unknown())])
+  .refine((v) => JSON.stringify(v).length <= 2_000_000, {
+    message: 'Content is too large (max 2 MB)',
+  })
+  .transform((v) => v as Prisma.InputJsonValue);
+
 const createArticleSchema = z.object({
   title: z.string().min(1).max(200).trim(),
-  content: z.any(),
+  content: tiptapContentSchema,
   categoryId: z.string().uuid(),
   type: z.enum(['article', 'case_study']).default('article'),
   status: z.enum(['draft', 'published']).default('draft'),
@@ -98,7 +110,7 @@ const createArticleSchema = z.object({
 
 const updateArticleSchema = z.object({
   title: z.string().min(1).max(200).trim().optional(),
-  content: z.any().optional(),
+  content: tiptapContentSchema.optional(),
   categoryId: z.string().uuid().optional(),
   type: z.enum(['article', 'case_study']).optional(),
   status: z.enum(['draft', 'published']).optional(),
@@ -561,7 +573,7 @@ export default async function wikiRoutes(fastify: FastifyInstance): Promise<void
 
       return reply.status(201).send({
         ...article,
-        tags: article.tags.map((t) => t.tag),
+        tags: article.tags.map((t: { tag: { id: string; name: string; color: string } }) => t.tag),
       });
     },
   );

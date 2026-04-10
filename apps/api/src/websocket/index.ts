@@ -266,7 +266,32 @@ export function createWebSocketServer(httpServer: HttpServer): Server {
 
   // ── Redis subscriber for worker events ──
 
-  const redisSub = new IORedis(process.env.REDIS_URL ?? 'redis://localhost:6379');
+  const ALLOWED_WS_EVENTS = new Set([
+    'new_message', 'message_updated', 'message_deleted',
+    'typing', 'mark_read', 'chat_updated', 'new_reaction',
+    'broadcast_status', 'broadcast_progress', 'sync_progress',
+  ]);
+
+  const redisSub = new IORedis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
+    retryStrategy(times) {
+      const delay = Math.min(times * 200, 5000);
+      console.warn(`[ws:redis] Reconnecting subscriber (attempt ${times}, delay ${delay}ms)`);
+      return delay;
+    },
+    maxRetriesPerRequest: null,
+  });
+
+  redisSub.on('error', (err) => {
+    console.error('[ws:redis] Subscriber error:', err.message);
+  });
+
+  redisSub.on('reconnecting', () => {
+    console.warn('[ws:redis] Subscriber reconnecting...');
+  });
+
+  redisSub.on('connect', () => {
+    console.info('[ws:redis] Subscriber connected');
+  });
 
   redisSub.subscribe('ws:events').catch((err) => {
     console.error('Failed to subscribe to ws:events', err);
@@ -279,6 +304,13 @@ export function createWebSocketServer(httpServer: HttpServer): Server {
         room: string;
         data: unknown;
       };
+
+      // Validate event name against whitelist to prevent arbitrary event emission
+      if (!parsed.event || !parsed.room || !ALLOWED_WS_EVENTS.has(parsed.event)) {
+        console.warn(`[ws:redis] Rejected unknown event: ${parsed.event}`);
+        return;
+      }
+
       io!.to(parsed.room).emit(parsed.event, parsed.data);
     } catch (err) {
       console.error('Failed to parse ws:events message', err);

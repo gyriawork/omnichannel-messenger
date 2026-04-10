@@ -43,7 +43,7 @@ function generateAccessToken(user: TokenUser): string {
       organizationId: user.organizationId,
     },
     getJwtSecret(),
-    { expiresIn: ACCESS_TOKEN_EXPIRY },
+    { algorithm: 'HS256', expiresIn: ACCESS_TOKEN_EXPIRY },
   );
 }
 

@@ -408,13 +408,32 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
         return sendError(reply, 'RESOURCE_NOT_FOUND', `Chat with id ${id} not found`, 404);
       }
 
-      // Hard delete: remove all related data, then the chat itself
-      await prisma.message.deleteMany({ where: { chatId: id } });
-      await prisma.chatTag.deleteMany({ where: { chatId: id } });
-      await prisma.chatPreference.deleteMany({ where: { chatId: id } });
-      await prisma.chatParticipant.deleteMany({ where: { chatId: id } });
-      await prisma.broadcastChat.deleteMany({ where: { chatId: id } });
-      await prisma.chat.delete({ where: { id } });
+      // Block deletion if this chat is part of an active (sending) broadcast
+      const activeBroadcast = await prisma.broadcastChat.findFirst({
+        where: {
+          chatId: id,
+          broadcast: { status: { in: ['sending', 'scheduled'] } },
+        },
+        include: { broadcast: { select: { id: true, name: true, status: true } } },
+      });
+      if (activeBroadcast) {
+        return sendError(
+          reply,
+          'CHAT_IN_ACTIVE_BROADCAST',
+          `Cannot delete chat — it is part of an active broadcast "${activeBroadcast.broadcast.name}" (${activeBroadcast.broadcast.status})`,
+          409,
+        );
+      }
+
+      // Hard delete in a transaction to prevent race conditions
+      await prisma.$transaction([
+        prisma.message.deleteMany({ where: { chatId: id } }),
+        prisma.chatTag.deleteMany({ where: { chatId: id } }),
+        prisma.chatPreference.deleteMany({ where: { chatId: id } }),
+        prisma.chatParticipant.deleteMany({ where: { chatId: id } }),
+        prisma.broadcastChat.deleteMany({ where: { chatId: id } }),
+        prisma.chat.delete({ where: { id } }),
+      ]);
 
       await cacheInvalidate(cacheKey(organizationId, 'chats', '*'));
 

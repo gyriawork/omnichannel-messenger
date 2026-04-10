@@ -131,8 +131,39 @@ await fastify.register(adminRoutes, { prefix: '/api' });
 await fastify.register(wikiRoutes, { prefix: '/api' });
 await fastify.register(imageProxyRoutes, { prefix: '/api' });
 
-// Health check
+// Health check — shallow (for load balancers)
 fastify.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));
+
+// Deep health check — verifies DB and Redis connectivity
+fastify.get('/health/deep', async (_request, reply) => {
+  const checks: Record<string, { status: string; latencyMs?: number; error?: string }> = {};
+
+  // PostgreSQL
+  const dbStart = Date.now();
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    checks.database = { status: 'ok', latencyMs: Date.now() - dbStart };
+  } catch (err) {
+    checks.database = { status: 'error', latencyMs: Date.now() - dbStart, error: err instanceof Error ? err.message : 'Unknown' };
+  }
+
+  // Redis (via cache module ping)
+  const redisStart = Date.now();
+  try {
+    const { cacheGet } = await import('./lib/cache.js');
+    await cacheGet('health:ping'); // read attempt is enough to verify connectivity
+    checks.redis = { status: 'ok', latencyMs: Date.now() - redisStart };
+  } catch (err) {
+    checks.redis = { status: 'error', latencyMs: Date.now() - redisStart, error: err instanceof Error ? err.message : 'Unknown' };
+  }
+
+  const allOk = Object.values(checks).every((c) => c.status === 'ok');
+  return reply.status(allOk ? 200 : 503).send({
+    status: allOk ? 'ok' : 'degraded',
+    timestamp: new Date().toISOString(),
+    checks,
+  });
+});
 
 // ─── Error handler ───
 

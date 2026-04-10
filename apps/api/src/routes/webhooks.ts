@@ -391,7 +391,19 @@ export default async function webhookRoutes(fastify: FastifyInstance): Promise<v
       const gmailWebhookToken = process.env.GMAIL_WEBHOOK_TOKEN;
       if (gmailWebhookToken) {
         const token = authHeader.slice(7);
-        if (token !== gmailWebhookToken) {
+        // Use timing-safe comparison to prevent timing attacks (matches Slack/Telegram pattern)
+        if (token.length !== gmailWebhookToken.length) {
+          return reply.status(403).send({ error: 'Invalid webhook token' });
+        }
+        try {
+          const valid = timingSafeEqual(
+            Buffer.from(token, 'utf8'),
+            Buffer.from(gmailWebhookToken, 'utf8'),
+          );
+          if (!valid) {
+            return reply.status(403).send({ error: 'Invalid webhook token' });
+          }
+        } catch {
           return reply.status(403).send({ error: 'Invalid webhook token' });
         }
       } else if (process.env.NODE_ENV === 'production') {

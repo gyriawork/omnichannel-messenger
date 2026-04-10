@@ -1615,12 +1615,37 @@ setTimeout(() => {
   });
 }, 5000);
 
+// ─── Health check HTTP server ───
+// Lightweight endpoint so orchestrators (Railway, k8s) can monitor worker health.
+
+import { createServer } from 'node:http';
+
+const HEALTH_PORT = parseInt(process.env.HEALTH_PORT ?? '3002', 10);
+
+const healthServer = createServer(async (_req, res) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    const redisOk = connection.status === 'ready';
+    if (!redisOk) throw new Error('Redis not ready');
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ status: 'ok', timestamp: new Date().toISOString() }));
+  } catch (err) {
+    res.writeHead(503, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ status: 'error', error: err instanceof Error ? err.message : 'Unknown' }));
+  }
+});
+
+healthServer.listen(HEALTH_PORT, () => {
+  log.info(`Worker health check listening on :${HEALTH_PORT}`);
+});
+
 // ─── Graceful Shutdown ───
 
 async function shutdown(signal: string) {
   log.info(`Received ${signal}, shutting down gracefully`);
 
-  // Close workers first (waits for active jobs to finish, up to 30s)
+  // Close health check server and workers (waits for active jobs to finish, up to 30s)
+  healthServer.close();
   await Promise.allSettled([worker.close(), messageSyncWorker.close()]);
   log.info('Workers closed');
 
