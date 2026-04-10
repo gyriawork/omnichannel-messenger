@@ -22,7 +22,7 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { useChats, useBulkDeleteChats, useBulkAssignChats, useBulkTagChats } from '@/hooks/useChats';
 import { useTags } from '@/hooks/useTags';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { ChatAvatar } from '@/components/ui/ChatAvatar';
 import { Skeleton } from '@/components/ui/Skeleton';
@@ -51,6 +51,14 @@ const chatTypeIcons: Record<string, typeof MessageSquare> = {
 
 // ─── Assign Owner Dropdown ───
 
+interface OrgMember {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  avatar?: string | null;
+}
+
 function AssignOwnerDropdown({
   selectedIds,
   onDone,
@@ -58,20 +66,22 @@ function AssignOwnerDropdown({
   selectedIds: string[];
   onDone: () => void;
 }) {
-  const [ownerInput, setOwnerInput] = useState('');
+  const [search, setSearch] = useState('');
   const assignMutation = useBulkAssignChats();
+  const { data, isLoading } = useQuery<{ users: OrgMember[] }>({
+    queryKey: ['workspace-users'],
+    queryFn: () => api.get('/api/users'),
+  });
+  const members = (data?.users ?? []).filter((u) =>
+    !search || u.name.toLowerCase().includes(search.toLowerCase()) || u.email.toLowerCase().includes(search.toLowerCase()),
+  );
 
-  const handleAssign = () => {
-    const trimmed = ownerInput.trim();
-    if (!trimmed) {
-      toast.error('Please enter an owner ID');
-      return;
-    }
+  const handleAssign = (member: OrgMember) => {
     assignMutation.mutate(
-      { chatIds: selectedIds, ownerId: trimmed },
+      { chatIds: selectedIds, ownerId: member.id },
       {
         onSuccess: () => {
-          toast.success(`Owner assigned to ${selectedIds.length} chat(s)`);
+          toast.success(`${member.name} assigned as owner of ${selectedIds.length} chat(s)`);
           onDone();
         },
         onError: () => toast.error('Failed to assign owner'),
@@ -82,54 +92,94 @@ function AssignOwnerDropdown({
   return (
     <>
       <div className="fixed inset-0 z-10" onClick={onDone} />
-      <div className="absolute left-0 top-full z-20 mt-1 w-64 rounded-lg border border-slate-200 bg-white p-3 shadow-lg">
-        <p className="mb-2 text-xs font-medium text-slate-600">Assign owner by ID</p>
-        <input
-          value={ownerInput}
-          onChange={(e) => setOwnerInput(e.target.value)}
-          placeholder="Enter user ID..."
-          autoFocus
-          className="mb-2 w-full rounded border-[1.5px] border-slate-200 px-2.5 py-1.5 text-xs transition-colors placeholder:text-slate-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15"
-        />
-        <button
-          onClick={handleAssign}
-          disabled={assignMutation.isPending || !ownerInput.trim()}
-          className="flex w-full items-center justify-center gap-1.5 rounded bg-accent px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-accent-hover disabled:opacity-50"
-        >
-          {assignMutation.isPending ? (
-            <Loader2 className="h-3 w-3 animate-spin" />
+      <div className="absolute left-0 top-full z-20 mt-1 w-64 rounded-lg border border-slate-200 bg-white shadow-lg">
+        <div className="p-2">
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search members..."
+            autoFocus
+            className="w-full rounded border-[1.5px] border-slate-200 px-2.5 py-1.5 text-xs transition-colors placeholder:text-slate-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15"
+          />
+        </div>
+        <div className="max-h-48 overflow-y-auto py-1">
+          {isLoading ? (
+            <div className="flex items-center justify-center py-4">
+              <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
+            </div>
+          ) : members.length === 0 ? (
+            <p className="px-3 py-2 text-xs text-slate-400">No members found</p>
           ) : (
-            <UserCheck className="h-3 w-3" />
+            members.map((member) => (
+              <button
+                key={member.id}
+                onClick={() => handleAssign(member)}
+                disabled={assignMutation.isPending}
+                className="flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors hover:bg-slate-50 disabled:opacity-50"
+              >
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent/10 text-[10px] font-semibold text-accent">
+                  {member.name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase()}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-medium text-slate-700">{member.name}</p>
+                  <p className="truncate text-[10px] text-slate-400">{member.email}</p>
+                </div>
+              </button>
+            ))
           )}
-          Assign
-        </button>
+        </div>
       </div>
     </>
   );
 }
 
-// ─── Add Tag Dropdown ───
+// ─── Add/Remove Tag Dropdown ───
 
 function AddTagDropdown({
   selectedIds,
+  selectedChats,
   onDone,
 }: {
   selectedIds: string[];
+  selectedChats: Chat[];
   onDone: () => void;
 }) {
   const { data } = useTags();
   const tagMutation = useBulkTagChats();
+  const queryClient = useQueryClient();
   const tags = data?.tags ?? [];
 
-  const handleAddTag = (tagId: string, tagName: string) => {
+  // Compute which tags are applied to ALL selected chats (fully applied)
+  // vs some (partially applied) vs none
+  const tagStates = useMemo(() => {
+    const map = new Map<string, 'all' | 'some' | 'none'>();
+    for (const tag of tags) {
+      let count = 0;
+      for (const chat of selectedChats) {
+        if ((chat.tags ?? []).some((t) => t.id === tag.id)) count++;
+      }
+      if (count === 0) map.set(tag.id, 'none');
+      else if (count === selectedChats.length) map.set(tag.id, 'all');
+      else map.set(tag.id, 'some');
+    }
+    return map;
+  }, [tags, selectedChats]);
+
+  const handleToggleTag = (tagId: string, tagName: string) => {
+    const state = tagStates.get(tagId) ?? 'none';
+    const action = state === 'all' ? 'remove' : 'add';
     tagMutation.mutate(
-      { chatIds: selectedIds, tagId, action: 'add' },
+      { chatIds: selectedIds, tagId, action },
       {
         onSuccess: () => {
-          toast.success(`Tag "${tagName}" added to ${selectedIds.length} chat(s)`);
-          onDone();
+          toast.success(
+            action === 'add'
+              ? `Tag "${tagName}" added to ${selectedIds.length} chat(s)`
+              : `Tag "${tagName}" removed from ${selectedIds.length} chat(s)`,
+          );
+          queryClient.invalidateQueries({ queryKey: ['chats'] });
         },
-        onError: () => toast.error('Failed to add tag'),
+        onError: () => toast.error(`Failed to ${action} tag`),
       },
     );
   };
@@ -138,24 +188,41 @@ function AddTagDropdown({
     <>
       <div className="fixed inset-0 z-10" onClick={onDone} />
       <div className="absolute left-0 top-full z-20 mt-1 w-52 rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
-        <p className="px-3 py-1.5 text-xs font-medium text-slate-400">Add tag</p>
+        <p className="px-3 py-1.5 text-xs font-medium text-slate-400">Toggle tags</p>
         {tags.length === 0 ? (
           <p className="px-3 py-2 text-xs text-slate-400">No tags available</p>
         ) : (
-          tags.map((tag) => (
-            <button
-              key={tag.id}
-              onClick={() => handleAddTag(tag.id, tag.name)}
-              disabled={tagMutation.isPending}
-              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
-            >
-              <span
-                className="h-3 w-3 rounded-full shrink-0"
-                style={{ backgroundColor: tag.color }}
-              />
-              {tag.name}
-            </button>
-          ))
+          tags.map((tag) => {
+            const state = tagStates.get(tag.id) ?? 'none';
+            return (
+              <button
+                key={tag.id}
+                onClick={() => handleToggleTag(tag.id, tag.name)}
+                disabled={tagMutation.isPending}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
+              >
+                <div className={cn(
+                  'flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors',
+                  state === 'all' ? 'border-accent bg-accent' : state === 'some' ? 'border-accent bg-accent/40' : 'border-slate-300',
+                )}>
+                  {(state === 'all' || state === 'some') && (
+                    <svg className="h-3 w-3 text-white" viewBox="0 0 12 12" fill="none">
+                      {state === 'all' ? (
+                        <path d="M10 3L4.5 8.5L2 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      ) : (
+                        <path d="M3 6H9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                      )}
+                    </svg>
+                  )}
+                </div>
+                <span
+                  className="h-3 w-3 rounded-full shrink-0"
+                  style={{ backgroundColor: tag.color }}
+                />
+                {tag.name}
+              </button>
+            );
+          })
         )}
       </div>
     </>
@@ -166,9 +233,11 @@ function AddTagDropdown({
 
 function BulkActions({
   selectedIds,
+  selectedChats,
   onClear,
 }: {
   selectedIds: string[];
+  selectedChats: Chat[];
   onClear: () => void;
 }) {
   const [showAssign, setShowAssign] = useState(false);
@@ -223,7 +292,8 @@ function BulkActions({
         {showTagMenu && (
           <AddTagDropdown
             selectedIds={selectedIds}
-            onDone={() => { setShowTagMenu(false); onClear(); }}
+            selectedChats={selectedChats}
+            onDone={() => { setShowTagMenu(false); }}
           />
         )}
       </div>
@@ -672,6 +742,7 @@ export default function ChatsPage() {
         <div className="mb-4">
           <BulkActions
             selectedIds={selectedIds}
+            selectedChats={chats.filter((c) => selectedIds.includes(c.id))}
             onClear={() => setSelectedIds([])}
           />
         </div>

@@ -255,7 +255,10 @@ export class WhatsAppAdapter implements MessengerAdapter {
 
       // Text-only message
       const result = await this.client.sendText(this.sessionName, externalChatId, text);
-      return { externalMessageId: result.id };
+      const resultId = typeof result.id === 'object' && result.id !== null
+        ? (result.id as Record<string, unknown>)._serialized as string ?? JSON.stringify(result.id)
+        : String(result.id);
+      return { externalMessageId: resultId };
     } catch (err) {
       throw new MessengerError('whatsapp', err, 'Failed to send WhatsApp message');
     }
