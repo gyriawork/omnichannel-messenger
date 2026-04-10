@@ -296,7 +296,7 @@ export default async function webhookRoutes(fastify: FastifyInstance): Promise<v
         event: string;
         session: string;
         payload?: {
-          id?: string;
+          id?: unknown; // WAHA may return string or {_serialized, fromMe, remote, id}
           body?: string;
           from?: string;
           to?: string;
@@ -320,18 +320,29 @@ export default async function webhookRoutes(fastify: FastifyInstance): Promise<v
 
         const chatId = payload.from || payload.chatId || '';
         const text = payload.body || '';
-        const msgId = payload.id || `waha_${Date.now()}`;
+        // WAHA may return id as object {_serialized: "...", ...} — extract string
+        const rawId = payload.id;
+        const msgId = typeof rawId === 'object' && rawId !== null
+          ? (rawId as Record<string, unknown>)._serialized as string ?? JSON.stringify(rawId)
+          : String(rawId || `waha_${Date.now()}`);
         const senderName = payload._data?.notifyName || payload.from || 'Unknown';
 
-        // Resolve the owning integration via WAHA session name — session names
-        // are unique per (org, user) pair so this picks the right tenant.
-        const integration = await prisma.integration.findFirst({
+        // Resolve the owning integration via WAHA session name stored in settings.
+        // Fallback: if no match by settings (legacy integrations before settings field),
+        // find any connected WhatsApp integration (works for single-session WAHA Free).
+        let integration = await prisma.integration.findFirst({
           where: {
             messenger: 'whatsapp',
-            credentials: { path: ['wahaSessionName'], equals: sessionName },
+            settings: { path: ['wahaSessionName'], equals: sessionName },
           },
           select: { organizationId: true, userId: true },
         });
+        if (!integration) {
+          integration = await prisma.integration.findFirst({
+            where: { messenger: 'whatsapp', status: 'connected' },
+            select: { organizationId: true, userId: true },
+          });
+        }
 
         if (integration) {
           await saveIncomingMessage({
@@ -346,6 +357,8 @@ export default async function webhookRoutes(fastify: FastifyInstance): Promise<v
             chatName: senderName,
             chatType: chatId.endsWith('@g.us') ? 'group' : 'direct',
           });
+        } else {
+          console.warn(`[WAHA Webhook] No integration found for session "${sessionName}"`);
         }
       }
 
@@ -353,14 +366,18 @@ export default async function webhookRoutes(fastify: FastifyInstance): Promise<v
       if (event === 'session.status') {
         const status = (body.payload as { status?: string })?.status;
         if (status === 'FAILED' || status === 'STOPPED') {
-          // Extract orgId and userId from session name (format: wa-{orgId8}-{userId8})
-          // Find the integration and mark as disconnected
-          const integration = await prisma.integration.findFirst({
+          let statusIntegration = await prisma.integration.findFirst({
             where: {
               messenger: 'whatsapp',
-              credentials: { path: ['wahaSessionName'], equals: sessionName },
+              settings: { path: ['wahaSessionName'], equals: sessionName },
             },
           });
+          if (!statusIntegration) {
+            statusIntegration = await prisma.integration.findFirst({
+              where: { messenger: 'whatsapp', status: 'connected' },
+            });
+          }
+          const integration = statusIntegration;
 
           if (integration) {
             await prisma.integration.update({

@@ -914,7 +914,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
       }
 
       const userId = request.user.id;
-      const webhookUrl = `${process.env.APP_URL || 'http://localhost:3001'}/api/webhooks/waha`;
+      const webhookUrl = `${process.env.API_URL || 'http://localhost:3001'}/api/webhooks/waha`;
 
       try {
         // startWhatsAppPairing returns the actual WAHA session name (e.g. 'default' for free tier)
@@ -1002,6 +1002,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
             },
             update: {
               credentials: encryptedCredentials,
+              settings: { wahaSessionName: sessionName },
               status: 'connected',
               connectedAt: new Date(),
             },
@@ -1009,6 +1010,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
               messenger: 'whatsapp',
               status: 'connected',
               credentials: encryptedCredentials,
+              settings: { wahaSessionName: sessionName },
               organizationId,
               userId,
               connectedAt: new Date(),
