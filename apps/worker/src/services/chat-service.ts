@@ -50,7 +50,7 @@ export async function ensureChat(params: EnsureChatParams): Promise<Chat> {
       chatType,
       organizationId,
       importedById,
-      syncStatus: 'synced',
+      syncStatus: 'pending',
       hasFullHistory: false,
       lastActivityAt: lastActivityAt ?? new Date(),
     },

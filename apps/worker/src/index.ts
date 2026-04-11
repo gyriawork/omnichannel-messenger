@@ -1277,6 +1277,27 @@ async function processInitialSync(job: Job<InitialSyncPayload>): Promise<void> {
       data: { syncStatus: 'synced', syncCompletedChats: done },
     });
 
+    // Queue message history sync for all newly imported chats
+    const pendingChats = await prisma.chat.findMany({
+      where: { organizationId, messenger, syncStatus: 'pending' },
+      select: { id: true },
+    });
+    if (pendingChats.length > 0) {
+      const syncQueue = new Queue('message-sync', { connection });
+      const chatIds = pendingChats.map((c) => c.id);
+      // Batch into groups of 10 to avoid overwhelming the adapter
+      for (let i = 0; i < chatIds.length; i += 10) {
+        await syncQueue.add('sync:chat-history', {
+          chatIds: chatIds.slice(i, i + 10),
+          integrationId,
+          organizationId,
+          messenger,
+        } satisfies MessageSyncPayload);
+      }
+      await syncQueue.close();
+      log.info(`Queued message history sync for ${chatIds.length} chats`, { integrationId });
+    }
+
     // Invalidate chat list cache so the frontend picks up the new chats
     let cursor = '0';
     const pattern = `cache:${organizationId}:chats:*`;

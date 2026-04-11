@@ -79,9 +79,25 @@ export class SlackAdapter implements MessengerAdapter {
               chatType = 'channel';
             }
 
+            // Resolve human-readable name for DM channels
+            let name = channel.name ?? channel.id;
+            if (channel.is_im && (channel as Record<string, unknown>).user) {
+              try {
+                const userInfo = await this.client!.users.info({
+                  user: (channel as Record<string, unknown>).user as string,
+                });
+                name = userInfo.user?.real_name
+                  || userInfo.user?.profile?.display_name
+                  || userInfo.user?.name
+                  || channel.id;
+              } catch {
+                // Fall back to channel ID if user lookup fails
+              }
+            }
+
             chats.push({
               externalChatId: channel.id,
-              name: channel.name ?? channel.id,
+              name,
               chatType,
             });
           }

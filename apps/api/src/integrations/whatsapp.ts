@@ -189,23 +189,52 @@ export class WhatsAppAdapter implements MessengerAdapter {
 
   /**
    * List all chats from the WhatsApp account.
+   * Resolves contact names via WAHA contacts API. Falls back to formatted
+   * phone number for @c.us IDs. Filters out broadcast lists (@lid) and
+   * status@broadcast.
    */
   async listChats(): Promise<Array<{ externalChatId: string; name: string; chatType: string }>> {
     this.ensureConnected();
 
     try {
-      const chats = await this.client.listChats(this.sessionName);
-      return chats.map((chat) => {
-        // WAHA may return chat.id as an object (e.g. {server, user, _serialized}) — ensure string
+      const [chats, contacts] = await Promise.all([
+        this.client.listChats(this.sessionName),
+        this.client.getContacts(this.sessionName).catch(() => [] as Array<{ id: string; name?: string; pushname?: string }>),
+      ]);
+
+      // Build contact name lookup: id → best available name
+      const contactNames = new Map<string, string>();
+      for (const c of contacts) {
+        const name = c.name || c.pushname;
+        if (name) contactNames.set(c.id, name);
+      }
+
+      const result: Array<{ externalChatId: string; name: string; chatType: string }> = [];
+
+      for (const chat of chats) {
         const chatId = typeof chat.id === 'object' && chat.id !== null
           ? (chat.id as Record<string, unknown>)._serialized as string ?? JSON.stringify(chat.id)
           : String(chat.id);
-        return {
+
+        // Filter out broadcast lists and status broadcast
+        if (chatId === 'status@broadcast' || chatId.endsWith('@lid')) continue;
+
+        // Resolve name: WAHA chat name → contact lookup → formatted phone → raw ID
+        let name = chat.name || contactNames.get(chatId) || '';
+        if (!name && chatId.endsWith('@c.us')) {
+          const phone = chatId.replace('@c.us', '');
+          name = `+${phone}`;
+        }
+        if (!name) name = chatId;
+
+        result.push({
           externalChatId: chatId,
-          name: chat.name || chatId,
+          name,
           chatType: chat.isGroup ? 'group' : 'direct',
-        };
-      });
+        });
+      }
+
+      return result;
     } catch (err) {
       throw new MessengerError('whatsapp', err, 'Failed to list WhatsApp chats');
     }

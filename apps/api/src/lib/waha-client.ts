@@ -82,6 +82,19 @@ export interface WahaChat {
   lastMessage?: { body?: string };
 }
 
+// ─── Types: Contacts ───
+
+export interface WahaContact {
+  id: string;
+  name?: string;
+  pushname?: string;
+  shortName?: string;
+  isMyContact?: boolean;
+  isUser?: boolean;
+  isGroup?: boolean;
+  isBusiness?: boolean;
+}
+
 // ─── Types: Messages ───
 
 export interface WahaMessage {
@@ -298,6 +311,11 @@ export class WahaClient {
   /** List all chats for a session. */
   async listChats(session: string): Promise<WahaChat[]> {
     return this.request<WahaChat[]>('GET', `/api/${encodeURIComponent(session)}/chats`);
+  }
+
+  /** Get all contacts for a session. */
+  async getContacts(session: string): Promise<WahaContact[]> {
+    return this.request<WahaContact[]>('GET', `/api/contacts?session=${encodeURIComponent(session)}`);
   }
 
   /** Get messages from a specific chat. */
