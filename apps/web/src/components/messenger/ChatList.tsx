@@ -90,7 +90,9 @@ const ChatItem = React.memo(function ChatItem({ chat, isActive }: { chat: Chat; 
         'group flex w-full items-start gap-3 px-4 py-3 text-left transition-colors duration-150',
         isActive
           ? 'border-l-[3px] border-accent bg-accent-bg'
-          : 'border-l-[3px] border-transparent hover:bg-slate-50',
+          : isUnread
+            ? 'border-l-[3px] border-accent/60 bg-accent/[0.04] hover:bg-accent/[0.07]'
+            : 'border-l-[3px] border-transparent hover:bg-slate-50',
       )}
     >
       {/* Avatar */}
@@ -132,12 +134,18 @@ const ChatItem = React.memo(function ChatItem({ chat, isActive }: { chat: Chat; 
         </div>
 
         <div className="mt-0.5 flex items-center justify-between gap-2">
-          <p className="truncate text-xs text-slate-500">
+          <p className={cn(
+            'truncate text-xs',
+            isUnread ? 'font-medium text-slate-700' : 'text-slate-500',
+          )}>
             {chat.lastMessage
               ? `${chat.lastMessage.senderName}: ${chat.lastMessage.text}`
               : 'No messages yet'}
           </p>
-          <span className="flex-shrink-0 text-[10px] text-slate-400">
+          <span className={cn(
+            'flex-shrink-0 text-[10px]',
+            isUnread ? 'font-semibold text-accent' : 'text-slate-400',
+          )}>
             {formatTime(chat.lastMessage?.createdAt || chat.lastActivityAt)}
           </span>
         </div>

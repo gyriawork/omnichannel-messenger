@@ -386,6 +386,13 @@ export class TelegramAdapter implements MessengerAdapter {
       }
       return 'Unknown';
     } catch {
+      // getEntity can fail for the authenticated user's own ID — fall back to getMe()
+      try {
+        const me = await this.client!.getMe() as Api.User;
+        if (me.id.toString() === senderId) {
+          return [me.firstName, me.lastName].filter(Boolean).join(' ') || 'Unknown';
+        }
+      } catch { /* ignore */ }
       return 'Unknown';
     }
   }

@@ -224,25 +224,24 @@ function TagCard({
   onDelete: () => void;
 }) {
   return (
-    <div className="group flex items-center justify-between rounded-lg bg-white p-4 shadow-xs transition-shadow hover:shadow-sm">
-      <div className="flex items-center gap-3">
+    <div className="group flex items-center justify-between rounded-lg bg-white px-4 py-3 shadow-xs transition-shadow hover:shadow-sm">
+      <div className="flex min-w-0 items-center gap-3">
         <span
-          className="h-4 w-4 rounded-full shrink-0"
+          className="h-3 w-3 shrink-0 rounded-full"
           style={{ backgroundColor: tag.color }}
         />
-        <div>
-          <span
-            className="text-sm font-semibold"
-            style={{ color: tag.color }}
-          >
-            {tag.name}
-          </span>
-          <p className="text-xs text-slate-400">
-            Used in {tag.chatCount ?? 0} chat{(tag.chatCount ?? 0) !== 1 ? 's' : ''}
-          </p>
-        </div>
+        <span
+          className="truncate text-sm font-semibold"
+          style={{ color: tag.color }}
+          title={tag.name}
+        >
+          {tag.name}
+        </span>
+        <span className="shrink-0 text-xs text-slate-400">
+          {tag.chatCount ?? 0} chat{(tag.chatCount ?? 0) !== 1 ? 's' : ''}
+        </span>
       </div>
-      <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+      <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
         <button
           onClick={onEdit}
           className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
@@ -324,7 +323,7 @@ export default function TagsPage() {
           </button>
         </div>
       ) : (
-        <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+        <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
           {tags.map((tag) => (
             <TagCard
               key={tag.id}

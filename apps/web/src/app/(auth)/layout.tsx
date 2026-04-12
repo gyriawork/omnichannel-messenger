@@ -1,10 +1,14 @@
+import { Inter } from 'next/font/google';
+
+const inter = Inter({ subsets: ['latin', 'cyrillic'] });
+
 export default function AuthLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex min-h-[100dvh]">
+    <div className={`flex min-h-[100dvh] ${inter.className}`}>
       {/* Left panel — gradient with decorative shapes */}
       <div className="relative hidden w-1/2 overflow-hidden bg-gradient-to-br from-[#6366f1] via-[#a855f7] to-[#f97316] lg:flex lg:flex-col lg:items-start lg:justify-center lg:px-16">
         {/* Decorative elements */}
