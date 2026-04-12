@@ -772,7 +772,7 @@ export default function ChatsPage() {
             compact
             action={
               <a
-                href="/settings/integrations"
+                href="/settings"
                 className="inline-flex items-center gap-2 rounded bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover"
               >
                 <Plus className="h-4 w-4" />
@@ -871,7 +871,7 @@ export default function ChatsPage() {
             description="Connect a messenger — your chats will be imported automatically."
             action={
               <a
-                href="/settings/integrations"
+                href="/settings"
                 className="inline-flex items-center gap-2 rounded bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px"
               >
                 <Plus className="h-4 w-4" />
