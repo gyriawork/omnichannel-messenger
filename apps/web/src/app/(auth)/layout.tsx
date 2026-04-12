@@ -6,7 +6,7 @@ export default function AuthLayout({
   return (
     <div className="flex min-h-[100dvh]">
       {/* Left panel — gradient with decorative shapes */}
-      <div className="relative hidden w-1/2 overflow-hidden bg-gradient-to-br from-[#6366f1] via-[#a855f7] to-[#f97316] lg:flex lg:flex-col lg:justify-center lg:px-16">
+      <div className="relative hidden w-1/2 overflow-hidden bg-gradient-to-br from-[#6366f1] via-[#a855f7] to-[#f97316] lg:flex lg:flex-col lg:items-start lg:justify-center lg:px-16">
         {/* Decorative elements */}
         <div className="pointer-events-none absolute inset-0">
           {/* Circle top-right */}
@@ -25,7 +25,7 @@ export default function AuthLayout({
         </div>
 
         {/* Text content */}
-        <div className="relative z-10 max-w-lg">
+        <div className="relative z-10 -mt-16 max-w-lg">
           <h1 className="text-5xl font-bold leading-tight text-white">
             Welcome to<br />Messengly
           </h1>
