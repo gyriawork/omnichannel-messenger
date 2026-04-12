@@ -130,6 +130,12 @@ const ChatItem = React.memo(function ChatItem({ chat, isActive }: { chat: Chat; 
             {isMuted && (
               <Volume2 className="h-3 w-3 text-slate-300" />
             )}
+            <span className={cn(
+              'text-[10px]',
+              isUnread ? 'font-semibold text-accent' : 'text-slate-400',
+            )}>
+              {formatTime(chat.lastMessage?.createdAt || chat.lastActivityAt)}
+            </span>
           </div>
         </div>
 
@@ -139,15 +145,14 @@ const ChatItem = React.memo(function ChatItem({ chat, isActive }: { chat: Chat; 
             isUnread ? 'font-medium text-slate-700' : 'text-slate-500',
           )}>
             {chat.lastMessage
-              ? `${chat.lastMessage.senderName}: ${chat.lastMessage.text}`
+              ? `${chat.lastMessage.senderName}: ${chat.lastMessage.text || '📎 Attachment'}`
               : 'No messages yet'}
           </p>
-          <span className={cn(
-            'flex-shrink-0 text-[10px]',
-            isUnread ? 'font-semibold text-accent' : 'text-slate-400',
-          )}>
-            {formatTime(chat.lastMessage?.createdAt || chat.lastActivityAt)}
-          </span>
+          {isUnread && (
+            <div className="flex h-5 min-w-[20px] flex-shrink-0 items-center justify-center rounded-full bg-accent px-1.5 text-[10px] font-bold text-white">
+              {chat.messageCount > 0 ? chat.messageCount : '·'}
+            </div>
+          )}
         </div>
 
         {/* Tags */}
@@ -168,13 +173,6 @@ const ChatItem = React.memo(function ChatItem({ chat, isActive }: { chat: Chat; 
           </div>
         )}
       </div>
-
-      {/* Unread badge */}
-      {isUnread && (
-        <div className="mt-1 flex h-5 min-w-[20px] flex-shrink-0 items-center justify-center rounded-full bg-accent px-1.5 text-[10px] font-bold text-white">
-          {chat.messageCount > 0 ? chat.messageCount : '·'}
-        </div>
-      )}
     </button>
 
     {/* Context menu */}

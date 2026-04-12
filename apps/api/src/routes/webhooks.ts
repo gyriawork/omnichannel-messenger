@@ -195,7 +195,21 @@ export default async function webhookRoutes(fastify: FastifyInstance): Promise<v
       const chat = message.chat as Record<string, unknown>;
       const from = (message.from as Record<string, unknown>) || {};
       const senderChat = message.sender_chat as Record<string, unknown> | undefined;
-      const text = (message.text as string) || (message.caption as string) || '';
+      let text = (message.text as string) || (message.caption as string) || '';
+      // Detect media type for preview when message has no text
+      if (!text) {
+        if (message.photo) text = '📷 Photo';
+        else if (message.sticker) text = '🏷 Sticker';
+        else if (message.animation) text = 'GIF';
+        else if (message.video) text = '🎬 Video';
+        else if (message.video_note) text = '🎥 Video message';
+        else if (message.voice) text = '🎤 Voice message';
+        else if (message.audio) text = '🎵 Audio';
+        else if (message.document) text = '📎 File';
+        else if (message.location || message.venue) text = '📍 Location';
+        else if (message.contact) text = '👤 Contact';
+        else if (message.poll) text = '📊 Poll';
+      }
 
       const chatId = String(chat.id);
       const senderName =

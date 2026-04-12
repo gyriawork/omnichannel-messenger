@@ -203,7 +203,7 @@ export function createWebSocketServer(httpServer: HttpServer): Server {
     socket.on('mark_read', async (data: { chatId: string; messageId: string }) => {
       const { chatId, messageId } = data;
 
-      if (!chatId || !messageId || !user.organizationId) return;
+      if (!chatId || !user.organizationId) return;
 
       const belongs = await chatBelongsToOrg(chatId, user.organizationId);
       if (!belongs) return;

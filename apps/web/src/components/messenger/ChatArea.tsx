@@ -1323,14 +1323,18 @@ export function ChatArea() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [typingUsers, setTypingUsers] = useState<Array<{ userId: string; userName: string; timestamp: number }>>([]);
   const queryClient = useQueryClient();
-  const { joinChat, leaveChat } = useSocket();
+  const { joinChat, leaveChat, markRead } = useSocket();
 
-  // Join/leave WebSocket room when active chat changes
+  // Join/leave WebSocket room when active chat changes & mark as read
   useEffect(() => {
     if (!activeChat?.id) return;
     joinChat(activeChat.id);
+    // Mark chat as read when opening it
+    markRead(activeChat.id, '');
+    // Refresh chat list so unread styling updates
+    queryClient.invalidateQueries({ queryKey: ['chats'] });
     return () => leaveChat(activeChat.id);
-  }, [activeChat?.id, joinChat, leaveChat]);
+  }, [activeChat?.id, joinChat, leaveChat, markRead, queryClient]);
 
   // Listen for typing events for the active chat
   useEffect(() => {

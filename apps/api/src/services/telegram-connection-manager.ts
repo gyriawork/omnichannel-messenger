@@ -235,7 +235,44 @@ export class TelegramConnectionManager {
       const externalMessageId = msg.id.toString();
       const senderId = msg.senderId ? msg.senderId.toString() : '';
       const isSelf = senderId === active.selfId;
-      const text = msg.text || '';
+
+      // Detect media type for preview text when message has no text
+      let text = msg.text || '';
+      if (!text && msg.media) {
+        if (msg.media instanceof Api.MessageMediaPhoto) {
+          text = '📷 Photo';
+        } else if (msg.media instanceof Api.MessageMediaDocument) {
+          const doc = msg.media.document;
+          if (doc && doc instanceof Api.Document) {
+            const attrs = doc.attributes || [];
+            const isSticker = attrs.some((a: Api.TypeDocumentAttribute) => a instanceof Api.DocumentAttributeSticker);
+            const isAnimated = attrs.some((a: Api.TypeDocumentAttribute) => a instanceof Api.DocumentAttributeAnimated);
+            const isVideo = attrs.some((a: Api.TypeDocumentAttribute) => a instanceof Api.DocumentAttributeVideo);
+            const isAudio = attrs.some((a: Api.TypeDocumentAttribute) => a instanceof Api.DocumentAttributeAudio);
+            if (isSticker) {
+              text = '🏷 Sticker';
+            } else if (isAnimated || doc.mimeType === 'image/gif') {
+              text = 'GIF';
+            } else if (isVideo) {
+              const isRound = attrs.some((a: Api.TypeDocumentAttribute) => a instanceof Api.DocumentAttributeVideo && a.roundMessage);
+              text = isRound ? '🎥 Video message' : '🎬 Video';
+            } else if (isAudio) {
+              const isVoice = attrs.some((a: Api.TypeDocumentAttribute) => a instanceof Api.DocumentAttributeAudio && a.voice);
+              text = isVoice ? '🎤 Voice message' : '🎵 Audio';
+            } else {
+              text = '📎 File';
+            }
+          }
+        } else if (msg.media instanceof Api.MessageMediaGeo || msg.media instanceof Api.MessageMediaGeoLive) {
+          text = '📍 Location';
+        } else if (msg.media instanceof Api.MessageMediaContact) {
+          text = '👤 Contact';
+        } else if (msg.media instanceof Api.MessageMediaPoll) {
+          text = '📊 Poll';
+        } else {
+          text = '📎 Attachment';
+        }
+      }
 
       // Resolve sender name with caching and timeout
       let senderName = 'Unknown';
