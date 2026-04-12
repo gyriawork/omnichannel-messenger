@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   CheckCircle2,
   XCircle,
@@ -1213,29 +1213,30 @@ export function IntegrationsTab({ autoOpenMessenger, onAutoOpenHandled }: Integr
   const [settingsMessenger, setSettingsMessenger] =
     useState<MessengerInfo | null>(null);
 
-  const integrationsByMessenger = (data?.integrations ?? []).reduce<
-    Record<string, Integration>
-  >((acc, int) => {
-    acc[int.messenger] = int;
-    return acc;
-  }, {});
+  const integrationsByMessenger = useMemo(() =>
+    (data?.integrations ?? []).reduce<Record<string, Integration>>((acc, int) => {
+      acc[int.messenger] = int;
+      return acc;
+    }, {}),
+    [data?.integrations],
+  );
 
   // Auto-open wizard after OAuth redirect (e.g. Slack, Gmail)
   // Wait until the integration actually shows as "connected" before opening,
   // to avoid a race where cached data still says "disconnected".
   useEffect(() => {
-    if (autoOpenMessenger && !isLoading && data) {
-      const integration = integrationsByMessenger[autoOpenMessenger];
-      if (integration?.status === 'connected') {
-        const info = messengers.find((m) => m.key === autoOpenMessenger);
-        if (info) {
-          setConnectingMessenger(info);
-        }
-        onAutoOpenHandled?.();
-      }
-      // If not connected yet, keep waiting — React Query will refetch
+    if (!autoOpenMessenger || isLoading || !data) return;
+    // Search in raw data array to avoid stale object reference
+    const integration = data.integrations?.find(
+      (i) => i.messenger === autoOpenMessenger && i.status === 'connected',
+    );
+    if (integration) {
+      const info = messengers.find((m) => m.key === autoOpenMessenger);
+      if (info) setConnectingMessenger(info);
+      onAutoOpenHandled?.();
     }
-  }, [autoOpenMessenger, isLoading, data, integrationsByMessenger, onAutoOpenHandled]);
+    // If not connected yet, keep waiting — React Query will refetch
+  }, [autoOpenMessenger, isLoading, data, onAutoOpenHandled]);
 
   // Show messengers that are available (platform configured) or already connected
   const availableSet = new Set(availableData?.available ?? []);

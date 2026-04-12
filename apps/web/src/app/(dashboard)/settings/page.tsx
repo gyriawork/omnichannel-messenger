@@ -54,9 +54,12 @@ export default function SettingsPage() {
 
     if (status === 'connected') {
       toast.success(`${integration.charAt(0).toUpperCase() + integration.slice(1)} connected successfully via OAuth`);
-      // Refresh integrations data and auto-open import wizard
-      queryClient.invalidateQueries({ queryKey: ['integrations'] });
-      setAutoOpenMessenger(integration as 'telegram' | 'slack' | 'whatsapp' | 'gmail');
+      // Await fresh data before opening wizard — prevents race condition
+      // where wizard sees stale "disconnected" status
+      (async () => {
+        await queryClient.invalidateQueries({ queryKey: ['integrations'] });
+        setAutoOpenMessenger(integration as 'telegram' | 'slack' | 'whatsapp' | 'gmail');
+      })();
     } else if (status === 'error' && error) {
       const friendlyMessage = oauthErrorMessages[error] ?? `OAuth error: ${error}`;
       toast.error(friendlyMessage);
