@@ -68,10 +68,37 @@ export class SlackAdapter implements MessengerAdapter {
     this.ensureConnected();
 
     try {
+      // ── Step 1: Fetch all workspace members in bulk ──
+      // This avoids per-DM users.info calls that hit Slack rate limits
+      const userNameMap = new Map<string, string>();
+      try {
+        let usersCursor: string | undefined;
+        do {
+          const usersResult = await this.client!.users.list({
+            limit: 200,
+            cursor: usersCursor,
+          });
+          if (usersResult.members) {
+            for (const member of usersResult.members) {
+              if (!member.id || member.is_bot || member.id === 'USLACKBOT') continue;
+              const displayName =
+                member.real_name
+                || member.profile?.display_name
+                || member.name
+                || member.id;
+              userNameMap.set(member.id, displayName);
+            }
+          }
+          usersCursor = usersResult.response_metadata?.next_cursor || undefined;
+        } while (usersCursor);
+      } catch (err) {
+        console.warn('[Slack] Failed to bulk-fetch users, DMs will show raw IDs:', err);
+      }
+
+      // ── Step 2: Fetch all conversations ──
       const chats: Array<{ externalChatId: string; name: string; chatType: string }> = [];
       let cursor: string | undefined;
 
-      // Paginate through all conversations
       do {
         const result = await this.client!.conversations.list({
           types: 'public_channel,private_channel,mpim,im',
@@ -92,28 +119,23 @@ export class SlackAdapter implements MessengerAdapter {
               chatType = 'channel';
             }
 
-            // Resolve human-readable name for DM channels
             let name = channel.name ?? channel.id;
+
+            // Resolve human-readable name for DM channels using pre-fetched user map
             if (channel.is_im) {
-              let userId = (channel as Record<string, unknown>).user as string | undefined;
-              // Fallback: get user ID from conversations.info if not in list response
-              if (!userId) {
-                try {
-                  const convInfo = await this.client!.conversations.info({ channel: channel.id! });
-                  userId = (convInfo.channel as Record<string, unknown>)?.user as string | undefined;
-                } catch (err) {
-                  console.warn(`[Slack] Failed to get conversation info for DM ${channel.id}:`, err);
-                }
-              }
-              if (userId) {
+              const userId = (channel as Record<string, unknown>).user as string | undefined;
+              if (userId && userNameMap.has(userId)) {
+                name = userNameMap.get(userId)!;
+              } else if (userId) {
+                // Fallback: try individual lookup for users not in the bulk list
                 try {
                   const userInfo = await this.client!.users.info({ user: userId });
                   name = userInfo.user?.real_name
                     || userInfo.user?.profile?.display_name
                     || userInfo.user?.name
                     || channel.id!;
-                } catch (err) {
-                  console.warn(`[Slack] Failed to resolve user name for ${userId}:`, err);
+                } catch {
+                  name = channel.id!;
                 }
               }
             }
