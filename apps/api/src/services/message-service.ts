@@ -123,6 +123,28 @@ export async function saveIncomingMessage(params: SaveIncomingMessageParams) {
     // WebSocket might not be initialized in tests
   }
 
+  // Mark chat as unread for all org users (skip if the message is from ourselves)
+  if (!params.isSelf) {
+    try {
+      // Get all users in the organization
+      const orgUsers = await prisma.organizationUser.findMany({
+        where: { organizationId: params.organizationId },
+        select: { userId: true },
+      });
+
+      // Upsert preferences: set unread=true for each user
+      await Promise.all(
+        orgUsers.map((ou) =>
+          prisma.chatPreference.upsert({
+            where: { userId_chatId: { userId: ou.userId, chatId: chat.id } },
+            create: { userId: ou.userId, chatId: chat.id, unread: true },
+            update: { unread: true },
+          }),
+        ),
+      );
+    } catch { /* best-effort */ }
+  }
+
   // Invalidate chat list cache since lastActivityAt / messageCount changed
   await cacheInvalidate(cacheKey(params.organizationId, 'chats', '*'));
 
