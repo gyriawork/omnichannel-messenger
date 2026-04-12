@@ -9,6 +9,7 @@ import { createAdapter } from '../integrations/factory.js';
 import { MessengerError } from '../integrations/base.js';
 import { getPlatformCredentials } from '../lib/platform-credentials.js';
 import { cacheInvalidate, cacheKey } from '../lib/cache.js';
+import { getIO } from '../websocket/index.js';
 
 
 // ─── Redis client for OAuth state storage ───
@@ -331,6 +332,19 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
         slackIntegrationId = createdSlack.id;
       }
 
+      // Invalidate integrations cache so the frontend sees fresh "connected" status
+      await cacheInvalidate(cacheKey(organizationId, 'integrations'));
+      await cacheInvalidate(cacheKey(organizationId, 'integrations', `u:${userId}`));
+
+      // Notify connected WebSocket clients so the status badge updates instantly
+      try {
+        const io = getIO();
+        io.to(`org:${organizationId}`).emit('integration_status_changed', {
+          messenger: 'slack',
+          status: 'connected',
+        });
+      } catch { /* WS notification is best-effort */ }
+
       // Redirect back to frontend with success
       return reply.redirect(
         `${appUrl}/settings?integration=slack&status=connected`,
@@ -559,6 +573,16 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
 
       // Invalidate integrations cache so frontend immediately sees "Connected"
       await cacheInvalidate(cacheKey(organizationId, 'integrations'));
+      await cacheInvalidate(cacheKey(organizationId, 'integrations', `u:${userId}`));
+
+      // Notify connected WebSocket clients so the status badge updates instantly
+      try {
+        const io = getIO();
+        io.to(`org:${organizationId}`).emit('integration_status_changed', {
+          messenger: 'gmail',
+          status: 'connected',
+        });
+      } catch { /* WS notification is best-effort */ }
 
       // Set up Gmail Pub/Sub watch for real-time notifications
       const gmailPubSubTopic = process.env.GMAIL_PUBSUB_TOPIC;
