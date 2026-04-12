@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   CheckCircle2,
   XCircle,
@@ -1199,7 +1199,12 @@ function FaqSection() {
 
 // ---------- Main Component ----------
 
-export function IntegrationsTab() {
+interface IntegrationsTabProps {
+  autoOpenMessenger?: string | null;
+  onAutoOpenHandled?: () => void;
+}
+
+export function IntegrationsTab({ autoOpenMessenger, onAutoOpenHandled }: IntegrationsTabProps = {}) {
   const { data, isLoading } = useIntegrations();
   const { data: availableData } = useAvailableIntegrations();
   const connectMutation = useConnectIntegration();
@@ -1214,6 +1219,17 @@ export function IntegrationsTab() {
     acc[int.messenger] = int;
     return acc;
   }, {});
+
+  // Auto-open wizard after OAuth redirect (e.g. Slack, Gmail)
+  useEffect(() => {
+    if (autoOpenMessenger && !isLoading && data) {
+      const info = messengers.find((m) => m.key === autoOpenMessenger);
+      if (info) {
+        setConnectingMessenger(info);
+      }
+      onAutoOpenHandled?.();
+    }
+  }, [autoOpenMessenger, isLoading, data, onAutoOpenHandled]);
 
   // Show messengers that are available (platform configured) or already connected
   const availableSet = new Set(availableData?.available ?? []);

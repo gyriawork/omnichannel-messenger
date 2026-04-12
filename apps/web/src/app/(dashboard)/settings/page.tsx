@@ -33,6 +33,7 @@ const oauthErrorMessages: Record<string, string> = {
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<Tab>('integrations');
+  const [autoOpenMessenger, setAutoOpenMessenger] = useState<string | null>(null);
   const searchParams = useSearchParams();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -53,8 +54,9 @@ export default function SettingsPage() {
 
     if (status === 'connected') {
       toast.success(`${integration.charAt(0).toUpperCase() + integration.slice(1)} connected successfully via OAuth`);
-      // Refresh integrations data
+      // Refresh integrations data and auto-open import wizard
       queryClient.invalidateQueries({ queryKey: ['integrations'] });
+      setAutoOpenMessenger(integration as 'telegram' | 'slack' | 'whatsapp' | 'gmail');
     } else if (status === 'error' && error) {
       const friendlyMessage = oauthErrorMessages[error] ?? `OAuth error: ${error}`;
       toast.error(friendlyMessage);
@@ -95,7 +97,12 @@ export default function SettingsPage() {
         </div>
 
         {/* Tab Content */}
-        {activeTab === 'integrations' && <IntegrationsTab />}
+        {activeTab === 'integrations' && (
+          <IntegrationsTab
+            autoOpenMessenger={autoOpenMessenger}
+            onAutoOpenHandled={() => setAutoOpenMessenger(null)}
+          />
+        )}
         {activeTab === 'workspace' && <WorkspaceTab />}
         {activeTab === 'profile' && <ProfileTab />}
       </div>
