@@ -1221,15 +1221,21 @@ export function IntegrationsTab({ autoOpenMessenger, onAutoOpenHandled }: Integr
   }, {});
 
   // Auto-open wizard after OAuth redirect (e.g. Slack, Gmail)
+  // Wait until the integration actually shows as "connected" before opening,
+  // to avoid a race where cached data still says "disconnected".
   useEffect(() => {
     if (autoOpenMessenger && !isLoading && data) {
-      const info = messengers.find((m) => m.key === autoOpenMessenger);
-      if (info) {
-        setConnectingMessenger(info);
+      const integration = integrationsByMessenger[autoOpenMessenger];
+      if (integration?.status === 'connected') {
+        const info = messengers.find((m) => m.key === autoOpenMessenger);
+        if (info) {
+          setConnectingMessenger(info);
+        }
+        onAutoOpenHandled?.();
       }
-      onAutoOpenHandled?.();
+      // If not connected yet, keep waiting — React Query will refetch
     }
-  }, [autoOpenMessenger, isLoading, data, onAutoOpenHandled]);
+  }, [autoOpenMessenger, isLoading, data, integrationsByMessenger, onAutoOpenHandled]);
 
   // Show messengers that are available (platform configured) or already connected
   const availableSet = new Set(availableData?.available ?? []);
