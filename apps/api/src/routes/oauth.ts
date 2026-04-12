@@ -155,6 +155,7 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
         'mpim:read',
         'mpim:history',
         'files:write',
+        'users:read',
       ].join(',');
 
       const redirectUri = `${getApiUrl()}/api/oauth/slack/callback`;

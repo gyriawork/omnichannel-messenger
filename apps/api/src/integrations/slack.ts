@@ -23,15 +23,18 @@ export function slackNameToEmoji(name: string): string {
 
 interface SlackCredentials {
   token: string;
+  botToken?: string;
 }
 
 export class SlackAdapter implements MessengerAdapter {
   private client: WebClient | null = null;
   private status: 'connected' | 'disconnected' | 'token_expired' | 'session_expired' = 'disconnected';
   private token: string;
+  private botToken?: string;
 
   constructor(credentials: SlackCredentials) {
     this.token = credentials.token;
+    this.botToken = credentials.botToken;
   }
 
   async connect(_credentials?: Record<string, unknown>): Promise<void> {
@@ -69,12 +72,13 @@ export class SlackAdapter implements MessengerAdapter {
 
     try {
       // ── Step 1: Fetch all workspace members in bulk ──
-      // This avoids per-DM users.info calls that hit Slack rate limits
+      // Use bot token for users.list (it has users:read scope; user token may not)
+      const usersClient = this.botToken ? new WebClient(this.botToken) : this.client!;
       const userNameMap = new Map<string, string>();
       try {
         let usersCursor: string | undefined;
         do {
-          const usersResult = await this.client!.users.list({
+          const usersResult = await usersClient.users.list({
             limit: 200,
             cursor: usersCursor,
           });
@@ -129,7 +133,7 @@ export class SlackAdapter implements MessengerAdapter {
               } else if (userId) {
                 // Fallback: try individual lookup for users not in the bulk list
                 try {
-                  const userInfo = await this.client!.users.info({ user: userId });
+                  const userInfo = await usersClient.users.info({ user: userId });
                   name = userInfo.user?.real_name
                     || userInfo.user?.profile?.display_name
                     || userInfo.user?.name
