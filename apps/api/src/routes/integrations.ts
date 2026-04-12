@@ -14,6 +14,7 @@ let StringSession: any, Api: any, computeCheck: any;
 import { startWhatsAppPairing, getQrCode, getPairingStatus, cancelPairing, WhatsAppAdapter } from '../integrations/whatsapp.js';
 
 import { getTelegramManager } from '../services/telegram-connection-manager.js';
+import { getIO } from '../websocket/index.js';
 import { cacheGet, cacheSet, cacheInvalidate, cacheKey } from '../lib/cache.js';
 import { getPlatformCredentials } from '../lib/platform-credentials.js';
 import { MESSENGERS } from '../lib/platform-constants.js';
@@ -347,6 +348,11 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
       await cacheInvalidate(cacheKey(organizationId, 'integrations'));
       await cacheInvalidate(cacheKey(organizationId, 'integrations', `u:${request.user.id}`));
 
+      // Notify frontend immediately so the status badge updates without waiting for cache
+      try {
+        getIO().to(`org:${organizationId}`).emit('integration_status_changed', { messenger, status: 'connected' });
+      } catch { /* socket not ready yet — non-critical */ }
+
       // Start persistent listener for Telegram
       if (messenger === 'telegram') {
         getTelegramManager().startListening(integration.id).catch((err) => {
@@ -506,6 +512,11 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
 
       await cacheInvalidate(cacheKey(organizationId, 'integrations'));
       await cacheInvalidate(cacheKey(organizationId, 'integrations', `u:${request.user.id}`));
+
+      // Notify frontend immediately so the status badge updates without waiting for cache
+      try {
+        getIO().to(`org:${organizationId}`).emit('integration_status_changed', { messenger, status: 'connected' });
+      } catch { /* socket not ready yet — non-critical */ }
 
       // Start persistent listener for Telegram
       if (messenger === 'telegram') {
@@ -765,6 +776,11 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
         // Disconnect the auth client (a new one will be created when needed)
         await client.disconnect().catch(() => {});
 
+        // Notify frontend immediately so the status badge updates
+        try {
+          getIO().to(`org:${organizationId}`).emit('integration_status_changed', { messenger: 'telegram', status: 'connected' });
+        } catch { /* socket not ready yet — non-critical */ }
+
         // Start persistent listener for incoming messages
         getTelegramManager().startListening(integration.id).catch((err) => {
           fastify.log.warn({ err }, 'Failed to start Telegram listener after verify-code');
@@ -1019,6 +1035,11 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
 
           await cacheInvalidate(cacheKey(organizationId, 'integrations'));
       await cacheInvalidate(cacheKey(organizationId, 'integrations', `u:${request.user.id}`));
+
+          // Notify frontend immediately so the status badge updates
+          try {
+            getIO().to(`org:${organizationId}`).emit('integration_status_changed', { messenger: 'whatsapp', status: 'connected' });
+          } catch { /* socket not ready yet — non-critical */ }
 
           // Queue the blocking initial chat-list sync
           await queueInitialSync(whatsappIntegration.id, organizationId, userId, 'whatsapp');

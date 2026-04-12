@@ -55,6 +55,31 @@ export class SlackAdapter implements MessengerAdapter {
     this.ensureConnected();
 
     try {
+      // Batch-fetch all workspace users upfront so DM name resolution doesn't
+      // require individual API calls (avoids rate-limit issues on large workspaces)
+      const userMap = new Map<string, string>();
+      try {
+        let userCursor: string | undefined;
+        do {
+          const usersResult = await this.client!.users.list({
+            limit: 200,
+            cursor: userCursor,
+          });
+          for (const u of usersResult.members ?? []) {
+            if (u.id) {
+              const displayName = u.real_name
+                || u.profile?.display_name
+                || u.name
+                || u.id;
+              userMap.set(u.id, displayName);
+            }
+          }
+          userCursor = usersResult.response_metadata?.next_cursor || undefined;
+        } while (userCursor);
+      } catch (err) {
+        console.warn('[Slack] Failed to batch-fetch users, will fall back to individual lookups:', err);
+      }
+
       const chats: Array<{ externalChatId: string; name: string; chatType: string }> = [];
       let cursor: string | undefined;
 
@@ -82,25 +107,20 @@ export class SlackAdapter implements MessengerAdapter {
             // Resolve human-readable name for DM channels
             let name = channel.name ?? channel.id;
             if (channel.is_im) {
-              let userId = (channel as Record<string, unknown>).user as string | undefined;
-              // Fallback: get user ID from conversations.info if not in list response
-              if (!userId) {
-                try {
-                  const convInfo = await this.client!.conversations.info({ channel: channel.id! });
-                  userId = (convInfo.channel as Record<string, unknown>)?.user as string | undefined;
-                } catch (err) {
-                  console.warn(`[Slack] Failed to get conversation info for DM ${channel.id}:`, err);
-                }
-              }
+              const userId = (channel as Record<string, unknown>).user as string | undefined;
               if (userId) {
-                try {
-                  const userInfo = await this.client!.users.info({ user: userId });
-                  name = userInfo.user?.real_name
-                    || userInfo.user?.profile?.display_name
-                    || userInfo.user?.name
-                    || channel.id!;
-                } catch (err) {
-                  console.warn(`[Slack] Failed to resolve user name for ${userId}:`, err);
+                // Use the pre-fetched user map first, fall back to individual lookup
+                name = userMap.get(userId) || name;
+                if (name === channel.id) {
+                  try {
+                    const userInfo = await this.client!.users.info({ user: userId });
+                    name = userInfo.user?.real_name
+                      || userInfo.user?.profile?.display_name
+                      || userInfo.user?.name
+                      || channel.id!;
+                  } catch (err) {
+                    console.warn(`[Slack] Failed to resolve user name for ${userId}:`, err);
+                  }
                 }
               }
             }
@@ -261,6 +281,22 @@ export class SlackAdapter implements MessengerAdapter {
     } catch (err) {
       this.handleSlackError(err);
       throw new MessengerError('slack', err, 'Failed to get Slack messages');
+    }
+  }
+
+  /**
+   * Resolve a Slack user ID to a display name.
+   */
+  async getSenderName(senderId: string): Promise<string> {
+    this.ensureConnected();
+    try {
+      const userInfo = await this.client!.users.info({ user: senderId });
+      return userInfo.user?.real_name
+        || userInfo.user?.profile?.display_name
+        || userInfo.user?.name
+        || senderId;
+    } catch {
+      return senderId;
     }
   }
 

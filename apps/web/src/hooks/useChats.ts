@@ -134,8 +134,27 @@ export function useSendMessage() {
         queryClient.setQueryData(['messages', variables.chatId], context.previousMessages);
       }
     },
+    onSuccess: (realMessage, variables) => {
+      // Replace the optimistic message with the real one from the server
+      queryClient.setQueryData(
+        ['messages', variables.chatId],
+        (old: { pages: Array<{ messages: Message[]; nextCursor?: string }>; pageParams: unknown[] } | undefined) => {
+          if (!old?.pages) return old;
+          return {
+            ...old,
+            pages: old.pages.map((page) => ({
+              ...page,
+              messages: page.messages.map((m) =>
+                m.id.startsWith('optimistic-') && m.isSelf ? realMessage : m,
+              ),
+            })),
+          };
+        },
+      );
+    },
     onSettled: (_data, _error, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['messages', variables.chatId] });
+      // Only refresh chat list (last message preview, unread count etc.)
+      // Do NOT invalidate messages — onSuccess already replaced the optimistic entry
       queryClient.invalidateQueries({ queryKey: ['chats'] });
     },
   });

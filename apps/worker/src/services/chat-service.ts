@@ -21,8 +21,8 @@ export interface EnsureChatParams {
 
 /**
  * Upsert a Chat row by its (externalChatId, messenger, organizationId) composite
- * key. `update: {}` means repeated calls are completely safe — existing chats
- * are never modified, so replays and reconnects cannot corrupt state.
+ * key. On create — stores the chat with the given name. On update — fixes the
+ * name if it was previously stored as a raw external ID (e.g. Slack channel ID).
  */
 export async function ensureChat(params: EnsureChatParams): Promise<Chat> {
   const {
@@ -34,6 +34,9 @@ export async function ensureChat(params: EnsureChatParams): Promise<Chat> {
     chatType = 'direct',
     lastActivityAt,
   } = params;
+
+  // Check if we now have a better name than the raw ID that was stored before
+  const hasRealName = name !== externalChatId && name.length > 0;
 
   return prisma.chat.upsert({
     where: {
@@ -54,6 +57,7 @@ export async function ensureChat(params: EnsureChatParams): Promise<Chat> {
       hasFullHistory: false,
       lastActivityAt: lastActivityAt ?? new Date(),
     },
-    update: {},
+    // Fix chat name if it was previously stored as the raw external ID
+    update: hasRealName ? { name } : {},
   });
 }

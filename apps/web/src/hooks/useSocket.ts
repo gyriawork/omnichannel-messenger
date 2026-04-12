@@ -77,9 +77,26 @@ export function useSocket() {
             const firstPage = oldData.pages[0];
             if (!firstPage) return oldData;
 
-            // Check for duplicate
+            // Check for exact duplicate by ID
             const allMessages = oldData.pages.flatMap((p) => p.messages);
             if (allMessages.some((m) => m.id === data.message.id)) return oldData;
+
+            // If this is our own message, it may already exist as an optimistic entry —
+            // replace it instead of inserting a duplicate
+            if (data.message.isSelf) {
+              const hasOptimistic = allMessages.some((m) => m.id.startsWith('optimistic-') && m.isSelf);
+              if (hasOptimistic) {
+                return {
+                  ...oldData,
+                  pages: oldData.pages.map((page) => ({
+                    ...page,
+                    messages: page.messages.map((m) =>
+                      m.id.startsWith('optimistic-') && m.isSelf ? data.message : m,
+                    ),
+                  })),
+                };
+              }
+            }
 
             return {
               ...oldData,
@@ -139,8 +156,14 @@ export function useSocket() {
       queryClientRef.current.invalidateQueries({ queryKey: ['integrations'] });
     });
 
-    socket.on('integration_sync_failed', (data: { integrationId: string; error: string }) => {
-      useInitialSyncStore.getState().setFailed(data.integrationId, data.error);
+    // Temporarily disabled — sync errors are not actionable by users yet
+    // socket.on('integration_sync_failed', (data: { integrationId: string; error: string }) => {
+    //   useInitialSyncStore.getState().setFailed(data.integrationId, data.error);
+    // });
+
+    // Integration connected/disconnected — update status badge instantly
+    socket.on('integration_status_changed', () => {
+      queryClientRef.current.invalidateQueries({ queryKey: ['integrations'] });
     });
 
     // Typing indicator
