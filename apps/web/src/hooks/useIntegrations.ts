@@ -26,13 +26,12 @@ export function useConnectIntegration() {
       messenger: MessengerType;
       payload: ConnectPayload;
     }) => {
-      return api.post<Integration>(
+      const result = await api.post<Integration>(
         `/api/integrations/${messenger}/connect`,
         payload,
       );
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['integrations'] });
+      await queryClient.invalidateQueries({ queryKey: ['integrations'] });
+      return result;
     },
   });
 }
@@ -62,11 +61,9 @@ export function useReconnectIntegration() {
       await api.post(`/api/integrations/${messenger}/resync`, {}).catch(() => {
         // Resync is best-effort — don't fail the reconnect if it errors
       });
+      await queryClient.invalidateQueries({ queryKey: ['integrations'] });
+      await queryClient.invalidateQueries({ queryKey: ['chats'] });
       return result;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['integrations'] });
-      queryClient.invalidateQueries({ queryKey: ['chats'] });
     },
   });
 }
@@ -135,13 +132,12 @@ export function useTelegramVerifyCode() {
       code: string;
       password?: string;
     }) => {
-      return api.post<TelegramVerifyCodeResponse>(
+      const result = await api.post<TelegramVerifyCodeResponse>(
         '/api/integrations/telegram/verify-code',
         payload,
       );
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['integrations'] });
+      await queryClient.invalidateQueries({ queryKey: ['integrations'] });
+      return result;
     },
   });
 }

@@ -206,9 +206,15 @@ export class TelegramAdapter implements MessengerAdapter {
         if (d.isGroup) chatType = 'group';
         else if (d.isChannel) chatType = 'channel';
 
+        // Resolve name: groups/channels have title, users have firstName/lastName
+        let chatName = d.title ?? d.name;
+        if (!chatName && d.entity instanceof Api.User) {
+          chatName = [d.entity.firstName, d.entity.lastName].filter(Boolean).join(' ');
+        }
+
         return {
           externalChatId: d.id?.toString() ?? '',
-          name: d.title ?? d.name ?? 'Unknown',
+          name: chatName || d.id?.toString() || 'Unknown',
           chatType,
         };
       });

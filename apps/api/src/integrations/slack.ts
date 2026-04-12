@@ -94,17 +94,27 @@ export class SlackAdapter implements MessengerAdapter {
 
             // Resolve human-readable name for DM channels
             let name = channel.name ?? channel.id;
-            if (channel.is_im && (channel as Record<string, unknown>).user) {
-              try {
-                const userInfo = await this.client!.users.info({
-                  user: (channel as Record<string, unknown>).user as string,
-                });
-                name = userInfo.user?.real_name
-                  || userInfo.user?.profile?.display_name
-                  || userInfo.user?.name
-                  || channel.id;
-              } catch {
-                // Fall back to channel ID if user lookup fails
+            if (channel.is_im) {
+              let userId = (channel as Record<string, unknown>).user as string | undefined;
+              // Fallback: get user ID from conversations.info if not in list response
+              if (!userId) {
+                try {
+                  const convInfo = await this.client!.conversations.info({ channel: channel.id! });
+                  userId = (convInfo.channel as Record<string, unknown>)?.user as string | undefined;
+                } catch (err) {
+                  console.warn(`[Slack] Failed to get conversation info for DM ${channel.id}:`, err);
+                }
+              }
+              if (userId) {
+                try {
+                  const userInfo = await this.client!.users.info({ user: userId });
+                  name = userInfo.user?.real_name
+                    || userInfo.user?.profile?.display_name
+                    || userInfo.user?.name
+                    || channel.id!;
+                } catch (err) {
+                  console.warn(`[Slack] Failed to resolve user name for ${userId}:`, err);
+                }
               }
             }
 

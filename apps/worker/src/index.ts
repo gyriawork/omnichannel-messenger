@@ -606,17 +606,19 @@ async function processChatHistorySync(job: Job<MessageSyncPayload>): Promise<voi
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const hasSenderNameResolver = 'getSenderName' in adapter && typeof (adapter as any).getSenderName === 'function';
 
-  for (const chatId of chatIds) {
+  // Process chats concurrently (up to 3 at a time for Telegram safety, 5 for others)
+  const CHAT_CONCURRENCY = messenger === 'telegram' ? 3 : 5;
+  const syncOneChat = async (chatId: string) => {
     try {
       const chat = await prisma.chat.findUnique({
         where: { id: chatId },
         select: { id: true, externalChatId: true, syncCursor: true, syncStatus: true },
       });
 
-      if (!chat) continue;
+      if (!chat) return;
 
       // Skip already synced chats
-      if (chat.syncStatus === 'synced') continue;
+      if (chat.syncStatus === 'synced') return;
 
       // Mark as syncing
       await prisma.chat.update({
@@ -656,16 +658,26 @@ async function processChatHistorySync(job: Job<MessageSyncPayload>): Promise<voi
           break;
         }
 
-        // Resolve sender names if supported (e.g. Telegram)
+        // Resolve sender names if supported (e.g. Telegram) — parallel with concurrency limit
         if (hasSenderNameResolver) {
-          for (const msg of result.messages) {
-            if (msg.senderId && !msg.senderName && !senderNameCache.has(msg.senderId)) {
-              try {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const name = await (adapter as any).getSenderName(msg.senderId);
-                senderNameCache.set(msg.senderId, name);
-              } catch {
-                senderNameCache.set(msg.senderId, 'Unknown');
+          const unresolvedIds = [...new Set(
+            result.messages
+              .filter(m => m.senderId && !m.senderName && !senderNameCache.has(m.senderId))
+              .map(m => m.senderId!),
+          )];
+          const NAME_CONCURRENCY = 5;
+          for (let ni = 0; ni < unresolvedIds.length; ni += NAME_CONCURRENCY) {
+            const batch = unresolvedIds.slice(ni, ni + NAME_CONCURRENCY);
+            const settled = await Promise.allSettled(
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              batch.map(id => (adapter as any).getSenderName(id).then((n: string) => ({ id, name: n }))),
+            );
+            for (const r of settled) {
+              if (r.status === 'fulfilled') {
+                senderNameCache.set(r.value.id, r.value.name);
+              } else {
+                // Mark as Unknown so we don't retry
+                senderNameCache.set(batch[settled.indexOf(r)]!, 'Unknown');
               }
             }
           }
@@ -720,7 +732,8 @@ async function processChatHistorySync(job: Job<MessageSyncPayload>): Promise<voi
         cursor = result.nextCursor;
 
         // Small delay between batches to avoid rate limiting
-        await sleep(1);
+        // Telegram needs longer delay (FloodWait risk), others are faster
+        await sleep(messenger === 'telegram' ? 0.2 : 0.1);
       }
 
       // Update chat metadata
@@ -757,7 +770,18 @@ async function processChatHistorySync(job: Job<MessageSyncPayload>): Promise<voi
         data: { syncStatus: 'failed' },
       }).catch(() => {});
     }
+  };
+
+  // Run chats with concurrency limit
+  const executing = new Set<Promise<void>>();
+  for (const chatId of chatIds) {
+    const p = syncOneChat(chatId).then(() => { executing.delete(p); }, () => { executing.delete(p); });
+    executing.add(p);
+    if (executing.size >= CHAT_CONCURRENCY) {
+      await Promise.race(executing);
+    }
   }
+  await Promise.all(executing);
 
   // Disconnect adapter
   try {
