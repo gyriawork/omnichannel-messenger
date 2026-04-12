@@ -127,17 +127,17 @@ export async function saveIncomingMessage(params: SaveIncomingMessageParams) {
   if (!params.isSelf) {
     try {
       // Get all users in the organization
-      const orgUsers = await prisma.organizationUser.findMany({
+      const orgUsers = await prisma.user.findMany({
         where: { organizationId: params.organizationId },
-        select: { userId: true },
+        select: { id: true },
       });
 
       // Upsert preferences: set unread=true for each user
       await Promise.all(
-        orgUsers.map((ou) =>
+        orgUsers.map((u) =>
           prisma.chatPreference.upsert({
-            where: { userId_chatId: { userId: ou.userId, chatId: chat.id } },
-            create: { userId: ou.userId, chatId: chat.id, unread: true },
+            where: { userId_chatId: { userId: u.id, chatId: chat.id } },
+            create: { userId: u.id, chatId: chat.id, unread: true },
             update: { unread: true },
           }),
         ),
