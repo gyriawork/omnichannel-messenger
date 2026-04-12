@@ -776,6 +776,10 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
         // Disconnect the auth client (a new one will be created when needed)
         await client.disconnect().catch(() => {});
 
+        // Invalidate server-side cache so the next API fetch returns fresh status
+        await cacheInvalidate(cacheKey(organizationId, 'integrations'));
+        await cacheInvalidate(cacheKey(organizationId, 'integrations', `u:${request.user.id}`));
+
         // Notify frontend immediately so the status badge updates
         try {
           getIO().to(`org:${organizationId}`).emit('integration_status_changed', { messenger: 'telegram', status: 'connected' });
