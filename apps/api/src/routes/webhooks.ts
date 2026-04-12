@@ -54,6 +54,56 @@ async function resolveSlackUserName(
   }
 }
 
+// ─── Slack channel name cache ───
+const slackChannelNameCache = new Map<string, string>();
+
+/**
+ * Resolve a Slack channel ID to a human-readable name.
+ * For DMs, resolves the user's display name instead.
+ */
+async function resolveSlackChannelName(
+  organizationId: string,
+  channelId: string,
+): Promise<string> {
+  const cacheKey = `${organizationId}:ch:${channelId}`;
+  const cached = slackChannelNameCache.get(cacheKey);
+  if (cached) return cached;
+
+  try {
+    const integration = await prisma.integration.findFirst({
+      where: { messenger: 'slack', organizationId, status: 'connected' },
+      select: { credentials: true },
+    });
+    if (!integration) return channelId;
+
+    const credentials = decryptCredentials<{ token: string }>(
+      integration.credentials as string,
+    );
+    const client = new WebClient(credentials.token);
+    const convInfo = await client.conversations.info({ channel: channelId });
+    const channel = convInfo.channel as Record<string, unknown> | undefined;
+
+    let name: string = (channel?.name as string) || channelId;
+
+    // For DMs, resolve the user name
+    if (channel?.is_im) {
+      const userId = channel.user as string | undefined;
+      if (userId) {
+        const userInfo = await client.users.info({ user: userId });
+        name = userInfo.user?.real_name
+          || userInfo.user?.profile?.display_name
+          || userInfo.user?.name
+          || channelId;
+      }
+    }
+
+    slackChannelNameCache.set(cacheKey, name);
+    return name;
+  } catch {
+    return channelId;
+  }
+}
+
 // ─── Webhook secret verification ───
 
 function verifyTelegramSecret(request: FastifyRequest): boolean {
@@ -262,7 +312,10 @@ export default async function webhookRoutes(fastify: FastifyInstance): Promise<v
       }
 
       for (const integration of matchedIntegrations) {
-        const senderName = await resolveSlackUserName(integration.organizationId, userId);
+        const [senderName, chatName] = await Promise.all([
+          resolveSlackUserName(integration.organizationId, userId),
+          resolveSlackChannelName(integration.organizationId, channelId),
+        ]);
 
         await saveIncomingMessage({
           externalChatId: channelId,
@@ -273,7 +326,7 @@ export default async function webhookRoutes(fastify: FastifyInstance): Promise<v
           senderExternalId: userId,
           text,
           externalMessageId: ts,
-          chatName: channelId,
+          chatName,
           chatType: 'channel',
         });
       }

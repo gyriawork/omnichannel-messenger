@@ -6,6 +6,9 @@ import { authenticate } from '../middleware/auth.js';
 import { requireMinRole } from '../middleware/rbac.js';
 import { messageSyncQueue } from '../lib/queue.js';
 import { cacheGet, cacheSet, cacheInvalidate, cacheKey } from '../lib/cache.js';
+import { decryptCredentials } from '../lib/crypto.js';
+import { createAdapter } from '../integrations/factory.js';
+import { getIO } from '../websocket/index.js';
 
 // ─── Zod Schemas ───
 
@@ -514,6 +517,194 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
       await cacheInvalidate(cacheKey(organizationId, 'chats', '*'));
 
       return reply.send({ imported, count: imported.length });
+    },
+  );
+
+  // ─── POST /chats/import-with-history ───
+  // Import selected chats and load recent message history for each.
+  // Emits real-time progress via WebSocket so the wizard can show a progress bar.
+
+  const importWithHistoryBodySchema = z.object({
+    messenger: z.enum(['telegram', 'slack', 'whatsapp', 'gmail']),
+    chats: z.array(z.object({
+      externalChatId: z.string(),
+      name: z.string(),
+      chatType: z.enum(['direct', 'group', 'channel']).default('direct'),
+    })).min(1).max(200),
+  });
+
+  fastify.post(
+    '/chats/import-with-history',
+    { preHandler: authPreHandlers },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const parsed = importWithHistoryBodySchema.safeParse(request.body);
+      if (!parsed.success) {
+        return sendError(reply, 'VALIDATION_ERROR', parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '), 422);
+      }
+
+      const { messenger, chats: selectedChats } = parsed.data;
+      const organizationId = getOrgId(request);
+      if (!organizationId) {
+        return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
+      }
+      const userId = request.user.id;
+
+      // Get integration
+      const integration = await prisma.integration.findUnique({
+        where: {
+          messenger_organizationId_userId: { messenger, organizationId, userId },
+        },
+      });
+
+      if (!integration || integration.status !== 'connected') {
+        return sendError(
+          reply,
+          'VALIDATION_ERROR',
+          `${messenger} integration is not connected`,
+          400,
+        );
+      }
+
+      // Decrypt credentials and create adapter
+      const creds = decryptCredentials<Record<string, unknown>>(integration.credentials as string);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const adapter = await createAdapter(messenger, creds) as any;
+      await adapter.connect();
+
+      const io = getIO();
+      const room = `org:${organizationId}`;
+      const total = selectedChats.length;
+      let done = 0;
+      let failed = 0;
+      const imported: Array<{ id: string; name: string; externalChatId: string; messageCount: number }> = [];
+
+      // Sender name cache to avoid redundant API calls
+      const senderNameCache = new Map<string, string>();
+
+      async function resolveSenderName(senderId: string): Promise<string> {
+        if (!senderId) return 'Unknown';
+        const cached = senderNameCache.get(senderId);
+        if (cached) return cached;
+        try {
+          const name = adapter.getSenderName
+            ? await adapter.getSenderName(senderId)
+            : senderId;
+          senderNameCache.set(senderId, name);
+          return name;
+        } catch {
+          senderNameCache.set(senderId, senderId);
+          return senderId;
+        }
+      }
+
+      try {
+        for (const chatInfo of selectedChats) {
+          try {
+            // 1. Upsert chat record
+            const chat = await prisma.chat.upsert({
+              where: {
+                externalChatId_messenger_organizationId: {
+                  externalChatId: chatInfo.externalChatId,
+                  messenger,
+                  organizationId,
+                },
+              },
+              create: {
+                name: chatInfo.name,
+                messenger,
+                externalChatId: chatInfo.externalChatId,
+                chatType: chatInfo.chatType,
+                organizationId,
+                importedById: userId,
+                ownerId: userId,
+                syncStatus: 'synced',
+                hasFullHistory: false,
+                lastActivityAt: new Date(),
+              },
+              update: {
+                // Update name if stored as raw ID
+                ...(chatInfo.name !== chatInfo.externalChatId ? { name: chatInfo.name } : {}),
+              },
+            });
+
+            // 2. Fetch recent messages (50)
+            let messageCount = 0;
+            if (adapter.getMessages) {
+              try {
+                const messages = await adapter.getMessages(chatInfo.externalChatId, 50);
+
+                if (messages.length > 0) {
+                  // Resolve all unique sender names
+                  const uniqueSenderIds = [...new Set(messages.map((m: { senderId: string }) => m.senderId).filter(Boolean))] as string[];
+                  await Promise.all(uniqueSenderIds.map((id) => resolveSenderName(id)));
+
+                  // Bulk insert messages, skip duplicates
+                  const messageData = messages.map((m: { id: string; text: string; senderId: string; date: Date; out: boolean }) => ({
+                    chatId: chat.id,
+                    externalMessageId: m.id,
+                    senderName: senderNameCache.get(m.senderId) || m.senderId || 'Unknown',
+                    senderExternalId: m.senderId || null,
+                    isSelf: m.out,
+                    text: m.text || '',
+                    createdAt: m.date,
+                  }));
+
+                  const result = await prisma.message.createMany({
+                    data: messageData,
+                    skipDuplicates: true,
+                  });
+                  messageCount = result.count;
+
+                  // Update chat lastActivityAt from newest message
+                  if (messages.length > 0) {
+                    const newest = messages[messages.length - 1];
+                    await prisma.chat.update({
+                      where: { id: chat.id },
+                      data: { lastActivityAt: newest.date },
+                    });
+                  }
+                }
+              } catch (msgErr) {
+                console.warn(`[import-with-history] Failed to fetch messages for ${chatInfo.name}:`, msgErr);
+              }
+            }
+
+            imported.push({
+              id: chat.id,
+              name: chat.name,
+              externalChatId: chatInfo.externalChatId,
+              messageCount,
+            });
+          } catch (chatErr) {
+            console.warn(`[import-with-history] Failed to import chat ${chatInfo.name}:`, chatErr);
+            failed++;
+          }
+
+          done++;
+          io.to(room).emit('import_chat_progress', {
+            done,
+            total,
+            currentName: chatInfo.name,
+          });
+        }
+      } finally {
+        try { await adapter.disconnect(); } catch { /* ignore */ }
+      }
+
+      // Emit completion event
+      io.to(room).emit('import_chat_complete', {
+        imported: imported.length,
+        failed,
+      });
+
+      // Invalidate caches
+      await cacheInvalidate(cacheKey(organizationId, 'chats', '*'));
+
+      return reply.send({
+        imported,
+        count: imported.length,
+        failed,
+      });
     },
   );
 

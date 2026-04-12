@@ -277,6 +277,66 @@ export class SlackAdapter implements MessengerAdapter {
     }
   }
 
+  /**
+   * Fetch message history from a Slack channel. Returns messages oldest-first.
+   */
+  async getMessages(
+    externalChatId: string,
+    limit = 50,
+  ): Promise<Array<{
+    id: string;
+    text: string;
+    senderId: string;
+    date: Date;
+    out: boolean;
+  }>> {
+    this.ensureConnected();
+
+    try {
+      const result = await this.client!.conversations.history({
+        channel: externalChatId,
+        limit,
+      });
+
+      // Get our own user ID for `out` flag
+      let selfUserId = '';
+      try {
+        const auth = await this.client!.auth.test();
+        selfUserId = auth.user_id ?? '';
+      } catch { /* ignore */ }
+
+      return (result.messages ?? [])
+        .filter((m) => m.ts && m.type === 'message')
+        .map((m) => ({
+          id: m.ts!,
+          text: m.text ?? '',
+          senderId: m.user ?? m.bot_id ?? '',
+          date: new Date(parseFloat(m.ts!) * 1000),
+          out: (m.user ?? '') === selfUserId,
+        }))
+        .reverse(); // oldest first
+    } catch (err) {
+      this.handleSlackError(err);
+      throw new MessengerError('slack', err, 'Failed to get Slack messages');
+    }
+  }
+
+  /**
+   * Resolve a Slack user ID to a display name.
+   */
+  async getSenderName(senderId: string): Promise<string> {
+    this.ensureConnected();
+    try {
+      const userInfo = await this.client!.users.info({ user: senderId });
+      return userInfo.user?.real_name
+        || userInfo.user?.profile?.display_name
+        || userInfo.user?.name
+        || senderId;
+    } catch {
+      return senderId;
+    }
+  }
+
   getStatus(): 'connected' | 'disconnected' | 'token_expired' | 'session_expired' {
     return this.status;
   }

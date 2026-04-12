@@ -9,7 +9,7 @@ import { createAdapter } from '../integrations/factory.js';
 import { MessengerError } from '../integrations/base.js';
 import { getPlatformCredentials } from '../lib/platform-credentials.js';
 import { cacheInvalidate, cacheKey } from '../lib/cache.js';
-import { messageSyncQueue } from '../lib/queue.js';
+
 
 // ─── Redis client for OAuth state storage ───
 
@@ -331,19 +331,6 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
         slackIntegrationId = createdSlack.id;
       }
 
-      // Queue the initial-sync job — pulls the full chat list in the background
-      // and drives the blocking progress overlay on the frontend.
-      await messageSyncQueue.add(
-        'integration:initial-sync',
-        {
-          integrationId: slackIntegrationId,
-          organizationId,
-          userId,
-          messenger: 'slack',
-        },
-        { jobId: `initial-sync-${slackIntegrationId}-${Date.now()}` },
-      );
-
       // Redirect back to frontend with success
       return reply.redirect(
         `${appUrl}/settings?integration=slack&status=connected`,
@@ -572,20 +559,6 @@ export default async function oauthRoutes(fastify: FastifyInstance): Promise<voi
 
       // Invalidate integrations cache so frontend immediately sees "Connected"
       await cacheInvalidate(cacheKey(organizationId, 'integrations'));
-
-      // Queue unified initial-sync job — the worker delegates to Gmail's
-      // thread-based import for messenger === 'gmail'.
-      await messageSyncQueue.add(
-        'integration:initial-sync',
-        {
-          integrationId,
-          organizationId,
-          userId,
-          messenger: 'gmail',
-          importCount: Math.min(importCount, 500),
-        },
-        { jobId: `initial-sync-${integrationId}-${Date.now()}` },
-      );
 
       // Set up Gmail Pub/Sub watch for real-time notifications
       const gmailPubSubTopic = process.env.GMAIL_PUBSUB_TOPIC;

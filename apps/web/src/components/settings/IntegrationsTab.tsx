@@ -37,6 +37,7 @@ import {
 import { useWhatsAppPairing, type WhatsAppPairingStatus } from '@/hooks/useWhatsAppPairing';
 import { useAvailableIntegrations } from '@/hooks/useAvailableIntegrations';
 import type { Integration, IntegrationStatus, MessengerType } from '@/types/integration';
+import { ConnectAndImportWizard } from './ConnectAndImportWizard';
 
 // ---------- Messenger metadata ----------
 
@@ -1201,6 +1202,7 @@ function FaqSection() {
 export function IntegrationsTab() {
   const { data, isLoading } = useIntegrations();
   const { data: availableData } = useAvailableIntegrations();
+  const connectMutation = useConnectIntegration();
   const [connectingMessenger, setConnectingMessenger] =
     useState<MessengerInfo | null>(null);
   const [settingsMessenger, setSettingsMessenger] =
@@ -1265,10 +1267,60 @@ export function IntegrationsTab() {
       {/* FAQ Section */}
       <FaqSection />
 
-      {/* Connect modal */}
+      {/* Connect + Import wizard */}
       {connectingMessenger && (
-        <ConnectModal
-          messenger={connectingMessenger}
+        <ConnectAndImportWizard
+          messenger={connectingMessenger.key}
+          messengerName={connectingMessenger.name}
+          isAlreadyConnected={integrationsByMessenger[connectingMessenger.key]?.status === 'connected'}
+          renderCredentialsForm={(onSuccess) => {
+            const m = connectingMessenger;
+            if (m.key === 'telegram') {
+              return <TelegramConnectForm onSuccess={onSuccess} />;
+            }
+            if (m.key === 'slack') {
+              return (
+                <SlackConnectForm
+                  onSubmit={(payload) => {
+                    connectMutation.mutate(
+                      { messenger: 'slack', payload: payload as never },
+                      {
+                        onSuccess: () => {
+                          toast.success('Slack connected!');
+                          onSuccess();
+                        },
+                        onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to connect'),
+                      },
+                    );
+                  }}
+                  isPending={connectMutation.isPending}
+                />
+              );
+            }
+            if (m.key === 'whatsapp') {
+              return <WhatsAppConnectForm onClose={onSuccess} />;
+            }
+            if (m.key === 'gmail') {
+              return (
+                <GmailConnectForm
+                  onSubmit={(payload) => {
+                    connectMutation.mutate(
+                      { messenger: 'gmail', payload: payload as never },
+                      {
+                        onSuccess: () => {
+                          toast.success('Gmail connected!');
+                          onSuccess();
+                        },
+                        onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to connect'),
+                      },
+                    );
+                  }}
+                  isPending={connectMutation.isPending}
+                />
+              );
+            }
+            return null;
+          }}
           onClose={() => setConnectingMessenger(null)}
         />
       )}

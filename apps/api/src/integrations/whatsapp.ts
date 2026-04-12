@@ -320,6 +320,18 @@ export class WhatsAppAdapter implements MessengerAdapter {
     }
   }
 
+  async getMessages(
+    _externalChatId: string,
+    _limit = 50,
+  ): Promise<Array<{ id: string; text: string; senderId: string; date: Date; out: boolean }>> {
+    // WhatsApp WAHA API doesn't support history fetching — return empty
+    return [];
+  }
+
+  async getSenderName(senderId: string): Promise<string> {
+    return senderId;
+  }
+
   getStatus(): 'connected' | 'disconnected' | 'token_expired' | 'session_expired' {
     return this.status;
   }

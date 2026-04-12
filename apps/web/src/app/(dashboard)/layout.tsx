@@ -8,8 +8,6 @@ import { BottomNav } from '@/components/layout/BottomNav';
 import { useAuthStore } from '@/stores/auth';
 import { useSuperadminStore } from '@/stores/superadmin';
 import { useSocket } from '@/hooks/useSocket';
-import { useInitialSync } from '@/hooks/useInitialSync';
-import { InitialSyncOverlay } from '@/components/sync/InitialSyncOverlay';
 
 export default function DashboardLayout({
   children,
@@ -40,7 +38,6 @@ export default function DashboardLayout({
   }, [isLoading, isAuthenticated, router]);
 
   useSocket(); // Initialize WebSocket connection
-  useInitialSync(); // Rehydrate initial-sync overlay state after reload
 
   if (isLoading) {
     return (
@@ -61,7 +58,6 @@ export default function DashboardLayout({
         <ErrorBoundary>{children}</ErrorBoundary>
       </main>
       <BottomNav />
-      <InitialSyncOverlay />
     </div>
   );
 }

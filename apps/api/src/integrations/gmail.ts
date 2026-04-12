@@ -290,6 +290,18 @@ export class GmailAdapter implements MessengerAdapter {
     }
   }
 
+  async getMessages(
+    _externalChatId: string,
+    _limit = 50,
+  ): Promise<Array<{ id: string; text: string; senderId: string; date: Date; out: boolean }>> {
+    // Gmail uses thread-based model — history import not supported via this method
+    return [];
+  }
+
+  async getSenderName(senderId: string): Promise<string> {
+    return senderId;
+  }
+
   getStatus(): 'connected' | 'disconnected' | 'token_expired' | 'session_expired' {
     return this.status;
   }
