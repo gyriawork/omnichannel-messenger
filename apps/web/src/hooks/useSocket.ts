@@ -150,6 +150,18 @@ export function useSocket() {
       queryClientRef.current.invalidateQueries({ queryKey: ['integrations'] });
     });
 
+    // Reactions — refresh messages to show new/removed reactions
+    socket.on('reaction_added', (data: { chatId: string }) => {
+      queryClientRef.current.invalidateQueries({ queryKey: ['messages', data.chatId] });
+    });
+    socket.on('reaction_removed', (data: { chatId: string }) => {
+      queryClientRef.current.invalidateQueries({ queryKey: ['messages', data.chatId] });
+    });
+    socket.on('new_reaction', (data: { messageId: string }) => {
+      // Inbound reaction from messenger webhook — find the chat and refresh
+      queryClientRef.current.invalidateQueries({ queryKey: ['messages'] });
+    });
+
     // Typing indicator
     socket.on('typing', (_data: { chatId: string; userId: string; userName: string }) => {
       // Typing state is handled at the component level
