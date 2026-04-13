@@ -1,8 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import {
-  Save,
   Loader2,
   UserPlus,
   X,
@@ -12,14 +11,13 @@ import {
   MoreHorizontal,
   Ban,
   CheckCircle2,
-  ChevronDown,
 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import { useWorkspaceSettings, useUpdateWorkspace } from '@/hooks/useActivity';
+import { useWorkspaceSettings } from '@/hooks/useActivity';
 import { api } from '@/lib/api';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '@/stores/auth';
@@ -465,35 +463,6 @@ function TeamMembersSection() {
 
 export function WorkspaceTab() {
   const { data: settings, isLoading } = useWorkspaceSettings();
-  const updateMutation = useUpdateWorkspace();
-
-  const [orgName, setOrgName] = useState('');
-  const [chatVisibility, setChatVisibility] = useState(true);
-
-  useEffect(() => {
-    if (settings) {
-      setOrgName(settings.name || '');
-      setChatVisibility(settings.chatVisibilityAll ?? true);
-    }
-  }, [settings]);
-
-  const handleSave = () => {
-    updateMutation.mutate(
-      {
-        name: orgName,
-        chatVisibilityAll: chatVisibility,
-      },
-      {
-        onSuccess: () => toast.success('Workspace settings saved'),
-        onError: () => toast.error('Failed to save workspace settings'),
-      },
-    );
-  };
-
-  const inputClass = cn(
-    'w-full rounded border-[1.5px] border-slate-200 px-3 py-2 text-sm transition-colors',
-    'placeholder:text-slate-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15',
-  );
 
   if (isLoading) {
     return (
@@ -512,43 +481,18 @@ export function WorkspaceTab() {
             Workspace Settings
           </h2>
           <p className="text-sm text-slate-500">
-            Configure your organization preferences
+            Your organization info
           </p>
         </div>
 
         <div className="rounded-lg bg-white p-6 shadow-xs">
-          <div className="space-y-5">
-            {/* Organization Name */}
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                Organization Name
-              </label>
-              <input
-                type="text"
-                value={orgName}
-                onChange={(e) => setOrgName(e.target.value)}
-                placeholder="Enter organization name"
-                className={inputClass}
-              />
-            </div>
-
-
-            {/* Chat Visibility Toggle — hidden for now */}
-          </div>
-
-          <div className="mt-6 flex justify-end">
-            <button
-              onClick={handleSave}
-              disabled={updateMutation.isPending}
-              className="flex items-center gap-2 rounded bg-accent px-5 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px disabled:opacity-50"
-            >
-              {updateMutation.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Save className="h-4 w-4" />
-              )}
-              Save Changes
-            </button>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700">
+              Organization Name
+            </label>
+            <p className="text-sm text-slate-900">
+              {settings?.name || '—'}
+            </p>
           </div>
         </div>
       </div>
