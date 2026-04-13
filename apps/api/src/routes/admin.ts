@@ -336,136 +336,148 @@ export default async function adminRoutes(fastify: FastifyInstance) {
       const { getTelegramManager } = await import('../services/telegram-connection-manager.js');
       const { Api } = await import('telegram');
 
-      // Find all Telegram messages with unresolved sender names
-      const badMessages = await prisma.message.findMany({
-        where: {
-          chat: { messenger: 'telegram' },
-          isSelf: false,
-          senderExternalId: { not: null },
-          OR: [
-            { senderName: 'Unknown' },
-            { senderName: { startsWith: 'User ' } },
-          ],
-        },
-        select: {
-          id: true,
-          senderExternalId: true,
-          chatId: true,
-          chat: {
-            select: { organizationId: true },
-          },
-        },
-      });
+      // Strategy: fetch participants from each Telegram group chat to build
+      // a userId → name map, then bulk-update messages.
 
-      if (badMessages.length === 0) {
-        return reply.send({ updated: 0, resolved: 0, message: 'No messages to backfill' });
-      }
-
-      // Group unique senderExternalIds
-      const uniqueSenders = new Map<string, { orgId: string; messageIds: string[] }>();
-      for (const msg of badMessages) {
-        const sid = msg.senderExternalId!;
-        const existing = uniqueSenders.get(sid);
-        if (existing) {
-          existing.messageIds.push(msg.id);
-        } else {
-          uniqueSenders.set(sid, { orgId: msg.chat.organizationId, messageIds: [msg.id] });
-        }
-      }
-
-      // Find active Telegram integrations by org
-      const orgIds = [...new Set([...uniqueSenders.values()].map((v) => v.orgId))];
-      const integrations = await prisma.integration.findMany({
+      // 1. Find Telegram chats that have messages with bad sender names
+      const chatsWithBadNames = await prisma.chat.findMany({
         where: {
           messenger: 'telegram',
-          status: 'connected',
-          organizationId: { in: orgIds },
+          messages: {
+            some: {
+              isSelf: false,
+              senderExternalId: { not: null },
+              OR: [
+                { senderName: 'Unknown' },
+                { senderName: { startsWith: 'User ' } },
+              ],
+            },
+          },
         },
-        select: { id: true, organizationId: true },
+        select: { id: true, externalChatId: true, organizationId: true, chatType: true },
       });
 
-      // Map org → all integration IDs (there may be multiple Telegram integrations per org)
-      const orgToIntegrations = new Map<string, string[]>();
-      for (const integ of integrations) {
-        const list = orgToIntegrations.get(integ.organizationId) || [];
-        list.push(integ.id);
-        orgToIntegrations.set(integ.organizationId, list);
+      if (chatsWithBadNames.length === 0) {
+        return reply.send({ updated: 0, resolved: 0, message: 'No chats with bad names' });
       }
+
+      // 2. Get active Telegram integrations
+      const orgIds = [...new Set(chatsWithBadNames.map((c) => c.organizationId))];
+      const integrations = await prisma.integration.findMany({
+        where: { messenger: 'telegram', status: 'connected', organizationId: { in: orgIds } },
+        select: { id: true, organizationId: true },
+      });
 
       let manager: ReturnType<typeof getTelegramManager>;
       try { manager = getTelegramManager(); } catch {
         return reply.status(503).send({ error: 'Telegram connection manager not initialized' });
       }
-      let resolved = 0;
-      let updated = 0;
-      const errors: Array<{ senderId: string; error: string; type?: string }> = [];
 
-      for (const [senderId, data] of uniqueSenders) {
-        const integrationIds = orgToIntegrations.get(data.orgId) || [];
-        // Find first integration with an active client
+      // 3. For each chat, fetch participants via getParticipants to populate entity cache
+      const nameMap = new Map<string, string>(); // senderExternalId → real name
+      const errors: string[] = [];
+
+      for (const chat of chatsWithBadNames) {
+        // Find a client for this org
+        const orgIntegrations = integrations.filter((i) => i.organizationId === chat.organizationId);
         let client = null;
-        for (const iid of integrationIds) {
-          client = manager.getClient(iid);
+        for (const integ of orgIntegrations) {
+          client = manager.getClient(integ.id);
           if (client) break;
         }
-        if (!client) { errors.push({ senderId, error: 'no active client' }); continue; }
+        if (!client) continue;
 
         try {
-          const numId = parseInt(senderId, 10);
-          if (isNaN(numId)) { errors.push({ senderId, error: 'NaN' }); continue; }
-          const entity = await Promise.race([
-            client.getEntity(numId),
-            new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 15000)),
+          const chatId = parseInt(chat.externalChatId, 10);
+          if (isNaN(chatId)) continue;
+
+          // getParticipants fetches users with their full info (including access_hash)
+          const participants = await Promise.race([
+            client.getParticipants(chatId, { limit: 200 }),
+            new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 30000)),
           ]);
 
-          let name: string | null = null;
-          if (entity instanceof Api.User) {
-            name = [entity.firstName, entity.lastName].filter(Boolean).join(' ') || null;
-          } else if (entity && 'title' in (entity as unknown as Record<string, unknown>)) {
-            name = (entity as unknown as { title: string }).title || null;
-          }
-
-          if (name) {
-            resolved++;
-            const result = await prisma.message.updateMany({
-              where: { id: { in: data.messageIds } },
-              data: { senderName: name },
-            });
-            updated += result.count;
-
-            // Also update chat name if it matches the bad pattern
-            await prisma.chat.updateMany({
-              where: {
-                messenger: 'telegram',
-                organizationId: data.orgId,
-                name: { in: ['Unknown', `User ${senderId.slice(-6)}`] },
-              },
-              data: { name },
-            });
-          } else {
-            errors.push({ senderId, error: 'entity resolved but no name', type: entity?.constructor?.name });
+          for (const p of participants) {
+            if (p instanceof Api.User) {
+              const name = [p.firstName, p.lastName].filter(Boolean).join(' ');
+              if (name) {
+                nameMap.set(p.id.toString(), name);
+              }
+            }
           }
         } catch (e) {
-          errors.push({ senderId, error: String(e).substring(0, 100) });
+          errors.push(`chat ${chat.externalChatId}: ${String(e).substring(0, 80)}`);
+          // For chats where getParticipants fails (e.g. channels), try getMessages to get sender info
+          try {
+            const chatId = parseInt(chat.externalChatId, 10);
+            if (isNaN(chatId)) continue;
+            // Fetch recent messages which include sender entities
+            const msgs = await Promise.race([
+              client.getMessages(chatId, { limit: 100 }),
+              new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 15000)),
+            ]);
+            for (const m of msgs) {
+              const sender = (m as unknown as { _sender?: unknown })._sender;
+              if (sender instanceof Api.User) {
+                const name = [sender.firstName, sender.lastName].filter(Boolean).join(' ');
+                if (name && sender.id) {
+                  nameMap.set(sender.id.toString(), name);
+                }
+              }
+            }
+          } catch (e2) {
+            errors.push(`chat ${chat.externalChatId} msgs: ${String(e2).substring(0, 80)}`);
+          }
         }
       }
 
+      // 4. Bulk-update messages using the name map
+      let resolved = 0;
+      let updated = 0;
+
+      for (const [senderId, name] of nameMap) {
+        const result = await prisma.message.updateMany({
+          where: {
+            senderExternalId: senderId,
+            OR: [
+              { senderName: 'Unknown' },
+              { senderName: { startsWith: 'User ' } },
+            ],
+          },
+          data: { senderName: name },
+        });
+        if (result.count > 0) {
+          resolved++;
+          updated += result.count;
+        }
+      }
+
+      // Also update chat names that are "Unknown"
+      for (const [senderId, name] of nameMap) {
+        await prisma.chat.updateMany({
+          where: {
+            messenger: 'telegram',
+            OR: [
+              { name: 'Unknown' },
+              { name: { startsWith: 'User ' } },
+            ],
+            // Only update direct chats named after this sender
+            externalChatId: senderId,
+          },
+          data: { name },
+        });
+      }
+
       return reply.send({
-        totalBadMessages: badMessages.length,
-        uniqueSenders: uniqueSenders.size,
-        resolved,
-        updated,
+        chatsScanned: chatsWithBadNames.length,
+        namesResolved: nameMap.size,
+        sendersUpdated: resolved,
+        messagesUpdated: updated,
         errors: errors.slice(0, 10),
-        debug: {
-          orgIds,
-          integrationsFound: integrations.length,
-          integrationIds: integrations.map((i) => i.id),
-          clientsAvailable: integrations.map((i) => ({ id: i.id, hasClient: !!manager.getClient(i.id) })),
-        },
       });
       } catch (err) {
         request.log.error(err, 'backfill-sender-names error');
-        return reply.status(500).send({ error: String(err), stack: (err as Error).stack });
+        return reply.status(500).send({ error: String(err), stack: (err as Error).stack?.substring(0, 500) });
       }
     },
   );
