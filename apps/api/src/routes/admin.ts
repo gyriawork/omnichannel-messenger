@@ -329,8 +329,9 @@ export default async function adminRoutes(fastify: FastifyInstance) {
   // using the active connection manager client.
   fastify.post(
     '/admin/backfill-sender-names',
-    { preHandler: [authenticate, requireRole('superadmin')] },
+    { preHandler: [authenticate, requireRole('admin', 'superadmin')] },
     async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
       // Find all Telegram messages with unresolved sender names
       const badMessages = await prisma.message.findMany({
         where: {
@@ -444,6 +445,10 @@ export default async function adminRoutes(fastify: FastifyInstance) {
         resolved,
         updated,
       });
+      } catch (err) {
+        request.log.error(err, 'backfill-sender-names error');
+        return reply.status(500).send({ error: String(err), stack: (err as Error).stack });
+      }
     },
   );
 }
