@@ -284,34 +284,64 @@ export class TelegramConnectionManager {
         }
       }
 
-      // Resolve sender name with caching and timeout
+      // Resolve sender name — multiple strategies, ordered by cost/reliability
       let senderName = 'Unknown';
       if (msg.senderId) {
         const cached = this.senderNameCache.get(senderId);
         if (cached && cached.expiry > Date.now()) {
           senderName = cached.name;
         } else {
-          try {
-            const entityPromise = active.client.getEntity(msg.senderId);
-            const timeoutPromise = new Promise<never>((_, reject) =>
-              setTimeout(() => reject(new Error('timeout')), 3000),
-            );
-            const entity = await Promise.race([entityPromise, timeoutPromise]);
-            if (entity instanceof Api.User) {
-              senderName = [entity.firstName, entity.lastName].filter(Boolean).join(' ') || 'Unknown';
-            } else if (entity && 'title' in (entity as unknown as Record<string, unknown>)) {
-              senderName = (entity as unknown as { title: string }).title || 'Unknown';
+          // Strategy 1: Use _sender from the update payload (no network call)
+          const inlineSender = (msg as unknown as { _sender?: Api.TypeUser | { title?: string } })._sender;
+          if (inlineSender) {
+            if (inlineSender instanceof Api.User) {
+              senderName = [inlineSender.firstName, inlineSender.lastName].filter(Boolean).join(' ') || 'Unknown';
+            } else if ('title' in inlineSender && inlineSender.title) {
+              senderName = inlineSender.title;
             }
+          }
+
+          // Strategy 2: If _sender didn't resolve, try getSender() then getEntity()
+          if (senderName === 'Unknown') {
+            try {
+              let entity: Api.TypeUser | { title?: string } | undefined;
+              // getSender() uses GramJS internal cache first, then network
+              try {
+                entity = await Promise.race([
+                  (msg as unknown as { getSender: () => Promise<Api.TypeUser | undefined> }).getSender(),
+                  new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000)),
+                ]) as Api.TypeUser | { title?: string } | undefined;
+              } catch {
+                // Fall through to getEntity
+              }
+              // If getSender didn't work, try getEntity with longer timeout
+              if (!entity) {
+                entity = await Promise.race([
+                  active.client.getEntity(msg.senderId),
+                  new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000)),
+                ]) as Api.TypeUser | { title?: string } | undefined;
+              }
+              if (entity) {
+                if (entity instanceof Api.User) {
+                  senderName = [entity.firstName, entity.lastName].filter(Boolean).join(' ') || 'Unknown';
+                } else if ('title' in entity && entity.title) {
+                  senderName = entity.title;
+                }
+              }
+            } catch {
+              // Use stale cache if available
+              if (cached) {
+                senderName = cached.name;
+              }
+            }
+          }
+
+          // Cache resolved name (10 min for real names, skip caching Unknown)
+          if (senderName !== 'Unknown') {
             this.senderNameCache.set(senderId, { name: senderName, expiry: Date.now() + 600_000 });
-          } catch {
-            // Use stale cache, or a readable ID fallback — don't block message delivery
-            if (cached) {
-              senderName = cached.name;
-            } else {
-              senderName = `User ${senderId.slice(-6)}`;
-              // Cache fallback with short TTL so real name resolves on next message
-              this.senderNameCache.set(senderId, { name: senderName, expiry: Date.now() + 60_000 });
-            }
+          } else if (cached) {
+            // Keep using stale cache rather than "Unknown"
+            senderName = cached.name;
           }
         }
       }
