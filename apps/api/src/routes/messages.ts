@@ -300,19 +300,27 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
           let peer: number | string = !isNaN(numId) ? numId : chat.externalChatId;
           const replyTo = replyToExternalId ? parseInt(replyToExternalId, 10) : undefined;
 
-          // Helper: resolve entity, refreshing cache on miss
+          // Helper: resolve Telegram peer with proper InputPeer + access_hash.
+          // The stored externalChatId uses GramJS dialog.id format (from worker sync),
+          // so we must find the matching dialog to get the correct InputPeer.
           const resolvePeer = async () => {
+            // Fast path: try the GramJS entity cache first
             try {
               return await telegramClient.getInputEntity(peer);
             } catch {
-              // Entity not in cache — refresh dialogs to populate it
-              const dialogs = await telegramClient.getDialogs({ limit: 200 });
-              // Find matching dialog by ID (handles different ID formats)
-              const match = dialogs.find((d) => d.id?.toString() === chat.externalChatId);
-              if (match?.inputEntity) return match.inputEntity;
-              // Retry after cache refresh
-              return telegramClient.getInputEntity(peer);
+              // Cache miss — fetch dialogs and find by stored ID
             }
+            const dialogs = await telegramClient.getDialogs({ limit: 500 });
+            const match = dialogs.find((d) => d.id?.toString() === chat.externalChatId);
+            if (match?.inputEntity) return match.inputEntity;
+            // Last resort: try all ID format variations
+            const absId = Math.abs(numId);
+            const altMatch = dialogs.find((d) => {
+              const did = d.id?.toString();
+              return did === String(absId) || did === `-100${absId}` || did === String(-absId);
+            });
+            if (altMatch?.inputEntity) return altMatch.inputEntity;
+            throw new Error(`Could not resolve Telegram peer for chat ${chat.externalChatId}`);
           };
 
           const resolvedPeer = await resolvePeer();
