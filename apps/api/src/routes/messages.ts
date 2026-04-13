@@ -293,10 +293,29 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
           : null;
 
         if (telegramClient) {
-          // Use the connection manager's already-connected client
+          // Use the connection manager's already-connected client.
+          // Resolve peer: getDialogs() populates GramJS entity cache so that
+          // sendMessage can map numeric IDs to proper InputPeer with access_hash.
           const numId = parseInt(chat.externalChatId, 10);
-          const peer = !isNaN(numId) ? numId : chat.externalChatId;
+          let peer: number | string = !isNaN(numId) ? numId : chat.externalChatId;
           const replyTo = replyToExternalId ? parseInt(replyToExternalId, 10) : undefined;
+
+          // Helper: resolve entity, refreshing cache on miss
+          const resolvePeer = async () => {
+            try {
+              return await telegramClient.getInputEntity(peer);
+            } catch {
+              // Entity not in cache — refresh dialogs to populate it
+              const dialogs = await telegramClient.getDialogs({ limit: 200 });
+              // Find matching dialog by ID (handles different ID formats)
+              const match = dialogs.find((d) => d.id?.toString() === chat.externalChatId);
+              if (match?.inputEntity) return match.inputEntity;
+              // Retry after cache refresh
+              return telegramClient.getInputEntity(peer);
+            }
+          };
+
+          const resolvedPeer = await resolvePeer();
 
           if (savedAttachments.length > 0) {
             let firstMsgId: string | undefined;
@@ -305,7 +324,7 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
                 const response = await fetch(savedAttachments[i].url);
                 const buffer = Buffer.from(await response.arrayBuffer());
                 const file = new CustomFile(savedAttachments[i].filename, buffer.length, '', buffer);
-                const result = await telegramClient.sendFile(peer, {
+                const result = await telegramClient.sendFile(resolvedPeer, {
                   file,
                   caption: i === 0 ? text : '',
                   replyTo: i === 0 ? replyTo : undefined,
@@ -319,11 +338,11 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
               externalMessageId = firstMsgId;
             } else {
               // All attachments failed, send text only
-              const result = await telegramClient.sendMessage(peer, { message: text, replyTo });
+              const result = await telegramClient.sendMessage(resolvedPeer, { message: text, replyTo });
               externalMessageId = result.id.toString();
             }
           } else {
-            const result = await telegramClient.sendMessage(peer, { message: text, replyTo });
+            const result = await telegramClient.sendMessage(resolvedPeer, { message: text, replyTo });
             externalMessageId = result.id.toString();
           }
           deliveryStatus = 'delivered';
@@ -452,9 +471,13 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
               // Prefer persistent connection for Telegram
               const tgClient = chat.messenger === 'telegram' ? getTelegramManager().getClient(integration.id) : null;
               if (tgClient) {
-                const numId = parseInt(chat.externalChatId, 10);
-                const peer = !isNaN(numId) ? numId : chat.externalChatId;
-                await tgClient.editMessage(peer, {
+                let editPeer;
+                try { editPeer = await tgClient.getInputEntity(parseInt(chat.externalChatId, 10) || chat.externalChatId); } catch {
+                  const dlgs = await tgClient.getDialogs({ limit: 200 });
+                  const m = dlgs.find((d) => d.id?.toString() === chat.externalChatId);
+                  editPeer = m?.inputEntity ?? (parseInt(chat.externalChatId, 10) || chat.externalChatId);
+                }
+                await tgClient.editMessage(editPeer, {
                   message: parseInt(message.externalMessageId, 10),
                   text,
                 }).catch(() => {});
@@ -543,9 +566,13 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
               // Prefer persistent connection for Telegram
               const tgClient = chat.messenger === 'telegram' ? getTelegramManager().getClient(integration.id) : null;
               if (tgClient) {
-                const numId = parseInt(chat.externalChatId, 10);
-                const peer = !isNaN(numId) ? numId : chat.externalChatId;
-                await tgClient.deleteMessages(peer, [parseInt(message.externalMessageId, 10)], { revoke: true }).catch(() => {});
+                let delPeer;
+                try { delPeer = await tgClient.getInputEntity(parseInt(chat.externalChatId, 10) || chat.externalChatId); } catch {
+                  const dlgs = await tgClient.getDialogs({ limit: 200 });
+                  const m = dlgs.find((d) => d.id?.toString() === chat.externalChatId);
+                  delPeer = m?.inputEntity ?? (parseInt(chat.externalChatId, 10) || chat.externalChatId);
+                }
+                await tgClient.deleteMessages(delPeer, [parseInt(message.externalMessageId, 10)], { revoke: true }).catch(() => {});
               } else {
                 const creds = decryptCredentials(integration.credentials as string);
                 const adapter = await createAdapter(chat.messenger, creds);
