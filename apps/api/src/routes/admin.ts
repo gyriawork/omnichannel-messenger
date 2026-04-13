@@ -384,9 +384,12 @@ export default async function adminRoutes(fastify: FastifyInstance) {
         select: { id: true, organizationId: true },
       });
 
-      const orgToIntegration = new Map<string, string>();
+      // Map org → all integration IDs (there may be multiple Telegram integrations per org)
+      const orgToIntegrations = new Map<string, string[]>();
       for (const integ of integrations) {
-        orgToIntegration.set(integ.organizationId, integ.id);
+        const list = orgToIntegrations.get(integ.organizationId) || [];
+        list.push(integ.id);
+        orgToIntegrations.set(integ.organizationId, list);
       }
 
       let manager: ReturnType<typeof getTelegramManager>;
@@ -395,17 +398,21 @@ export default async function adminRoutes(fastify: FastifyInstance) {
       }
       let resolved = 0;
       let updated = 0;
+      const errors: Array<{ senderId: string; error: string; type?: string }> = [];
 
       for (const [senderId, data] of uniqueSenders) {
-        const integrationId = orgToIntegration.get(data.orgId);
-        if (!integrationId) continue;
-
-        const client = manager.getClient(integrationId);
-        if (!client) continue;
+        const integrationIds = orgToIntegrations.get(data.orgId) || [];
+        // Find first integration with an active client
+        let client = null;
+        for (const iid of integrationIds) {
+          client = manager.getClient(iid);
+          if (client) break;
+        }
+        if (!client) { errors.push({ senderId, error: 'no active client' }); continue; }
 
         try {
           const numId = parseInt(senderId, 10);
-          if (isNaN(numId)) continue;
+          if (isNaN(numId)) { errors.push({ senderId, error: 'NaN' }); continue; }
           const entity = await Promise.race([
             client.getEntity(numId),
             new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 15000)),
@@ -435,9 +442,11 @@ export default async function adminRoutes(fastify: FastifyInstance) {
               },
               data: { name },
             });
+          } else {
+            errors.push({ senderId, error: 'entity resolved but no name', type: entity?.constructor?.name });
           }
-        } catch {
-          // Skip this sender, continue with others
+        } catch (e) {
+          errors.push({ senderId, error: String(e).substring(0, 100) });
         }
       }
 
@@ -446,6 +455,7 @@ export default async function adminRoutes(fastify: FastifyInstance) {
         uniqueSenders: uniqueSenders.size,
         resolved,
         updated,
+        errors: errors.slice(0, 10),
         debug: {
           orgIds,
           integrationsFound: integrations.length,
