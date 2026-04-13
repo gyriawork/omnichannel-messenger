@@ -3,6 +3,7 @@ import { Server } from 'socket.io';
 import IORedis from 'ioredis';
 import jwt from 'jsonwebtoken';
 import prisma from '../lib/prisma.js';
+import { cacheInvalidate, cacheKey } from '../lib/cache.js';
 
 // ─── Types ───
 
@@ -74,7 +75,7 @@ setInterval(() => {
 // ─── mark_read debounce state ───
 
 const markReadPending = new Map<string, NodeJS.Timeout>(); // `userId:chatId` → timer
-const MARK_READ_DEBOUNCE_MS = 2000;
+const MARK_READ_DEBOUNCE_MS = 300;
 
 // ─── Factory ───
 
@@ -231,6 +232,9 @@ export function createWebSocketServer(httpServer: HttpServer): Server {
               unread: false,
             },
           });
+          if (user.organizationId) {
+            await cacheInvalidate(cacheKey(user.organizationId, 'chats', '*'));
+          }
         }, MARK_READ_DEBOUNCE_MS),
       );
     });

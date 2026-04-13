@@ -23,9 +23,13 @@ export function ImportChatsModal({ onClose }: ImportChatsModalProps) {
   const { data: integrationsData, isLoading } = useIntegrations();
   const [selectedMessenger, setSelectedMessenger] = useState<MessengerType | null>(null);
 
-  const connectedMessengers = (integrationsData?.integrations ?? [])
-    .filter((i) => i.status === 'connected')
-    .map((i) => i.messenger as MessengerType);
+  const connectedMessengers = [
+    ...new Set(
+      (integrationsData?.integrations ?? [])
+        .filter((i) => i.status === 'connected')
+        .map((i) => i.messenger as MessengerType),
+    ),
+  ];
 
   // If a messenger is selected, show the wizard directly (steps 2+3 only)
   if (selectedMessenger) {

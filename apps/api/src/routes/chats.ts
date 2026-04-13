@@ -901,6 +901,8 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
         update: { unread: false },
       });
 
+      await cacheInvalidate(cacheKey(organizationId, 'chats', '*'));
+
       return reply.send({ success: true });
     },
   );

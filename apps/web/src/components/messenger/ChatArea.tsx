@@ -1331,8 +1331,21 @@ export function ChatArea() {
     joinChat(activeChat.id);
     // Mark chat as read when opening it
     markRead(activeChat.id, '');
-    // Refresh chat list so unread styling updates
-    queryClient.invalidateQueries({ queryKey: ['chats'] });
+    // Optimistically clear unread badge instantly (before server roundtrip)
+    queryClient.setQueriesData<{ chats: Array<{ id: string; preferences?: { unread?: boolean } }>; total: number }>(
+      { queryKey: ['chats'] },
+      (old) => {
+        if (!old?.chats) return old;
+        return {
+          ...old,
+          chats: old.chats.map((c) =>
+            c.id === activeChat.id
+              ? { ...c, preferences: { ...c.preferences, unread: false } }
+              : c
+          ),
+        };
+      },
+    );
     return () => leaveChat(activeChat.id);
   }, [activeChat?.id, joinChat, leaveChat, markRead, queryClient]);
 
