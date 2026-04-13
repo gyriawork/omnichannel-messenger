@@ -23,6 +23,7 @@ import {
 import { useAuthStore } from '@/stores/auth';
 import { cn } from '@/lib/utils';
 import { OrgSwitcher } from './OrgSwitcher';
+import { useChats } from '@/hooks/useChats';
 
 const baseNavItems = [
   { icon: LayoutDashboard, href: '/', label: 'Dashboard' },
@@ -44,6 +45,9 @@ export function Sidebar() {
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
   const [collapsed, setCollapsed] = useState(false);
+
+  const { data: chatsData } = useChats();
+  const unreadChatsCount = (chatsData?.chats ?? []).filter((c) => c.preferences?.unread).length;
 
   const isActive = (href: string) => {
     if (href === '/') return pathname === '/';
@@ -131,6 +135,14 @@ export function Sidebar() {
             >
               <Icon className="h-[18px] w-[18px] shrink-0" strokeWidth={active ? 2 : 1.5} />
               {!collapsed && label}
+              {href === '/messenger' && unreadChatsCount > 0 && (
+                <span className={cn(
+                  'flex h-5 min-w-[20px] items-center justify-center rounded-full bg-accent px-1.5 text-[10px] font-bold text-white',
+                  collapsed ? 'absolute -right-1 -top-1' : 'ml-auto',
+                )}>
+                  {unreadChatsCount}
+                </span>
+              )}
               {collapsed && (
                 <span className="pointer-events-none absolute left-full z-50 ml-3 whitespace-nowrap rounded-lg bg-slate-800 px-2.5 py-1.5 text-xs font-medium text-white opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
                   {label}
