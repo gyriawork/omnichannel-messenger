@@ -12,6 +12,9 @@ import { logActivity } from '../lib/activity-logger.js';
 import { MESSENGERS, MESSENGER_PLATFORM_FIELDS, MESSENGER_ENV_VARS } from '../lib/platform-constants.js';
 import type { Messenger } from '../lib/platform-constants.js';
 import { messageSyncQueue } from '../lib/queue.js';
+import { getTelegramManager } from '../services/telegram-connection-manager.js';
+import { Api } from 'telegram';
+import bigInt from 'big-integer';
 
 // ─── Schemas ───
 
@@ -318,6 +321,123 @@ export default async function adminRoutes(fastify: FastifyInstance) {
       return reply.send({
         enqueued: totalChats,
         jobs: totalJobs,
+      });
+    },
+  );
+
+  // ─── Backfill Sender Names ───
+  // Resolves "Unknown" and "User XXXXXX" sender names for Telegram messages
+  // using the active connection manager client.
+  fastify.post(
+    '/admin/backfill-sender-names',
+    { preHandler: [authenticate, requireRole('superadmin')] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      // Find all Telegram messages with unresolved sender names
+      const badMessages = await prisma.message.findMany({
+        where: {
+          chat: { messenger: 'telegram' },
+          isSelf: false,
+          senderExternalId: { not: null },
+          OR: [
+            { senderName: 'Unknown' },
+            { senderName: { startsWith: 'User ' } },
+          ],
+        },
+        select: {
+          id: true,
+          senderExternalId: true,
+          chatId: true,
+          chat: {
+            select: { organizationId: true },
+          },
+        },
+      });
+
+      if (badMessages.length === 0) {
+        return reply.send({ updated: 0, resolved: 0, message: 'No messages to backfill' });
+      }
+
+      // Group unique senderExternalIds
+      const uniqueSenders = new Map<string, { orgId: string; messageIds: string[] }>();
+      for (const msg of badMessages) {
+        const sid = msg.senderExternalId!;
+        const existing = uniqueSenders.get(sid);
+        if (existing) {
+          existing.messageIds.push(msg.id);
+        } else {
+          uniqueSenders.set(sid, { orgId: msg.chat.organizationId, messageIds: [msg.id] });
+        }
+      }
+
+      // Find active Telegram integrations by org
+      const orgIds = [...new Set([...uniqueSenders.values()].map((v) => v.orgId))];
+      const integrations = await prisma.integration.findMany({
+        where: {
+          messenger: 'telegram',
+          status: 'connected',
+          organizationId: { in: orgIds },
+        },
+        select: { id: true, organizationId: true },
+      });
+
+      const orgToIntegration = new Map<string, string>();
+      for (const integ of integrations) {
+        orgToIntegration.set(integ.organizationId, integ.id);
+      }
+
+      const manager = getTelegramManager();
+      let resolved = 0;
+      let updated = 0;
+
+      for (const [senderId, data] of uniqueSenders) {
+        const integrationId = orgToIntegration.get(data.orgId);
+        if (!integrationId) continue;
+
+        const client = manager.getClient(integrationId);
+        if (!client) continue;
+
+        try {
+          const numId = bigInt(senderId);
+          const entity = await Promise.race([
+            client.getEntity(numId),
+            new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 15000)),
+          ]);
+
+          let name: string | null = null;
+          if (entity instanceof Api.User) {
+            name = [entity.firstName, entity.lastName].filter(Boolean).join(' ') || null;
+          } else if (entity && 'title' in (entity as unknown as Record<string, unknown>)) {
+            name = (entity as unknown as { title: string }).title || null;
+          }
+
+          if (name) {
+            resolved++;
+            const result = await prisma.message.updateMany({
+              where: { id: { in: data.messageIds } },
+              data: { senderName: name },
+            });
+            updated += result.count;
+
+            // Also update chat name if it matches the bad pattern
+            await prisma.chat.updateMany({
+              where: {
+                messenger: 'telegram',
+                organizationId: data.orgId,
+                name: { in: ['Unknown', `User ${senderId.slice(-6)}`] },
+              },
+              data: { name },
+            });
+          }
+        } catch {
+          // Skip this sender, continue with others
+        }
+      }
+
+      return reply.send({
+        totalBadMessages: badMessages.length,
+        uniqueSenders: uniqueSenders.size,
+        resolved,
+        updated,
       });
     },
   );
