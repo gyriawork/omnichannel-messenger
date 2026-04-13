@@ -525,7 +525,7 @@ export default async function adminRoutes(fastify: FastifyInstance) {
       });
       } catch (err) {
         request.log.error(err, 'backfill-sender-names error');
-        return reply.status(500).send({ error: String(err), stack: (err as Error).stack?.substring(0, 500) });
+        return reply.status(500).send({ error: 'Backfill failed', message: String(err) });
       }
     },
   );

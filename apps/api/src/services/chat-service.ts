@@ -20,10 +20,10 @@ export interface EnsureChatParams {
 
 /**
  * Upsert a Chat row by its (externalChatId, messenger, organizationId) composite
- * key. Safe to call repeatedly — existing rows are left completely untouched
- * (update: {}) so re-running initial-sync or replaying webhooks cannot corrupt
- * `lastActivityAt` with stale values. Real activity timestamps are maintained
- * by the message-ingestion path, not by chat discovery.
+ * key. Safe to call repeatedly — on update, only improves the chat name if the
+ * existing name is a placeholder ("Unknown" or "User XXXX") and the new name is
+ * a real resolved name. `lastActivityAt` is left untouched on update so that
+ * re-running initial-sync or replaying webhooks cannot corrupt timestamps.
  */
 export async function ensureChat(params: EnsureChatParams): Promise<Chat> {
   const {
@@ -36,7 +36,10 @@ export async function ensureChat(params: EnsureChatParams): Promise<Chat> {
     lastActivityAt,
   } = params;
 
-  return prisma.chat.upsert({
+  const isPlaceholderName = (n: string) => n === 'Unknown' || /^User \d+$/.test(n);
+  const nameIsReal = !isPlaceholderName(name);
+
+  const chat = await prisma.chat.upsert({
     where: {
       externalChatId_messenger_organizationId: {
         externalChatId,
@@ -57,4 +60,16 @@ export async function ensureChat(params: EnsureChatParams): Promise<Chat> {
     },
     update: {},
   });
+
+  // If the chat already exists with a placeholder name and we now have a real
+  // name, update it. This is separate from the upsert because Prisma's upsert
+  // `update` always runs — we only want to overwrite placeholder names.
+  if (nameIsReal && isPlaceholderName(chat.name)) {
+    return prisma.chat.update({
+      where: { id: chat.id },
+      data: { name },
+    });
+  }
+
+  return chat;
 }
