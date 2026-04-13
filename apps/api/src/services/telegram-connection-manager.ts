@@ -222,6 +222,16 @@ export class TelegramConnectionManager {
     await Promise.allSettled(promises);
   }
 
+  /**
+   * Get the active TelegramClient for an integration (if connected).
+   * Used by the messages route to send messages via the persistent connection
+   * instead of creating a conflicting second session.
+   */
+  getClient(integrationId: string): TelegramClient | null {
+    const active = this.clients.get(integrationId);
+    return active?.client ?? null;
+  }
+
   // ─── Event handler ───
 
   private async handleNewMessage(event: NewMessageEvent, active: ActiveClient): Promise<void> {
@@ -294,8 +304,14 @@ export class TelegramConnectionManager {
             }
             this.senderNameCache.set(senderId, { name: senderName, expiry: Date.now() + 600_000 });
           } catch {
-            // Use stale cache or 'Unknown' — don't block message delivery
-            if (cached) senderName = cached.name;
+            // Use stale cache, or a readable ID fallback — don't block message delivery
+            if (cached) {
+              senderName = cached.name;
+            } else {
+              senderName = `User ${senderId.slice(-6)}`;
+              // Cache fallback with short TTL so real name resolves on next message
+              this.senderNameCache.set(senderId, { name: senderName, expiry: Date.now() + 60_000 });
+            }
           }
         }
       }

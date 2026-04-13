@@ -1005,7 +1005,7 @@ function ComposeBar({ chatId, messenger }: { chatId: string; messenger?: string 
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="flex items-end gap-2 overflow-hidden">
+      <form onSubmit={handleSubmit} className="flex items-end gap-2">
         <input
           ref={fileInputRef}
           type="file"
@@ -1381,6 +1381,29 @@ export function ChatArea() {
       // fire-and-forget — silently ignore errors
     });
   }, [activeChat?.id, queryClient]);
+
+  // Re-mark active chat as read when new messages arrive while viewing
+  useEffect(() => {
+    const s = getSocket();
+    if (!s || !activeChat?.id) return;
+
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const handler = (data: { chatId: string }) => {
+      if (data.chatId !== activeChat.id) return;
+      if (debounceTimer) return; // already scheduled
+      debounceTimer = setTimeout(() => {
+        debounceTimer = null;
+        markRead(activeChat.id, '');
+        api.patch(`/api/chats/${activeChat.id}/read`).catch(() => {});
+      }, 500);
+    };
+
+    s.on('new_message', handler);
+    return () => {
+      s.off('new_message', handler);
+      if (debounceTimer) clearTimeout(debounceTimer);
+    };
+  }, [activeChat?.id, markRead]);
 
   if (!activeChat) {
     return <EmptyState />;

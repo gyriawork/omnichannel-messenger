@@ -216,7 +216,8 @@ export default async function webhookRoutes(fastify: FastifyInstance): Promise<v
         [from.first_name, from.last_name].filter(Boolean).join(' ') ||
         (senderChat?.title as string) ||
         (chat.title as string) ||
-        'Unknown';
+        (from.username ? `@${from.username}` : '') ||
+        'Anonymous';
       const senderId = String(from.id ?? (senderChat?.id ?? chat.id));
       const chatTitle = (chat.title as string) || senderName;
       const chatTypeRaw = (chat.type as string) || 'private';
@@ -392,7 +393,13 @@ export default async function webhookRoutes(fastify: FastifyInstance): Promise<v
         const msgId = typeof rawId === 'object' && rawId !== null
           ? (rawId as Record<string, unknown>)._serialized as string ?? JSON.stringify(rawId)
           : String(rawId || `waha_${Date.now()}`);
-        const senderName = payload._data?.notifyName || payload.from || 'Unknown';
+        let senderName = payload._data?.notifyName as string | undefined;
+        if (!senderName && payload.from) {
+          // payload.from is like "79123456789@c.us" — format as phone number
+          const phone = String(payload.from).split('@')[0];
+          senderName = phone ? (phone.startsWith('+') ? phone : `+${phone}`) : undefined;
+        }
+        senderName = senderName || 'Unknown';
 
         // Resolve the owning integration via WAHA session name stored in settings.
         // Fallback: if no match by settings (legacy integrations before settings field),

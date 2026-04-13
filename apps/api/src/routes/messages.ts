@@ -6,6 +6,8 @@ import { getIO } from '../websocket/index.js';
 import { decryptCredentials } from '../lib/crypto.js';
 import { createAdapter } from '../integrations/factory.js';
 import { logActivity } from '../lib/activity-logger.js';
+import { getTelegramManager } from '../services/telegram-connection-manager.js';
+import { CustomFile } from 'telegram/client/uploads.js';
 
 // ─── Zod Schemas ───
 
@@ -267,27 +269,70 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
       // ── Send message to real messenger ──
       let deliveryStatus = 'sent';
       let externalMessageId: string | null = null;
+
+      // Prepare common send params
+      let replyToExternalId: string | undefined;
+      if (replyToMessageId) {
+        const replyMsg = await prisma.message.findUnique({
+          where: { id: replyToMessageId },
+          select: { externalMessageId: true },
+        });
+        replyToExternalId = replyMsg?.externalMessageId ?? undefined;
+      }
+
+      const savedAttachments = await prisma.attachment.findMany({
+        where: { messageId: message.id },
+        select: { url: true, filename: true, mimeType: true },
+      });
+
       try {
-        if (integration.credentials) {
+        // For Telegram, prefer the persistent connection manager to avoid
+        // session conflicts with a second concurrent GramJS client.
+        const telegramClient = chat.messenger === 'telegram'
+          ? getTelegramManager().getClient(integration.id)
+          : null;
+
+        if (telegramClient) {
+          // Use the connection manager's already-connected client
+          const numId = parseInt(chat.externalChatId, 10);
+          const peer = !isNaN(numId) ? numId : chat.externalChatId;
+          const replyTo = replyToExternalId ? parseInt(replyToExternalId, 10) : undefined;
+
+          if (savedAttachments.length > 0) {
+            let firstMsgId: string | undefined;
+            for (let i = 0; i < savedAttachments.length; i++) {
+              try {
+                const response = await fetch(savedAttachments[i].url);
+                const buffer = Buffer.from(await response.arrayBuffer());
+                const file = new CustomFile(savedAttachments[i].filename, buffer.length, '', buffer);
+                const result = await telegramClient.sendFile(peer, {
+                  file,
+                  caption: i === 0 ? text : '',
+                  replyTo: i === 0 ? replyTo : undefined,
+                });
+                if (i === 0) firstMsgId = result.id.toString();
+              } catch (attachErr) {
+                console.error(`[Telegram] Failed to send attachment:`, attachErr instanceof Error ? attachErr.message : attachErr);
+              }
+            }
+            if (firstMsgId) {
+              externalMessageId = firstMsgId;
+            } else {
+              // All attachments failed, send text only
+              const result = await telegramClient.sendMessage(peer, { message: text, replyTo });
+              externalMessageId = result.id.toString();
+            }
+          } else {
+            const result = await telegramClient.sendMessage(peer, { message: text, replyTo });
+            externalMessageId = result.id.toString();
+          }
+          deliveryStatus = 'delivered';
+        } else if (integration.credentials) {
+          // Fallback: create a new adapter (for non-Telegram or if manager has no client)
           const creds = decryptCredentials(integration.credentials as string);
           const adapter = await createAdapter(chat.messenger, creds);
           try {
             await adapter.connect();
-
-            // Find reply-to external ID if replying
-            let replyToExternalId: string | undefined;
-            if (replyToMessageId) {
-              const replyMsg = await prisma.message.findUnique({
-                where: { id: replyToMessageId },
-                select: { externalMessageId: true },
-              });
-              replyToExternalId = replyMsg?.externalMessageId ?? undefined;
-            }
-
-            const savedAttachments = await prisma.attachment.findMany({
-              where: { messageId: message.id },
-              select: { url: true, filename: true, mimeType: true },
-            });
 
             const result = await adapter.sendMessage(
               chat.externalChatId,
@@ -404,13 +449,24 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
               where: { messenger: chat.messenger, organizationId: chat.organizationId, userId: request.user.id, status: 'connected' },
             });
             if (integration?.credentials) {
-              const creds = decryptCredentials(integration.credentials as string);
-              const adapter = await createAdapter(chat.messenger, creds);
-              try {
-                await adapter.connect();
-                await adapter.editMessage(chat.externalChatId, message.externalMessageId, text).catch(() => {});
-              } finally {
-                try { await adapter.disconnect(); } catch (e) { request.log.warn(e, 'adapter disconnect error'); }
+              // Prefer persistent connection for Telegram
+              const tgClient = chat.messenger === 'telegram' ? getTelegramManager().getClient(integration.id) : null;
+              if (tgClient) {
+                const numId = parseInt(chat.externalChatId, 10);
+                const peer = !isNaN(numId) ? numId : chat.externalChatId;
+                await tgClient.editMessage(peer, {
+                  message: parseInt(message.externalMessageId, 10),
+                  text,
+                }).catch(() => {});
+              } else {
+                const creds = decryptCredentials(integration.credentials as string);
+                const adapter = await createAdapter(chat.messenger, creds);
+                try {
+                  await adapter.connect();
+                  await adapter.editMessage(chat.externalChatId, message.externalMessageId, text).catch(() => {});
+                } finally {
+                  try { await adapter.disconnect(); } catch (e) { request.log.warn(e, 'adapter disconnect error'); }
+                }
               }
             }
           }
@@ -484,13 +540,21 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
               where: { messenger: chat.messenger, organizationId: chat.organizationId, userId: request.user.id, status: 'connected' },
             });
             if (integration?.credentials) {
-              const creds = decryptCredentials(integration.credentials as string);
-              const adapter = await createAdapter(chat.messenger, creds);
-              try {
-                await adapter.connect();
-                await adapter.deleteMessage(chat.externalChatId, message.externalMessageId).catch(() => {});
-              } finally {
-                try { await adapter.disconnect(); } catch (e) { request.log.warn(e, 'adapter disconnect error'); }
+              // Prefer persistent connection for Telegram
+              const tgClient = chat.messenger === 'telegram' ? getTelegramManager().getClient(integration.id) : null;
+              if (tgClient) {
+                const numId = parseInt(chat.externalChatId, 10);
+                const peer = !isNaN(numId) ? numId : chat.externalChatId;
+                await tgClient.deleteMessages(peer, [parseInt(message.externalMessageId, 10)], { revoke: true }).catch(() => {});
+              } else {
+                const creds = decryptCredentials(integration.credentials as string);
+                const adapter = await createAdapter(chat.messenger, creds);
+                try {
+                  await adapter.connect();
+                  await adapter.deleteMessage(chat.externalChatId, message.externalMessageId).catch(() => {});
+                } finally {
+                  try { await adapter.disconnect(); } catch (e) { request.log.warn(e, 'adapter disconnect error'); }
+                }
               }
             }
           }

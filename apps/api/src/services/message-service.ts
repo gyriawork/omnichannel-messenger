@@ -124,23 +124,38 @@ export async function saveIncomingMessage(params: SaveIncomingMessageParams) {
   }
 
   // Mark chat as unread for all org users (skip if the message is from ourselves)
+  // Also skip users who are currently viewing this chat (in the socket.io room)
   if (!params.isSelf) {
     try {
+      // Determine which users are currently viewing this chat
+      let activeUserIds = new Set<string>();
+      try {
+        const io = getIO();
+        const roomSockets = await io.in(`chat:${chat.id}`).fetchSockets();
+        activeUserIds = new Set(
+          roomSockets
+            .map((s) => (s.data as { user?: { id: string } })?.user?.id)
+            .filter((id): id is string => !!id),
+        );
+      } catch { /* WebSocket may not be initialized */ }
+
       // Get all users in the organization
       const orgUsers = await prisma.user.findMany({
         where: { organizationId: params.organizationId },
         select: { id: true },
       });
 
-      // Upsert preferences: set unread=true for each user
+      // Upsert preferences: set unread=true for each user not currently viewing
       await Promise.all(
-        orgUsers.map((u) =>
-          prisma.chatPreference.upsert({
-            where: { userId_chatId: { userId: u.id, chatId: chat.id } },
-            create: { userId: u.id, chatId: chat.id, unread: true },
-            update: { unread: true },
-          }),
-        ),
+        orgUsers
+          .filter((u) => !activeUserIds.has(u.id))
+          .map((u) =>
+            prisma.chatPreference.upsert({
+              where: { userId_chatId: { userId: u.id, chatId: chat.id } },
+              create: { userId: u.id, chatId: chat.id, unread: true },
+              update: { unread: true },
+            }),
+          ),
       );
     } catch { /* best-effort */ }
   }
