@@ -393,8 +393,8 @@ export default async function adminRoutes(fastify: FastifyInstance) {
 
           // getParticipants fetches users with their full info (including access_hash)
           const participants = await Promise.race([
-            client.getParticipants(chatId, { limit: 200 }),
-            new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 30000)),
+            client.getParticipants(chatId, { limit: 500 }),
+            new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 60000)),
           ]);
 
           for (const p of participants) {
@@ -413,8 +413,8 @@ export default async function adminRoutes(fastify: FastifyInstance) {
             if (isNaN(chatId)) continue;
             // Fetch recent messages which include sender entities
             const msgs = await Promise.race([
-              client.getMessages(chatId, { limit: 100 }),
-              new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 15000)),
+              client.getMessages(chatId, { limit: 500 }),
+              new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 60000)),
             ]);
             for (const m of msgs) {
               const sender = (m as unknown as { _sender?: unknown })._sender;
@@ -431,7 +431,55 @@ export default async function adminRoutes(fastify: FastifyInstance) {
         }
       }
 
-      // 4. Bulk-update messages using the name map
+      // 4. Second pass: try getEntity for still-unresolved senders
+      //    (the cache is now populated from getParticipants/getMessages)
+      const allBadMessages = await prisma.message.findMany({
+        where: {
+          chat: { messenger: 'telegram' },
+          isSelf: false,
+          senderExternalId: { not: null },
+          OR: [
+            { senderName: 'Unknown' },
+            { senderName: { startsWith: 'User ' } },
+          ],
+        },
+        select: { senderExternalId: true, chat: { select: { organizationId: true } } },
+        distinct: ['senderExternalId'],
+      });
+
+      for (const msg of allBadMessages) {
+        const sid = msg.senderExternalId!;
+        if (nameMap.has(sid)) continue; // already resolved
+
+        // Find a client for this org
+        const orgIntegrations = integrations.filter((i) => i.organizationId === msg.chat.organizationId);
+        let client = null;
+        for (const integ of orgIntegrations) {
+          client = manager.getClient(integ.id);
+          if (client) break;
+        }
+        if (!client) continue;
+
+        try {
+          const numId = parseInt(sid, 10);
+          if (isNaN(numId)) continue;
+          const entity = await Promise.race([
+            client.getEntity(numId),
+            new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000)),
+          ]);
+          if (entity instanceof Api.User) {
+            const name = [entity.firstName, entity.lastName].filter(Boolean).join(' ');
+            if (name) nameMap.set(sid, name);
+          } else if (entity && 'title' in (entity as unknown as Record<string, unknown>)) {
+            const title = (entity as unknown as { title: string }).title;
+            if (title) nameMap.set(sid, title);
+          }
+        } catch {
+          // Still can't resolve — skip
+        }
+      }
+
+      // 5. Bulk-update messages using the name map
       let resolved = 0;
       let updated = 0;
 
