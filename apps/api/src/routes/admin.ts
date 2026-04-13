@@ -446,6 +446,12 @@ export default async function adminRoutes(fastify: FastifyInstance) {
         uniqueSenders: uniqueSenders.size,
         resolved,
         updated,
+        debug: {
+          orgIds,
+          integrationsFound: integrations.length,
+          integrationIds: integrations.map((i) => i.id),
+          clientsAvailable: integrations.map((i) => ({ id: i.id, hasClient: !!manager.getClient(i.id) })),
+        },
       });
       } catch (err) {
         request.log.error(err, 'backfill-sender-names error');
