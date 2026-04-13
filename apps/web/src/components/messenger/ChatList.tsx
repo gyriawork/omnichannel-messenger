@@ -149,9 +149,7 @@ const ChatItem = React.memo(function ChatItem({ chat, isActive }: { chat: Chat; 
               : 'No messages yet'}
           </p>
           {isUnread && (
-            <div className="flex h-5 min-w-[20px] flex-shrink-0 items-center justify-center rounded-full bg-accent px-1.5 text-[10px] font-bold text-white">
-              {chat.messageCount > 0 ? chat.messageCount : '·'}
-            </div>
+            <div className="flex h-2.5 w-2.5 flex-shrink-0 rounded-full bg-accent" />
           )}
         </div>
 
