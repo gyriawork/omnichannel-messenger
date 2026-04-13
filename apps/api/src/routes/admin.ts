@@ -14,7 +14,6 @@ import type { Messenger } from '../lib/platform-constants.js';
 import { messageSyncQueue } from '../lib/queue.js';
 import { getTelegramManager } from '../services/telegram-connection-manager.js';
 import { Api } from 'telegram';
-import bigInt from 'big-integer';
 
 // ─── Schemas ───
 
@@ -385,7 +384,12 @@ export default async function adminRoutes(fastify: FastifyInstance) {
         orgToIntegration.set(integ.organizationId, integ.id);
       }
 
-      const manager = getTelegramManager();
+      let manager: ReturnType<typeof getTelegramManager>;
+      try {
+        manager = getTelegramManager();
+      } catch {
+        return reply.status(503).send({ error: 'Telegram connection manager not initialized' });
+      }
       let resolved = 0;
       let updated = 0;
 
@@ -397,7 +401,8 @@ export default async function adminRoutes(fastify: FastifyInstance) {
         if (!client) continue;
 
         try {
-          const numId = bigInt(senderId);
+          const numId = parseInt(senderId, 10);
+          if (isNaN(numId)) continue;
           const entity = await Promise.race([
             client.getEntity(numId),
             new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 15000)),
