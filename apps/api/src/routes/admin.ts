@@ -12,8 +12,9 @@ import { logActivity } from '../lib/activity-logger.js';
 import { MESSENGERS, MESSENGER_PLATFORM_FIELDS, MESSENGER_ENV_VARS } from '../lib/platform-constants.js';
 import type { Messenger } from '../lib/platform-constants.js';
 import { messageSyncQueue } from '../lib/queue.js';
-import { getTelegramManager } from '../services/telegram-connection-manager.js';
-import { Api } from 'telegram';
+// Dynamic imports for telegram — loaded only when backfill endpoint is called
+// to avoid crashing the entire admin module if telegram package has issues
+
 
 // ─── Schemas ───
 
@@ -332,6 +333,9 @@ export default async function adminRoutes(fastify: FastifyInstance) {
     { preHandler: [authenticate, requireRole('admin', 'superadmin')] },
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
+      const { getTelegramManager } = await import('../services/telegram-connection-manager.js');
+      const { Api } = await import('telegram');
+
       // Find all Telegram messages with unresolved sender names
       const badMessages = await prisma.message.findMany({
         where: {
@@ -386,9 +390,7 @@ export default async function adminRoutes(fastify: FastifyInstance) {
       }
 
       let manager: ReturnType<typeof getTelegramManager>;
-      try {
-        manager = getTelegramManager();
-      } catch {
+      try { manager = getTelegramManager(); } catch {
         return reply.status(503).send({ error: 'Telegram connection manager not initialized' });
       }
       let resolved = 0;
