@@ -956,7 +956,7 @@ function ComposeBar({ chatId, messenger }: { chatId: string; messenger?: string 
   }
 
   return (
-    <div className="flex-shrink-0 overflow-hidden border-t border-slate-200 bg-white px-5 pb-4 pt-3">
+    <div className="flex-shrink-0 border-t border-slate-200 bg-white px-5 pb-4 pt-3">
       {/* Reply preview */}
       {replyingTo && (
         <div className="mb-2 flex items-center gap-2 rounded-lg border-l-2 border-accent bg-accent-bg px-3 py-2">
