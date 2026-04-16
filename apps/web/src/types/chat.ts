@@ -84,4 +84,5 @@ export interface ChatFilters {
   status?: string;
   ownerId?: string;
   tagId?: string;
+  limit?: number;
 }

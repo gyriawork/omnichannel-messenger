@@ -251,6 +251,7 @@ export function ChatList() {
     search: searchQuery || undefined,
     messenger: messengerFilter,
     tagId: tagFilter || undefined,
+    limit: 1000,
   });
 
   const chats = data?.chats ?? [];

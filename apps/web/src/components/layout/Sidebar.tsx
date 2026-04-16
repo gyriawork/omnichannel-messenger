@@ -46,7 +46,7 @@ export function Sidebar() {
   const logout = useAuthStore((s) => s.logout);
   const [collapsed, setCollapsed] = useState(false);
 
-  const { data: chatsData } = useChats();
+  const { data: chatsData } = useChats({ limit: 1000 });
   const unreadChatsCount = (chatsData?.chats ?? []).filter((c) => c.preferences?.unread).length;
 
   const isActive = (href: string) => {

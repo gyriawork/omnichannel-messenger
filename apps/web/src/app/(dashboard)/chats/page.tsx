@@ -538,6 +538,7 @@ export default function ChatsPage() {
     status: statusFilter || undefined,
     ownerId: ownerFilter || undefined,
     tagId: tagFilter || undefined,
+    limit: 1000,
   });
 
   const chats = data?.chats ?? [];
