@@ -241,6 +241,7 @@ async function trendBuckets(
     WHERE c."organizationId" = ${organizationId}
       AND c."deletedAt" IS NULL
       AND m."deletedAt" IS NULL
+      AND m."isSelf" = true
       AND m."createdAt" >= ${start}
       AND m."createdAt" < ${end}
       ${ownerId ? Prisma.sql`AND c."ownerId" = ${ownerId}` : Prisma.empty}
@@ -396,6 +397,7 @@ async function membersList(
       u.id, u.name, u.email, u.role, u."lastActiveAt",
       COUNT(m.id) FILTER (
         WHERE m."deletedAt" IS NULL
+          AND m."isSelf" = true
           AND m."createdAt" >= ${start}
           AND m."createdAt" < ${end}
       ) AS messages,

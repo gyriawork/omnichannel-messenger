@@ -41,6 +41,7 @@ export function KpiCards({ data, scope, isDrillDown }: KpiCardsProps) {
           <ActiveInactiveBar
             active={data.kpis.chats.active}
             inactive={data.kpis.chats.inactive}
+            showLabel={false}
           />
         }
       />

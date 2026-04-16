@@ -121,7 +121,7 @@ export function TeamTable({ members, onDrillDown }: TeamTableProps) {
                 <div className="mt-1 text-[10px] text-slate-400">
                   <span className="text-emerald-600">{m.activeChats}</span>
                   <span className="mx-1 text-slate-300">·</span>
-                  <span>{m.inactiveChats} inactive</span>
+                  <span>{m.activeChats + m.inactiveChats} total</span>
                 </div>
               </td>
               <td className="px-4 py-3 text-xs text-slate-500">

@@ -63,6 +63,7 @@ import { useIntegrations } from '@/hooks/useIntegrations';
 import { ReactionsBubble } from './ReactionsBubble';
 import TypingIndicator from './TypingIndicator';
 import { MessageText } from './MessageText';
+import { MessageAttachments } from './MessageAttachments';
 import { useSocket, getSocket } from '@/hooks/useSocket';
 import type { Chat, Message, MessengerType } from '@/types/chat';
 
@@ -512,28 +513,10 @@ function MessageBubble({
 
         {/* Attachments */}
         {message.attachments && message.attachments.length > 0 && (
-          <div className="mt-1.5 space-y-1">
-            {message.attachments.map((att, i) => (
-              <a
-                key={i}
-                href={att.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={cn(
-                  'flex items-center gap-2 rounded-lg p-2 text-xs transition-colors',
-                  isSelf
-                    ? 'bg-white/10 hover:bg-white/20'
-                    : 'bg-slate-50 hover:bg-slate-100',
-                )}
-              >
-                <Paperclip className="h-3.5 w-3.5 flex-shrink-0" />
-                <span className="truncate">{att.filename}</span>
-                <span className="flex-shrink-0 opacity-60">
-                  {(att.size / 1024).toFixed(0)}KB
-                </span>
-              </a>
-            ))}
-          </div>
+          <MessageAttachments
+            attachments={message.attachments}
+            variant={isSelf ? 'self' : 'other'}
+          />
         )}
 
         {/* Footer: time + edited + delivery */}

@@ -493,12 +493,13 @@ describe('GET /api/analytics — trend buckets', () => {
     expect(Array.isArray(data.trend)).toBe(true);
     expect(data.trend.length).toBeGreaterThan(0);
 
-    // Sum of per-bucket totals should match total messages in period (10)
+    // "Activity Over Time" tracks messages sent BY the user/org (isSelf=true)
+    // — not received. For regular user's current period that's 7.
     const sum = data.trend.reduce(
       (acc: number, b: { total: number }) => acc + b.total,
       0,
     );
-    expect(sum).toBe(10);
+    expect(sum).toBe(7);
   });
 
   it('respects granularity=week (buckets aligned to ISO weeks)', async () => {
@@ -513,12 +514,12 @@ describe('GET /api/analytics — trend buckets', () => {
     // over a 30d window.
     expect(data.trend.length).toBeLessThanOrEqual(6);
 
-    // Sum of totals still matches 10
+    // Sum of sent messages (isSelf=true) still matches 7
     const sum = data.trend.reduce(
       (acc: number, b: { total: number }) => acc + b.total,
       0,
     );
-    expect(sum).toBe(10);
+    expect(sum).toBe(7);
   });
 });
 
@@ -591,10 +592,10 @@ describe('GET /api/analytics — org scope (admin)', () => {
     expect(otherRow).toBeDefined();
     expect(adminRow).toBeDefined();
 
-    // regular sent+received across own chats: 7+3 = 10
-    expect(regularRow.messages).toBe(10);
-    // other sent+received: 2+1 = 3
-    expect(otherRow.messages).toBe(3);
+    // "Messages" in the Team Activity table counts messages sent BY the member
+    // (isSelf=true), not inbound messages into their chats. Regular = 7, other = 2.
+    expect(regularRow.messages).toBe(7);
+    expect(otherRow.messages).toBe(2);
     // admin has no chats → 0 messages
     expect(adminRow.messages).toBe(0);
 

@@ -97,37 +97,80 @@ function TrendBar({
   granularity: AnalyticsGranularity;
   showLabel: boolean;
 }) {
-  const totalHeight = (bucket.total / maxTotal) * 160;
+  // Columns have min-height 2px when non-zero so a single-message bucket still
+  // shows a sliver instead of disappearing.
+  const totalHeight =
+    bucket.total > 0
+      ? Math.max((bucket.total / maxTotal) * 160, 2)
+      : 0;
+
+  // Build the list of non-zero segments (top to bottom, so the visually-topmost
+  // one is first in the array — we give it the rounded corners).
+  const segments: Array<{ messenger: AnalyticsMessenger; count: number }> =
+    stacked && bucket.total > 0
+      ? (Object.keys(MESSENGER_COLORS) as AnalyticsMessenger[])
+          .map((m) => ({ messenger: m, count: bucket.byMessenger[m] }))
+          .filter((s) => s.count > 0)
+      : [];
 
   return (
-    <div className="group relative flex min-w-[3px] flex-1 flex-col items-center justify-end">
-      {/* Tooltip */}
-      <div className="pointer-events-none absolute -top-14 z-10 whitespace-nowrap rounded bg-slate-800 px-2 py-1 text-xs text-white opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
-        <div className="font-medium">{formatBucketLabel(bucket.bucket, granularity)}</div>
-        <div>{bucket.total} total</div>
+    <div className="group relative flex min-w-[4px] flex-1 flex-col items-center justify-end">
+      {/* Tooltip (bucket total + per-messenger breakdown) */}
+      <div className="pointer-events-none absolute -top-2 left-1/2 z-10 -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-lg bg-slate-800 px-2.5 py-1.5 text-xs text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100">
+        <div className="font-medium">
+          {formatBucketLabel(bucket.bucket, granularity)}
+        </div>
+        <div className="mt-0.5 font-semibold">
+          {bucket.total.toLocaleString()}{' '}
+          {bucket.total === 1 ? 'message' : 'messages'}
+        </div>
+        {stacked && segments.length > 0 && (
+          <div className="mt-1 flex flex-col gap-0.5 border-t border-slate-700 pt-1">
+            {segments.map((s) => (
+              <div
+                key={s.messenger}
+                className="flex items-center gap-1.5 text-[10px] text-slate-200"
+              >
+                <span
+                  className={cn(
+                    'h-2 w-2 rounded-sm',
+                    MESSENGER_COLORS[s.messenger],
+                  )}
+                />
+                <span>{MESSENGER_LABELS[s.messenger]}</span>
+                <span className="ml-auto font-medium text-white">
+                  {s.count.toLocaleString()}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* Bar */}
+      {/* Bar — top-to-bottom flex so the first (largest) segment sits on top
+          and we can round just its top corners. */}
       <div
-        className="flex w-full flex-col-reverse overflow-hidden rounded-t"
+        className="flex w-full flex-col overflow-hidden"
         style={{ height: `${totalHeight}px` }}
       >
         {stacked ? (
-          (Object.keys(MESSENGER_COLORS) as AnalyticsMessenger[]).map((m) => {
-            const count = bucket.byMessenger[m];
-            if (count <= 0) return null;
-            const segmentHeight = (count / bucket.total) * 100;
+          segments.map((s, idx) => {
+            const segmentHeight = (s.count / bucket.total) * 100;
             return (
               <div
-                key={m}
-                className={cn(MESSENGER_COLORS[m])}
+                key={s.messenger}
+                className={cn(
+                  MESSENGER_COLORS[s.messenger],
+                  'transition-opacity group-hover:opacity-90',
+                  idx === 0 && 'rounded-t-sm',
+                )}
                 style={{ height: `${segmentHeight}%` }}
               />
             );
           })
-        ) : (
-          <div className="h-full w-full bg-accent/70 transition-colors group-hover:bg-accent" />
-        )}
+        ) : bucket.total > 0 ? (
+          <div className="h-full w-full rounded-t-sm bg-accent/80 transition-colors group-hover:bg-accent" />
+        ) : null}
       </div>
 
       {showLabel && (

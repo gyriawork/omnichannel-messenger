@@ -147,6 +147,15 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
               userId: true,
             },
           },
+          attachmentFiles: {
+            select: {
+              id: true,
+              url: true,
+              filename: true,
+              mimeType: true,
+              size: true,
+            },
+          },
         },
       });
 
@@ -157,20 +166,37 @@ export default async function messageRoutes(fastify: FastifyInstance): Promise<v
         nextCursor = lastMessage.id;
       }
 
-      // Truncate reply preview text
-      const formatted = messages.map((msg) => ({
-        ...msg,
-        replyToMessage: msg.replyToMessage
-          ? {
-              id: msg.replyToMessage.id,
-              senderName: msg.replyToMessage.senderName,
-              text:
-                msg.replyToMessage.text.length > 100
-                  ? msg.replyToMessage.text.slice(0, 100) + '...'
-                  : msg.replyToMessage.text,
-            }
-          : null,
-      }));
+      // Truncate reply preview text, project attachments (prefer relation rows;
+      // fall back to legacy JSON for messages saved before the relation existed).
+      const formatted = messages.map((msg) => {
+        const attachments =
+          msg.attachmentFiles && msg.attachmentFiles.length > 0
+            ? msg.attachmentFiles
+            : Array.isArray(msg.attachmentsLegacy)
+              ? (msg.attachmentsLegacy as unknown as Array<{
+                  id?: string;
+                  url: string;
+                  filename: string;
+                  mimeType: string;
+                  size: number;
+                }>)
+              : [];
+        return {
+          ...msg,
+          attachmentFiles: undefined,
+          attachments,
+          replyToMessage: msg.replyToMessage
+            ? {
+                id: msg.replyToMessage.id,
+                senderName: msg.replyToMessage.senderName,
+                text:
+                  msg.replyToMessage.text.length > 100
+                    ? msg.replyToMessage.text.slice(0, 100) + '...'
+                    : msg.replyToMessage.text,
+              }
+            : null,
+        };
+      });
 
       return reply.status(200).send({ messages: formatted, nextCursor });
     },

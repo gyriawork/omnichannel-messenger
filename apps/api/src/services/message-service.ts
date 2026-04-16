@@ -16,6 +16,13 @@ export function externalUserToUuid(messenger: string, externalUserId: string): s
   return uuidv5(`external:${messenger}:${externalUserId}`, EXTERNAL_USER_UUID_NAMESPACE);
 }
 
+export interface StructuredAttachment {
+  url: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+}
+
 export interface SaveIncomingMessageParams {
   externalChatId: string;
   messenger: string;
@@ -25,7 +32,12 @@ export interface SaveIncomingMessageParams {
   senderName: string;
   senderExternalId: string;
   text?: string;
-  attachments?: unknown;
+  /**
+   * Structured attachments to persist as Attachment rows AND mirror into the
+   * legacy JSON column for backward compatibility. If you pass raw unknown
+   * JSON, it's only stored in the legacy column.
+   */
+  attachments?: StructuredAttachment[] | unknown;
   externalMessageId?: string;
   isSelf?: boolean;
   createdAt?: Date;
@@ -33,6 +45,22 @@ export interface SaveIncomingMessageParams {
   chatName?: string;
   /** Chat type for auto-created chats. Defaults to 'direct'. */
   chatType?: 'direct' | 'group' | 'channel';
+}
+
+/** Type guard — is this value a well-formed StructuredAttachment[]? */
+function isStructuredAttachments(value: unknown): value is StructuredAttachment[] {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (a) =>
+        a != null &&
+        typeof a === 'object' &&
+        typeof (a as { url?: unknown }).url === 'string' &&
+        typeof (a as { filename?: unknown }).filename === 'string' &&
+        typeof (a as { mimeType?: unknown }).mimeType === 'string' &&
+        typeof (a as { size?: unknown }).size === 'number',
+    )
+  );
 }
 
 export async function saveIncomingMessage(params: SaveIncomingMessageParams) {
@@ -48,6 +76,10 @@ export async function saveIncomingMessage(params: SaveIncomingMessageParams) {
     chatType: params.chatType ?? 'direct',
     lastActivityAt: params.createdAt ?? new Date(),
   });
+
+  const structuredAttachments = isStructuredAttachments(params.attachments)
+    ? params.attachments
+    : null;
 
   const messageData = {
     chatId: chat.id,
@@ -97,6 +129,44 @@ export async function saveIncomingMessage(params: SaveIncomingMessageParams) {
     ]);
   }
 
+  // Persist attachments as proper relation rows (separate from the legacy JSON
+  // column) so we can render them cleanly in the UI. Done outside the tx so a
+  // Prisma engine disconnect here can't invalidate the message insert.
+  let createdAttachments: Array<{
+    id: string;
+    url: string;
+    filename: string;
+    mimeType: string;
+    size: number;
+  }> = [];
+  if (structuredAttachments && structuredAttachments.length > 0) {
+    try {
+      const rows = await prisma.$transaction(
+        structuredAttachments.map((a) =>
+          prisma.attachment.create({
+            data: {
+              messageId: message.id,
+              url: a.url,
+              filename: a.filename,
+              mimeType: a.mimeType,
+              size: a.size,
+            },
+            select: {
+              id: true,
+              url: true,
+              filename: true,
+              mimeType: true,
+              size: true,
+            },
+          }),
+        ),
+      );
+      createdAttachments = rows;
+    } catch (err) {
+      console.error('[saveIncomingMessage] Failed to persist attachment rows:', err);
+    }
+  }
+
   // Emit real-time event via WebSocket
   try {
     const io = getIO();
@@ -116,7 +186,7 @@ export async function saveIncomingMessage(params: SaveIncomingMessageParams) {
         deliveryStatus: message.deliveryStatus ?? null,
         createdAt: message.createdAt,
         replyToMessage: null,
-        attachments: [],
+        attachments: createdAttachments,
       },
     });
   } catch {

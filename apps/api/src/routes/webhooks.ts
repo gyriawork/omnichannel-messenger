@@ -326,6 +326,20 @@ export default async function webhookRoutes(fastify: FastifyInstance): Promise<v
         return reply.send({ ok: true });
       }
 
+      // Slack file attachments — metadata only; URLs require the workspace token
+      // to fetch binary content. We keep them as references so the UI can link
+      // out to Slack for download.
+      const slackFiles = (event.files as Array<Record<string, unknown>> | undefined) ?? [];
+      const slackAttachments = slackFiles
+        .map((f) => {
+          const url = (f.url_private as string) || (f.permalink as string) || '';
+          const filename = (f.name as string) || (f.title as string) || 'file';
+          const mimeType = (f.mimetype as string) || 'application/octet-stream';
+          const size = typeof f.size === 'number' ? (f.size as number) : 0;
+          return url ? { url, filename, mimeType, size } : null;
+        })
+        .filter((a): a is { url: string; filename: string; mimeType: string; size: number } => a !== null);
+
       for (const integration of matchedIntegrations) {
         const [senderName, chatName] = await Promise.all([
           resolveSlackUserName(integration.organizationId, userId),
@@ -343,6 +357,7 @@ export default async function webhookRoutes(fastify: FastifyInstance): Promise<v
           externalMessageId: ts,
           chatName,
           chatType: 'channel',
+          attachments: slackAttachments.length > 0 ? slackAttachments : undefined,
         });
       }
 
@@ -372,6 +387,19 @@ export default async function webhookRoutes(fastify: FastifyInstance): Promise<v
           timestamp?: number;
           _data?: { notifyName?: string };
           chatId?: string;
+          // Media metadata — WAHA includes a `media` object for messages
+          // with attachments, or a legacy top-level `mediaUrl`/`mimeType`.
+          hasMedia?: boolean;
+          media?: {
+            url?: string;
+            mimetype?: string;
+            filename?: string;
+            size?: number;
+          };
+          mediaUrl?: string;
+          mimeType?: string;
+          filename?: string;
+          fileSize?: number;
         };
         me?: { id?: string };
       };
@@ -418,6 +446,27 @@ export default async function webhookRoutes(fastify: FastifyInstance): Promise<v
           });
         }
 
+        // Pull media metadata out of either the `media` object (modern WAHA)
+        // or the legacy top-level `mediaUrl` fields. We don't re-host the
+        // binary — the URL is a direct reference back to WAHA.
+        const mediaUrl = payload.media?.url || payload.mediaUrl;
+        const mediaMime = payload.media?.mimetype || payload.mimeType;
+        const mediaFilename =
+          payload.media?.filename ||
+          payload.filename ||
+          (mediaMime?.startsWith('image/') ? 'image' :
+            mediaMime?.startsWith('video/') ? 'video' :
+              mediaMime?.startsWith('audio/') ? 'audio' : 'file');
+        const mediaSize = payload.media?.size ?? payload.fileSize ?? 0;
+        const wahaAttachments = mediaUrl
+          ? [{
+              url: mediaUrl,
+              filename: mediaFilename,
+              mimeType: mediaMime || 'application/octet-stream',
+              size: mediaSize,
+            }]
+          : undefined;
+
         if (integration) {
           await saveIncomingMessage({
             externalChatId: chatId,
@@ -430,6 +479,7 @@ export default async function webhookRoutes(fastify: FastifyInstance): Promise<v
             externalMessageId: msgId,
             chatName: senderName,
             chatType: chatId.endsWith('@g.us') ? 'group' : 'direct',
+            attachments: wahaAttachments,
           });
         } else {
           console.warn(`[WAHA Webhook] No integration found for session "${sessionName}"`);
