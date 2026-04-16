@@ -21,6 +21,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { useChatStore } from '@/stores/chat';
 import { useChats, useChatPreferences } from '@/hooks/useChats';
 import { useTags } from '@/hooks/useTags';
+import { previewText } from '@/lib/messageFormatters';
 import type { Chat, MessengerType } from '@/types/chat';
 
 const MESSENGER_FILTERS: Array<{
@@ -145,7 +146,7 @@ const ChatItem = React.memo(function ChatItem({ chat, isActive }: { chat: Chat; 
             isUnread ? 'font-medium text-slate-700' : 'text-slate-500',
           )}>
             {chat.lastMessage
-              ? `${chat.lastMessage.senderName}: ${chat.lastMessage.text || '📎 Attachment'}`
+              ? `${chat.lastMessage.senderName}: ${previewText(chat.lastMessage.text, chat.messenger) || '📎 Attachment'}`
               : 'No messages yet'}
           </p>
           {isUnread && (

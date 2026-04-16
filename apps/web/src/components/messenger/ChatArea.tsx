@@ -62,6 +62,7 @@ import { useIntegrations } from '@/hooks/useIntegrations';
 
 import { ReactionsBubble } from './ReactionsBubble';
 import TypingIndicator from './TypingIndicator';
+import { MessageText } from './MessageText';
 import { useSocket, getSocket } from '@/hooks/useSocket';
 import type { Chat, Message, MessengerType } from '@/types/chat';
 
@@ -502,7 +503,11 @@ function MessageBubble({
             </div>
           </div>
         ) : (
-          <p className="whitespace-pre-wrap break-words">{message.text}</p>
+          <MessageText
+            text={message.text}
+            messenger={messenger}
+            className="whitespace-pre-wrap break-words"
+          />
         )}
 
         {/* Attachments */}

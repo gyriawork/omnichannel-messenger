@@ -3,6 +3,8 @@
 import { useState } from 'react';
 import { format } from 'date-fns';
 import { Check, CheckCheck, AlertCircle, CornerUpLeft, Pencil, Trash2, Pin, Forward } from 'lucide-react';
+import { MessageText } from './MessageText';
+import type { MessengerType } from '@/types/chat';
 
 interface Message {
   id: string;
@@ -18,6 +20,7 @@ interface Message {
 
 interface MessageBubbleProps {
   message: Message;
+  messenger?: MessengerType;
   onReply: (message: Message) => void;
   onEdit: (message: Message) => void;
   onDelete: (messageId: string) => void;
@@ -37,7 +40,7 @@ function DeliveryIcon({ status }: { status: string }) {
   }
 }
 
-export default function MessageBubble({ message, onReply, onEdit, onDelete, onPin, onForward, onRetry }: MessageBubbleProps) {
+export default function MessageBubble({ message, messenger, onReply, onEdit, onDelete, onPin, onForward, onRetry }: MessageBubbleProps) {
   const [showMenu, setShowMenu] = useState(false);
 
   const time = format(new Date(message.createdAt), 'HH:mm');
@@ -72,7 +75,11 @@ export default function MessageBubble({ message, onReply, onEdit, onDelete, onPi
               {message.senderName}
             </p>
           )}
-          <p className="whitespace-pre-wrap break-words text-sm">{message.text}</p>
+          <MessageText
+            text={message.text}
+            messenger={messenger}
+            className="whitespace-pre-wrap break-words text-sm"
+          />
           <div className={`flex items-center gap-1 mt-1 ${message.isSelf ? 'justify-end' : ''}`}>
             <span className={`text-xs ${message.isSelf ? 'text-blue-200' : 'text-gray-400'}`}>
               {time}
