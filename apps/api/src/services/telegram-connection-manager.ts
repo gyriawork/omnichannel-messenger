@@ -81,9 +81,12 @@ export class TelegramConnectionManager {
    * Start listening for messages on a specific integration.
    */
   async startListening(integrationId: string): Promise<void> {
-    // Already listening?
+    // If a client is already registered for this integration (e.g. credentials
+    // were just rotated by a connect/reconnect flow), stop it first so the new
+    // session can take over. Otherwise messages from the old session keep
+    // flowing because the old TelegramClient is still connected.
     if (this.clients.has(integrationId)) {
-      return;
+      await this.stopListening(integrationId);
     }
 
     const integration = await prisma.integration.findUnique({
