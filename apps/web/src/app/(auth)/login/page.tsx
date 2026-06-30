@@ -37,7 +37,7 @@ export default function LoginPage() {
     try {
       await login(data.email, data.password);
       toast.success('Welcome back!');
-      router.push('/messenger');
+      router.push('/');
     } catch (err) {
       const message =
         err instanceof Error ? err.message : 'Invalid credentials';

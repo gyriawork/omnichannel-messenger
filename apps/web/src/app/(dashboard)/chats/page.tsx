@@ -30,6 +30,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import type { Chat, MessengerType } from '@/types/chat';
 import { RequireOrgContext } from '@/components/layout/RequireOrgContext';
 import { groupGmailChats, isChatGroup, type ChatRow, type ChatGroup } from '@/lib/chat-grouping';
+import { useAuthStore } from '@/stores/auth';
 
 // ─── Constants ───
 
@@ -520,6 +521,9 @@ function GroupRow({
 // ─── Main Page ───
 
 export default function ChatsPage() {
+  // Only the superadmin manages chats (import / assign / tag / delete).
+  // Regular users get a read-only view for picking broadcast recipients.
+  const isSuperadmin = useAuthStore((s) => s.user?.role) === 'superadmin';
   const [search, setSearch] = useState('');
   const [messengerFilter, setMessengerFilter] = useState<MessengerType | null>(null);
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
@@ -665,9 +669,11 @@ export default function ChatsPage() {
           className="rounded border-[1.5px] border-slate-200 px-3 py-2 text-xs text-slate-600 focus:border-accent focus:outline-none"
         >
           <option value="">All Messengers</option>
-          {(Object.keys(messengerConfig) as MessengerType[]).map((m) => (
-            <option key={m} value={m}>{messengerConfig[m].label}</option>
-          ))}
+          {(Object.keys(messengerConfig) as MessengerType[])
+            .filter((m) => m !== 'gmail') // Gmail hidden — broadcast-focused service
+            .map((m) => (
+              <option key={m} value={m}>{messengerConfig[m].label}</option>
+            ))}
         </select>
 
         {/* Status filter */}
@@ -738,8 +744,8 @@ export default function ChatsPage() {
         </button>
       </div>
 
-      {/* Bulk actions */}
-      {selectedIds.length > 0 && (
+      {/* Bulk actions — superadmin only (chat management) */}
+      {isSuperadmin && selectedIds.length > 0 && (
         <div className="mb-4">
           <BulkActions
             selectedIds={selectedIds}
@@ -769,16 +775,22 @@ export default function ChatsPage() {
           <EmptyState
             icon={<MessageSquare className="h-10 w-10" />}
             title="No chats yet"
-            description="Connect a messenger — your chats will be imported automatically."
+            description={
+              isSuperadmin
+                ? 'Connect a messenger — your chats will be imported automatically.'
+                : 'No chats have been imported yet. Ask your administrator to connect a messenger.'
+            }
             compact
             action={
-              <a
-                href="/settings"
-                className="inline-flex items-center gap-2 rounded bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover"
-              >
-                <Plus className="h-4 w-4" />
-                Connect messenger
-              </a>
+              isSuperadmin ? (
+                <a
+                  href="/settings"
+                  className="inline-flex items-center gap-2 rounded bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover"
+                >
+                  <Plus className="h-4 w-4" />
+                  Connect messenger
+                </a>
+              ) : undefined
             }
           />
         )}
@@ -869,15 +881,21 @@ export default function ChatsPage() {
           <EmptyState
             icon={<MessageSquare className="h-12 w-12" />}
             title="No chats yet"
-            description="Connect a messenger — your chats will be imported automatically."
+            description={
+              isSuperadmin
+                ? 'Connect a messenger — your chats will be imported automatically.'
+                : 'No chats have been imported yet. Ask your administrator to connect a messenger.'
+            }
             action={
-              <a
-                href="/settings"
-                className="inline-flex items-center gap-2 rounded bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px"
-              >
-                <Plus className="h-4 w-4" />
-                Connect messenger
-              </a>
+              isSuperadmin ? (
+                <a
+                  href="/settings"
+                  className="inline-flex items-center gap-2 rounded bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px"
+                >
+                  <Plus className="h-4 w-4" />
+                  Connect messenger
+                </a>
+              ) : undefined
             }
           />
         ) : (
@@ -1022,9 +1040,9 @@ export default function ChatsPage() {
                       {formatTime(chat.lastActivityAt)}
                     </td>
 
-                    {/* Actions */}
+                    {/* Actions — superadmin only (chat management) */}
                     <td className="px-3 py-3">
-                      <ChatRowActions chat={chat} />
+                      {isSuperadmin && <ChatRowActions chat={chat} />}
                     </td>
                   </tr>
                 );

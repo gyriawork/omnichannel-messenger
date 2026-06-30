@@ -4,7 +4,7 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: 'Messengly',
-  description: 'Unified inbox for Telegram, Slack, WhatsApp, and Gmail',
+  description: 'Broadcast prepared messages to your Telegram, Slack and WhatsApp chats',
 };
 
 export default function RootLayout({

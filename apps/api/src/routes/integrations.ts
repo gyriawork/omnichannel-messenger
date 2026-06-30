@@ -4,6 +4,7 @@ import { z } from 'zod';
 import prisma from '../lib/prisma.js';
 import { encryptCredentials, decryptCredentials } from '../lib/crypto.js';
 import { authenticate } from '../middleware/auth.js';
+import { requireRole } from '../middleware/rbac.js';
 import { createAdapter } from '../integrations/factory.js';
 import { MessengerError } from '../integrations/base.js';
 // These imports may fail on some environments if native deps are missing
@@ -145,14 +146,18 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
     console.warn('Telegram integration unavailable:', (e as Error).message);
   }
 
-  const authPreHandlers = [authenticate];
+  // Managing messenger access (connect / disconnect / pairing / import) is
+  // superadmin-only. Regular users never configure messengers — they only
+  // broadcast. Read-only status endpoints stay open to any authenticated user.
+  const authPreHandlers = [authenticate, requireRole('superadmin')];
+  const readPreHandlers = [authenticate];
 
   // ─── GET /integrations/available ───
   // Returns which messengers are available (platform credentials configured) vs unavailable.
 
   fastify.get(
     '/integrations/available',
-    { preHandler: authPreHandlers },
+    { preHandler: readPreHandlers },
     async (_request: FastifyRequest, reply: FastifyReply) => {
       const available: string[] = [];
       const unavailable: string[] = [];
@@ -177,7 +182,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
 
   fastify.get(
     '/integrations',
-    { preHandler: authPreHandlers },
+    { preHandler: readPreHandlers },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const organizationId = getOrgId(request);
       if (!organizationId) {
@@ -914,7 +919,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
 
   fastify.get(
     '/integrations/whatsapp/pairing-status',
-    { preHandler: authPreHandlers },
+    { preHandler: readPreHandlers },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const organizationId = getOrgId(request);
       if (!organizationId) {

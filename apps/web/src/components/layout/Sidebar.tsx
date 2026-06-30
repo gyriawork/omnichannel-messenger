@@ -4,7 +4,6 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-  MessageSquare,
   LayoutDashboard,
   Send,
   FileText,
@@ -13,28 +12,27 @@ import {
   LogOut,
   Inbox,
   Tag,
-  BookOpen,
   ShieldCheck,
   Shield,
   ChevronsLeft,
   ChevronsRight,
-  BarChart3,
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth';
 import { cn } from '@/lib/utils';
 import { OrgSwitcher } from './OrgSwitcher';
-import { useChats } from '@/hooks/useChats';
 
+// Messenger, Wiki and Analytics intentionally hidden — service is focused on
+// importing chats and broadcasting prepared messages to Slack/Telegram.
 const baseNavItems = [
   { icon: LayoutDashboard, href: '/', label: 'Dashboard' },
   { icon: Inbox, href: '/chats', label: 'Chats' },
-  { icon: MessageSquare, href: '/messenger', label: 'Messenger' },
-  { icon: BookOpen, href: '/wiki', label: 'Wiki' },
-  { icon: BarChart3, href: '/analytics', label: 'Analytics' },
   { icon: Activity, href: '/activity', label: 'Activity Log' },
 ];
 
-const adminNavItems = [
+// Broadcasting tools — visible to every authenticated user, since broadcasting
+// is the regular user's primary (and only) job. Messenger configuration lives
+// under superadmin-only sections.
+const broadcastNavItems = [
   { icon: Send, href: '/broadcast', label: 'Broadcast' },
   { icon: FileText, href: '/templates', label: 'Templates' },
   { icon: Tag, href: '/tags', label: 'Tags' },
@@ -45,9 +43,6 @@ export function Sidebar() {
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
   const [collapsed, setCollapsed] = useState(false);
-
-  const { data: chatsData } = useChats({ limit: 1000 });
-  const unreadChatsCount = (chatsData?.chats ?? []).filter((c) => c.preferences?.unread).length;
 
   const isActive = (href: string) => {
     if (href === '/') return pathname === '/';
@@ -108,7 +103,8 @@ export function Sidebar() {
       <nav className={cn('flex flex-1 flex-col gap-0.5', collapsed && 'items-center')}>
         {[
           ...baseNavItems,
-          ...(user?.role !== 'user' ? adminNavItems : []),
+          // Broadcast / Templates / Tags are the regular user's main tools.
+          ...broadcastNavItems,
           ...(user?.role === 'superadmin'
             ? [
                 { icon: ShieldCheck, href: '/admin', label: 'Admin' },
@@ -135,14 +131,6 @@ export function Sidebar() {
             >
               <Icon className="h-[18px] w-[18px] shrink-0" strokeWidth={active ? 2 : 1.5} />
               {!collapsed && label}
-              {href === '/messenger' && unreadChatsCount > 0 && (
-                <span className={cn(
-                  'flex h-5 min-w-[20px] items-center justify-center rounded-full bg-accent px-1.5 text-[10px] font-bold text-white',
-                  collapsed ? 'absolute -right-1 -top-1' : 'ml-auto',
-                )}>
-                  {unreadChatsCount}
-                </span>
-              )}
               {collapsed && (
                 <span className="pointer-events-none absolute left-full z-50 ml-3 whitespace-nowrap rounded-lg bg-slate-800 px-2.5 py-1.5 text-xs font-medium text-white opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
                   {label}

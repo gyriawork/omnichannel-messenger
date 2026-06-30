@@ -71,7 +71,10 @@ function getOrgId(request: FastifyRequest): string | null {
 
 export default async function chatRoutes(fastify: FastifyInstance): Promise<void> {
   const authPreHandlers = [authenticate];
-  const adminPreHandlers = [authenticate, requireMinRole('admin')];
+  // Chat management — importing from messengers, editing, deleting, bulk ops —
+  // is messenger administration, locked to superadmin. Regular users get
+  // read-only access (GET endpoints) so they can pick broadcast recipients.
+  const superadminPreHandlers = [authenticate, requireMinRole('superadmin')];
 
   // ─── GET /chats ───
 
@@ -104,8 +107,10 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
 
       const where: Record<string, unknown> = { organizationId, deletedAt: null };
 
-      // User role: only see own imported chats; Admin with scope=my: also only own
-      if (request.user.role === 'user' || scope === 'my') {
+      // Superadmin imports the org's chats; every user can target them for
+      // broadcasts, so all org chats are visible. The optional `scope=my`
+      // filter still narrows the list to chats the caller imported themselves.
+      if (scope === 'my') {
         where.importedById = request.user.id;
       }
 
@@ -275,7 +280,7 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
 
   fastify.patch(
     '/chats/:id',
-    { preHandler: adminPreHandlers },
+    { preHandler: superadminPreHandlers },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const paramsParsed = chatIdParamSchema.safeParse(request.params);
       if (!paramsParsed.success) {
@@ -391,7 +396,7 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
 
   fastify.delete(
     '/chats/:id',
-    { preHandler: authPreHandlers },
+    { preHandler: superadminPreHandlers },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const paramsParsed = chatIdParamSchema.safeParse(request.params);
       if (!paramsParsed.success) {
@@ -464,7 +469,7 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
 
   fastify.post(
     '/chats/import',
-    { preHandler: authPreHandlers },
+    { preHandler: superadminPreHandlers },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const parsed = importBodySchema.safeParse(request.body);
       if (!parsed.success) {
@@ -535,7 +540,7 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
 
   fastify.post(
     '/chats/import-with-history',
-    { preHandler: authPreHandlers },
+    { preHandler: superadminPreHandlers },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const parsed = importWithHistoryBodySchema.safeParse(request.body);
       if (!parsed.success) {
@@ -714,7 +719,7 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
 
   fastify.post(
     '/chats/:id/load-full-history',
-    { preHandler: authPreHandlers },
+    { preHandler: superadminPreHandlers },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const paramsParsed = chatIdParamSchema.safeParse(request.params);
       if (!paramsParsed.success) {
@@ -783,7 +788,7 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
 
   fastify.post(
     '/chats/bulk/assign',
-    { preHandler: adminPreHandlers },
+    { preHandler: superadminPreHandlers },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const parsed = bulkAssignBodySchema.safeParse(request.body);
       if (!parsed.success) {
@@ -822,7 +827,7 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
 
   fastify.post(
     '/chats/bulk/tag',
-    { preHandler: adminPreHandlers },
+    { preHandler: superadminPreHandlers },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const parsed = bulkTagBodySchema.safeParse(request.body);
       if (!parsed.success) {
@@ -911,7 +916,7 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
 
   fastify.delete(
     '/chats/bulk',
-    { preHandler: authPreHandlers },
+    { preHandler: superadminPreHandlers },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const parsed = bulkDeleteBodySchema.safeParse(request.body);
       if (!parsed.success) {

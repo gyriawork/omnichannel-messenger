@@ -79,15 +79,7 @@ const messengers: MessengerInfo[] = [
     textClass: 'text-messenger-wa-text',
     badgeBg: 'bg-messenger-wa-bg',
   },
-  {
-    key: 'gmail',
-    name: 'Gmail',
-    abbr: 'GM',
-    description: 'Read and send emails through your Gmail account',
-    bgClass: 'bg-messenger-gm-bg',
-    textClass: 'text-messenger-gm-text',
-    badgeBg: 'bg-messenger-gm-bg',
-  },
+  // Gmail intentionally hidden — service is focused on Slack/Telegram broadcasts.
 ];
 
 // ---------- Status helpers ----------
@@ -1073,33 +1065,7 @@ const faqItems: FaqItem[] = [
       { text: 'Once linked, your WhatsApp chats will be available for import. The session stays active as long as your phone has internet access.' },
     ],
   },
-  {
-    messenger: 'gmail',
-    title: 'How to connect Gmail',
-    abbr: 'GM',
-    bgClass: 'bg-messenger-gm-bg',
-    textClass: 'text-messenger-gm-text',
-    steps: [
-      { text: 'The easiest way: click "Connect with Google" on the Gmail card above. You will be redirected to Google to authorize Gmail access. This works if your administrator has configured Google OAuth on the server.' },
-      { text: 'If the "Connect with Google" button is not shown, use the manual method below.' },
-      {
-        text: 'Go to the Google Cloud Console and create a new project (or select an existing one).',
-        link: { url: 'https://console.cloud.google.com/', label: 'console.cloud.google.com' },
-      },
-      { text: 'In the left menu, go to "APIs & Services" > "Library". Search for "Gmail API" and enable it.' },
-      { text: 'Go to "APIs & Services" > "Credentials". Click "Create Credentials" > "OAuth client ID".' },
-      { text: 'If prompted, configure the consent screen first: select "External", fill in the app name and your email.' },
-      { text: 'For application type, select "Web application". Add http://localhost as an authorized redirect URI. Click "Create".' },
-      { text: 'Copy the Client ID and Client Secret from the popup.' },
-      {
-        text: 'To get a Refresh Token, use the OAuth 2.0 Playground: go to developers.google.com/oauthplayground, click the gear icon, check "Use your own OAuth credentials", and paste your Client ID and Client Secret.',
-        link: { url: 'https://developers.google.com/oauthplayground', label: 'OAuth Playground' },
-      },
-      { text: 'In the left panel, select "Gmail API v1" > select all scopes (or at least gmail.modify and gmail.send). Click "Authorize APIs" and sign in.' },
-      { text: 'Click "Exchange authorization code for tokens". Copy the Refresh Token value.' },
-      { text: 'Go back to this page, expand "Advanced: Enter Credentials Manually" on the Gmail card, and paste all three values: Client ID, Client Secret, and Refresh Token.' },
-    ],
-  },
+  // Gmail FAQ intentionally hidden — service is focused on Slack/Telegram broadcasts.
 ];
 
 // ---------- FAQ Section Component ----------

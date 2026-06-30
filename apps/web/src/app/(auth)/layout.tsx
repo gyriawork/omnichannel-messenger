@@ -34,8 +34,8 @@ export default function AuthLayout({
             Welcome to<br />Messengly
           </h1>
           <p className="mt-6 text-lg leading-relaxed text-white/80">
-            Your unified inbox for Telegram, Slack, WhatsApp, and Gmail.
-            Manage all conversations in one place.
+            Import your Telegram, Slack and WhatsApp chats and broadcast
+            prepared messages to all of them from one place.
           </p>
         </div>
       </div>

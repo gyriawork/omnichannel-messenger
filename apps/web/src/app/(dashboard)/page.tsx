@@ -41,11 +41,11 @@ const CATEGORY_BG: Record<ActivityCategory, string> = {
   organizations: 'bg-cyan-50 text-cyan-700',
 };
 
+// Gmail intentionally omitted — service is focused on Slack/Telegram broadcasts.
 const MESSENGER_CONFIG = {
   telegram: { label: 'Telegram', short: 'TG', color: 'bg-[#2AABEE]' },
   slack: { label: 'Slack', short: 'SL', color: 'bg-[#E01E5A]' },
   whatsapp: { label: 'WhatsApp', short: 'WA', color: 'bg-[#25D366]' },
-  gmail: { label: 'Gmail', short: 'GM', color: 'bg-[#EA4335]' },
 } as const;
 
 export default function DashboardPage() {
@@ -145,7 +145,7 @@ export default function DashboardPage() {
           <div>
             <h1 className="text-2xl font-semibold text-slate-900">Dashboard</h1>
             <p className="mt-1 text-sm text-slate-500">
-              {scope === 'my' ? 'Your personal stats' : 'Overview of your messaging workspace'}
+              {scope === 'my' ? 'Your personal stats' : 'Overview of your broadcast workspace'}
             </p>
           </div>
           {isAdmin && (

@@ -39,10 +39,19 @@ export default function SettingsPage() {
   const queryClient = useQueryClient();
   const user = useAuthStore((s) => s.user);
 
-  // Hide Workspace tab for regular users
-  const tabs = user?.role === 'user'
-    ? ALL_TABS.filter((t) => t.id !== 'workspace')
-    : ALL_TABS;
+  // Only the superadmin manages messenger integrations and the workspace.
+  // Regular users (broadcasters) get the Profile tab only.
+  const isSuperadmin = user?.role === 'superadmin';
+  const tabs = isSuperadmin
+    ? ALL_TABS
+    : ALL_TABS.filter((t) => t.id === 'profile');
+
+  // Keep the active tab valid when the role-filtered tab set changes.
+  useEffect(() => {
+    if (!tabs.some((t) => t.id === activeTab)) {
+      setActiveTab(tabs[0].id);
+    }
+  }, [tabs, activeTab]);
 
   // Handle OAuth callback query parameters
   useEffect(() => {
@@ -100,13 +109,13 @@ export default function SettingsPage() {
         </div>
 
         {/* Tab Content */}
-        {activeTab === 'integrations' && (
+        {activeTab === 'integrations' && isSuperadmin && (
           <IntegrationsTab
             autoOpenMessenger={autoOpenMessenger}
             onAutoOpenHandled={() => setAutoOpenMessenger(null)}
           />
         )}
-        {activeTab === 'workspace' && <WorkspaceTab />}
+        {activeTab === 'workspace' && isSuperadmin && <WorkspaceTab />}
         {activeTab === 'profile' && <ProfileTab />}
       </div>
     </div>

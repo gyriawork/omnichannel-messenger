@@ -62,7 +62,9 @@ function sendError(reply: FastifyReply, code: string, message: string, statusCod
 
 export default async function broadcastRoutes(fastify: FastifyInstance): Promise<void> {
   const authPreHandlers = [authenticate];
-  const adminPreHandlers = [authenticate, requireMinRole('admin')];
+  // Broadcasting is the regular user's core job — allow any authenticated user.
+  // (Messenger configuration is locked to superadmin; see integrations routes.)
+  const broadcastPreHandlers = [authenticate, requireMinRole('user')];
 
   // ─── GET /broadcasts ───
 
@@ -392,7 +394,7 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
 
   fastify.post(
     '/broadcasts',
-    { preHandler: adminPreHandlers },
+    { preHandler: broadcastPreHandlers },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const parsed = createBroadcastBodySchema.safeParse(request.body);
       if (!parsed.success) {
@@ -478,7 +480,7 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
 
   fastify.patch(
     '/broadcasts/:id',
-    { preHandler: adminPreHandlers },
+    { preHandler: broadcastPreHandlers },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const paramsParsed = idParamSchema.safeParse(request.params);
       if (!paramsParsed.success) {
@@ -590,7 +592,7 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
 
   fastify.delete(
     '/broadcasts/:id',
-    { preHandler: adminPreHandlers },
+    { preHandler: broadcastPreHandlers },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const paramsParsed = idParamSchema.safeParse(request.params);
       if (!paramsParsed.success) {
@@ -628,7 +630,7 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
 
   fastify.post(
     '/broadcasts/:id/send',
-    { preHandler: adminPreHandlers },
+    { preHandler: broadcastPreHandlers },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const paramsParsed = idParamSchema.safeParse(request.params);
       if (!paramsParsed.success) {
@@ -720,7 +722,7 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
 
   fastify.post(
     '/broadcasts/:id/retry',
-    { preHandler: adminPreHandlers },
+    { preHandler: broadcastPreHandlers },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const paramsParsed = idParamSchema.safeParse(request.params);
       if (!paramsParsed.success) {
@@ -788,7 +790,7 @@ export default async function broadcastRoutes(fastify: FastifyInstance): Promise
 
   fastify.post(
     '/broadcasts/:id/duplicate',
-    { preHandler: adminPreHandlers },
+    { preHandler: broadcastPreHandlers },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const paramsParsed = idParamSchema.safeParse(request.params);
       if (!paramsParsed.success) {

@@ -95,7 +95,6 @@ export function BroadcastWizard() {
     'telegram',
     'slack',
     'whatsapp',
-    'gmail',
   ]);
   const fileInputRef = useRef<React.ElementRef<'input'>>(null);
 
@@ -539,7 +538,7 @@ export function BroadcastWizard() {
                 />
               </div>
               <div className="flex gap-1">
-                {(['telegram', 'slack', 'whatsapp', 'gmail'] as const).map(
+                {(['telegram', 'slack', 'whatsapp'] as const).map(
                   (m) => {
                     const meta = messengerMeta[m];
                     return (
