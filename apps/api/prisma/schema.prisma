@@ -102,6 +102,7 @@ model Chat {
   organization     Organization @relation(fields: [organizationId], references: [id])
   ownerId          String?
   owner            User?    @relation("ChatOwner", fields: [ownerId], references: [id])
+  ownerName        String?  // free-text owner label (replaces user-based owner)
   importedById     String
   importedBy       User     @relation("ChatImporter", fields: [importedById], references: [id])
   messageCount     Int      @default(0)
@@ -266,6 +267,7 @@ model Template {
   id             String   @id @default(uuid())
   name           String
   messageText    String
+  attachments    Json?    // optional files attached to the template, carried into broadcasts
   usageCount     Int      @default(0)
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id])

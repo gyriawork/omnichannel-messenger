@@ -18,14 +18,23 @@ const listQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
 });
 
+const attachmentSchema = z.object({
+  url: z.string(),
+  filename: z.string(),
+  mimeType: z.string(),
+  size: z.number(),
+});
+
 const createTemplateBodySchema = z.object({
   name: z.string().min(1).max(255).trim(),
   messageText: z.string().min(1).max(10000).trim(),
+  attachments: z.array(attachmentSchema).max(10).optional(),
 });
 
 const updateTemplateBodySchema = z.object({
   name: z.string().min(1).max(255).trim().optional(),
   messageText: z.string().min(1).max(10000).trim().optional(),
+  attachments: z.array(attachmentSchema).max(10).nullable().optional(),
 });
 
 // ─── Helpers ───
@@ -124,12 +133,13 @@ export default async function templateRoutes(fastify: FastifyInstance): Promise<
         return sendError(reply, 'VALIDATION_ERROR', parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '), 422);
       }
 
-      const { name, messageText } = parsed.data;
+      const { name, messageText, attachments } = parsed.data;
 
       const template = await prisma.template.create({
         data: {
           name,
           messageText,
+          attachments: attachments ?? undefined,
           organizationId,
           createdById: request.user.id,
         },
@@ -171,8 +181,8 @@ export default async function templateRoutes(fastify: FastifyInstance): Promise<
         return sendError(reply, 'VALIDATION_ERROR', bodyParsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '), 422);
       }
 
-      const { name, messageText } = bodyParsed.data;
-      if (name === undefined && messageText === undefined) {
+      const { name, messageText, attachments } = bodyParsed.data;
+      if (name === undefined && messageText === undefined && attachments === undefined) {
         return sendError(reply, 'VALIDATION_ERROR', 'At least one field must be provided for update', 422);
       }
 
@@ -198,6 +208,8 @@ export default async function templateRoutes(fastify: FastifyInstance): Promise<
       const updateData: Record<string, unknown> = {};
       if (name !== undefined) updateData.name = name;
       if (messageText !== undefined) updateData.messageText = messageText;
+      // null/empty clears attachments; store [] to avoid Prisma JSON-null typing.
+      if (attachments !== undefined) updateData.attachments = attachments ?? [];
 
       const updated = await prisma.template.update({
         where: { id },
@@ -301,6 +313,7 @@ export default async function templateRoutes(fastify: FastifyInstance): Promise<
         data: {
           name: `${existing.name} (Copy)`,
           messageText: existing.messageText,
+          attachments: existing.attachments ?? undefined,
           usageCount: 0,
           organizationId,
           createdById: request.user.id,

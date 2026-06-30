@@ -82,7 +82,7 @@ export interface ChatFilters {
   search?: string;
   messenger?: MessengerType | null;
   status?: string;
-  ownerId?: string;
+  owner?: string;
   tagId?: string;
   limit?: number;
 }

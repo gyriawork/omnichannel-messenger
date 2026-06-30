@@ -459,6 +459,15 @@ export function BroadcastWizard() {
                   const template = templates.find((t) => t.id === templateId);
                   if (template) {
                     setValue('messageText', template.messageText, { shouldValidate: true });
+                    // Carry the template's attachments into the broadcast so the
+                    // user doesn't have to re-attach them.
+                    const tplAttachments = template.attachments ?? [];
+                    if (tplAttachments.length > 0) {
+                      setBroadcastAttachments((prev) => {
+                        const existing = new Set(prev.map((a) => a.url));
+                        return [...prev, ...tplAttachments.filter((a) => !existing.has(a.url))];
+                      });
+                    }
                     templateUseMutation.mutate(templateId);
                     toast.success(`Template "${template.name}" applied`);
                   }

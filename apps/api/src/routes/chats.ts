@@ -17,7 +17,7 @@ const messengerEnum = z.enum(['telegram', 'slack', 'whatsapp', 'gmail']);
 const listChatsQuerySchema = z.object({
   messenger: messengerEnum.optional(),
   status: z.enum(['active', 'read-only']).optional(),
-  ownerId: z.string().uuid().optional(),
+  owner: z.string().min(1).max(100).optional(), // free-text owner name filter
   search: z.string().min(1).max(200).optional(),
   tagId: z.string().uuid().optional(),
   scope: z.enum(['org', 'my']).optional(),
@@ -38,7 +38,7 @@ const updateChatBodySchema = z.object({
 
 const bulkAssignBodySchema = z.object({
   chatIds: z.array(z.string().uuid()).min(1).max(500),
-  ownerId: z.string().uuid(),
+  ownerName: z.string().max(100), // free text; empty string clears the owner
 });
 
 const bulkTagBodySchema = z.object({
@@ -87,7 +87,7 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
         return sendError(reply, 'VALIDATION_ERROR', parsed.error.issues.map((i) => i.message).join('; '), 422);
       }
 
-      const { messenger, status, ownerId, search, tagId, scope, page, limit } = parsed.data;
+      const { messenger, status, owner, search, tagId, scope, page, limit } = parsed.data;
 
       const organizationId = getOrgId(request);
       if (!organizationId) {
@@ -95,7 +95,7 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
       }
 
       const queryHash = createHash('md5')
-        .update(JSON.stringify({ messenger, status, ownerId, search, tagId, page, limit, userId: request.user.id }))
+        .update(JSON.stringify({ messenger, status, owner, search, tagId, page, limit, userId: request.user.id }))
         .digest('hex')
         .slice(0, 12);
 
@@ -116,7 +116,7 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
 
       if (messenger) where.messenger = messenger;
       if (status) where.status = status;
-      if (ownerId) where.ownerId = ownerId;
+      if (owner) where.ownerName = owner;
       if (search) {
         where.OR = [
           { name: { contains: search, mode: 'insensitive' } },
@@ -166,6 +166,7 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
         status: chat.status,
         organizationId: chat.organizationId,
         ownerId: chat.ownerId,
+        ownerName: chat.ownerName,
         owner: chat.owner
           ? { id: chat.owner.id, name: chat.owner.name }
           : null,
@@ -788,33 +789,26 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
 
   fastify.post(
     '/chats/bulk/assign',
-    { preHandler: superadminPreHandlers },
+    { preHandler: authPreHandlers },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const parsed = bulkAssignBodySchema.safeParse(request.body);
       if (!parsed.success) {
         return sendError(reply, 'VALIDATION_ERROR', parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '), 422);
       }
 
-      const { chatIds, ownerId } = parsed.data;
+      const { chatIds, ownerName } = parsed.data;
       const organizationId = getOrgId(request);
       if (!organizationId) {
         return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
       }
 
-      // Validate owner belongs to org
-      const ownerUser = await prisma.user.findFirst({
-        where: { id: ownerId, organizationId },
-      });
-      if (!ownerUser) {
-        return sendError(reply, 'VALIDATION_ERROR', `User with id ${ownerId} not found in organization`, 422);
-      }
-
+      // Owner is a free-text label; empty string clears it.
       const result = await prisma.chat.updateMany({
         where: {
           id: { in: chatIds },
           organizationId,
         },
-        data: { ownerId },
+        data: { ownerName: ownerName.trim() || null },
       });
 
       await cacheInvalidate(cacheKey(organizationId, 'chats', '*'));
@@ -827,7 +821,7 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
 
   fastify.post(
     '/chats/bulk/tag',
-    { preHandler: superadminPreHandlers },
+    { preHandler: authPreHandlers },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const parsed = bulkTagBodySchema.safeParse(request.body);
       if (!parsed.success) {

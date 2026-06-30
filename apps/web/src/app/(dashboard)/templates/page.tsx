@@ -12,9 +12,11 @@ import {
   Loader2,
   Clock,
   BarChart3,
+  Paperclip,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { api } from '@/lib/api';
 import {
   useTemplates,
   useCreateTemplate,
@@ -22,7 +24,7 @@ import {
   useDeleteTemplate,
   useDuplicateTemplate,
 } from '@/hooks/useTemplates';
-import type { Template } from '@/types/template';
+import type { Template, TemplateAttachment } from '@/types/template';
 import { RequireOrgContext } from '@/components/layout/RequireOrgContext';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { EmptyState as EmptyStateUI } from '@/components/ui/EmptyState';
@@ -90,10 +92,10 @@ export default function TemplatesPage() {
       {(isCreating || editingTemplate) && (
         <TemplateEditor
           template={editingTemplate}
-          onSave={async (name, messageText) => {
+          onSave={async (name, messageText, attachments) => {
             if (editingTemplate) {
               updateMutation.mutate(
-                { id: editingTemplate.id, name, messageText },
+                { id: editingTemplate.id, name, messageText, attachments },
                 {
                   onSuccess: () => {
                     toast.success('Template updated');
@@ -104,7 +106,7 @@ export default function TemplatesPage() {
               );
             } else {
               createMutation.mutate(
-                { name, messageText },
+                { name, messageText, attachments },
                 {
                   onSuccess: () => {
                     toast.success('Template created');
@@ -235,12 +237,37 @@ function TemplateEditor({
   isSaving,
 }: {
   template: Template | null;
-  onSave: (name: string, messageText: string) => void;
+  onSave: (name: string, messageText: string, attachments: TemplateAttachment[]) => void;
   onCancel: () => void;
   isSaving: boolean;
 }) {
   const [name, setName] = useState(template?.name || '');
   const [messageText, setMessageText] = useState(template?.messageText || '');
+  const [attachments, setAttachments] = useState<TemplateAttachment[]>(template?.attachments ?? []);
+  const [isUploading, setIsUploading] = useState(false);
+
+  const handleFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
+    e.target.value = '';
+    setIsUploading(true);
+    try {
+      for (const file of files) {
+        const result = await api.upload<{ file: { url: string; size: number; mimeType: string; originalName: string } }>(
+          '/api/uploads',
+          file,
+        );
+        setAttachments((prev) => [
+          ...prev,
+          { url: result.file.url, filename: result.file.originalName, mimeType: result.file.mimeType, size: result.file.size },
+        ]);
+      }
+    } catch {
+      toast.error('Failed to upload file');
+    } finally {
+      setIsUploading(false);
+    }
+  };
 
   const isValid = name.trim().length > 0 && messageText.trim().length > 0;
   const charCount = messageText.length;
@@ -296,6 +323,40 @@ function TemplateEditor({
           />
         </div>
 
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-slate-700">
+            Attachments{' '}
+            <span className="font-normal text-slate-400">
+              (optional — sent with every broadcast that uses this template)
+            </span>
+          </label>
+          {attachments.length > 0 && (
+            <div className="mb-2 flex flex-wrap gap-2">
+              {attachments.map((a, i) => (
+                <span
+                  key={`${a.url}-${i}`}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-2.5 py-1 text-xs text-slate-700"
+                >
+                  <Paperclip className="h-3 w-3 shrink-0" />
+                  <span className="max-w-[160px] truncate">{a.filename}</span>
+                  <button
+                    type="button"
+                    onClick={() => setAttachments((prev) => prev.filter((_, idx) => idx !== i))}
+                    className="rounded-full p-0.5 hover:bg-black/5"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+          <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border-[1.5px] border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50">
+            {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
+            Attach files
+            <input type="file" multiple className="hidden" onChange={handleFiles} disabled={isUploading} />
+          </label>
+        </div>
+
         <div className="flex justify-end gap-2">
           <button
             onClick={onCancel}
@@ -304,7 +365,7 @@ function TemplateEditor({
             Cancel
           </button>
           <button
-            onClick={() => onSave(name.trim(), messageText.trim())}
+            onClick={() => onSave(name.trim(), messageText.trim(), attachments)}
             disabled={!isValid || isSaving}
             className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-hover disabled:opacity-50"
           >

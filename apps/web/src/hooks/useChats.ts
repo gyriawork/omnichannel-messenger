@@ -31,7 +31,7 @@ export function useChats(filters?: ChatFilters) {
       if (filters?.search) params.set('search', filters.search);
       if (filters?.messenger) params.set('messenger', filters.messenger);
       if (filters?.status) params.set('status', filters.status);
-      if (filters?.ownerId) params.set('ownerId', filters.ownerId);
+      if (filters?.owner) params.set('owner', filters.owner);
       if (filters?.tagId) params.set('tagId', filters.tagId);
       if (filters?.limit) params.set('limit', String(filters.limit));
       const query = params.toString();
@@ -289,7 +289,7 @@ export function useChatPreferences() {
 export function useBulkAssignChats() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: { chatIds: string[]; ownerId: string }) => api.post('/api/chats/bulk/assign', data),
+    mutationFn: (data: { chatIds: string[]; ownerName: string }) => api.post('/api/chats/bulk/assign', data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['chats'] }),
   });
 }

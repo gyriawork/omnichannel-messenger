@@ -23,7 +23,7 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { useChats, useBulkDeleteChats, useBulkAssignChats, useBulkTagChats } from '@/hooks/useChats';
 import { useTags } from '@/hooks/useTags';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { ChatAvatar } from '@/components/ui/ChatAvatar';
 import { Skeleton } from '@/components/ui/Skeleton';
@@ -52,15 +52,41 @@ const chatTypeIcons: Record<string, typeof MessageSquare> = {
   channel: Hash,
 };
 
-// ─── Assign Owner Dropdown ───
+// ─── Export chats to an Excel-openable .xls file (no external dependency) ───
 
-interface OrgMember {
-  id: string;
-  name: string;
-  email: string;
-  role: string;
-  avatar?: string | null;
+function exportChatsToXls(chats: Chat[]) {
+  const esc = (s: unknown) =>
+    String(s ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  const headers = ['Name', 'Messenger', 'Type', 'Owner', 'Tags', 'Last active'];
+  const rows = chats.map((c) => [
+    c.name,
+    messengerConfig[c.messenger]?.label ?? c.messenger,
+    c.chatType,
+    c.ownerName ?? '',
+    (c.tags ?? []).map((t) => t.name).join(', '),
+    c.lastActivityAt ? new Date(c.lastActivityAt).toLocaleString() : '',
+  ]);
+  const body =
+    `<table><thead><tr>${headers.map((h) => `<th>${esc(h)}</th>`).join('')}</tr></thead>` +
+    `<tbody>${rows
+      .map((r) => `<tr>${r.map((cell) => `<td>${esc(cell)}</td>`).join('')}</tr>`)
+      .join('')}</tbody></table>`;
+  const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"></head><body>${body}</body></html>`;
+  const blob = new Blob([html], { type: 'application/vnd.ms-excel' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `chats-${new Date().toISOString().slice(0, 10)}.xls`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
+
+// ─── Assign Owner Dropdown (free-text owner label) ───
 
 function AssignOwnerDropdown({
   selectedIds,
@@ -69,25 +95,22 @@ function AssignOwnerDropdown({
   selectedIds: string[];
   onDone: () => void;
 }) {
-  const [search, setSearch] = useState('');
+  const [ownerName, setOwnerName] = useState('');
   const assignMutation = useBulkAssignChats();
-  const { data, isLoading } = useQuery<{ users: OrgMember[] }>({
-    queryKey: ['workspace-users'],
-    queryFn: () => api.get('/api/users'),
-  });
-  const members = (data?.users ?? []).filter((u) =>
-    !search || u.name.toLowerCase().includes(search.toLowerCase()) || u.email.toLowerCase().includes(search.toLowerCase()),
-  );
 
-  const handleAssign = (member: OrgMember) => {
+  const save = (value: string) => {
     assignMutation.mutate(
-      { chatIds: selectedIds, ownerId: member.id },
+      { chatIds: selectedIds, ownerName: value },
       {
         onSuccess: () => {
-          toast.success(`${member.name} assigned as owner of ${selectedIds.length} chat(s)`);
+          toast.success(
+            value.trim()
+              ? `Owner set to "${value.trim()}" for ${selectedIds.length} chat(s)`
+              : `Owner cleared for ${selectedIds.length} chat(s)`,
+          );
           onDone();
         },
-        onError: () => toast.error('Failed to assign owner'),
+        onError: () => toast.error('Failed to set owner'),
       },
     );
   };
@@ -95,42 +118,40 @@ function AssignOwnerDropdown({
   return (
     <>
       <div className="fixed inset-0 z-10" onClick={onDone} />
-      <div className="absolute left-0 top-full z-20 mt-1 w-64 rounded-lg border border-slate-200 bg-white shadow-lg">
-        <div className="p-2">
+      <div className="absolute left-0 top-full z-20 mt-1 w-64 rounded-lg border border-slate-200 bg-white p-2 shadow-lg">
+        <p className="px-1 pb-1.5 text-xs font-medium text-slate-400">Set owner (any name)</p>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (ownerName.trim()) save(ownerName);
+          }}
+          className="flex flex-col gap-2"
+        >
           <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search members..."
+            value={ownerName}
+            onChange={(e) => setOwnerName(e.target.value)}
+            placeholder="e.g. John, Sales team…"
             autoFocus
             className="w-full rounded border-[1.5px] border-slate-200 px-2.5 py-1.5 text-xs transition-colors placeholder:text-slate-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15"
           />
-        </div>
-        <div className="max-h-48 overflow-y-auto py-1">
-          {isLoading ? (
-            <div className="flex items-center justify-center py-4">
-              <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
-            </div>
-          ) : members.length === 0 ? (
-            <p className="px-3 py-2 text-xs text-slate-400">No members found</p>
-          ) : (
-            members.map((member) => (
-              <button
-                key={member.id}
-                onClick={() => handleAssign(member)}
-                disabled={assignMutation.isPending}
-                className="flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors hover:bg-slate-50 disabled:opacity-50"
-              >
-                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent/10 text-[10px] font-semibold text-accent">
-                  {member.name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase()}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-xs font-medium text-slate-700">{member.name}</p>
-                  <p className="truncate text-[10px] text-slate-400">{member.email}</p>
-                </div>
-              </button>
-            ))
-          )}
-        </div>
+          <div className="flex gap-1.5">
+            <button
+              type="submit"
+              disabled={assignMutation.isPending || !ownerName.trim()}
+              className="flex-1 rounded bg-accent px-2.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-accent-hover disabled:opacity-50"
+            >
+              Save
+            </button>
+            <button
+              type="button"
+              onClick={() => save('')}
+              disabled={assignMutation.isPending}
+              className="rounded border-[1.5px] border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50"
+            >
+              Clear
+            </button>
+          </div>
+        </form>
       </div>
     </>
   );
@@ -238,10 +259,12 @@ function BulkActions({
   selectedIds,
   selectedChats,
   onClear,
+  isSuperadmin,
 }: {
   selectedIds: string[];
   selectedChats: Chat[];
   onClear: () => void;
+  isSuperadmin: boolean;
 }) {
   const [showAssign, setShowAssign] = useState(false);
   const [showTagMenu, setShowTagMenu] = useState(false);
@@ -301,7 +324,8 @@ function BulkActions({
         )}
       </div>
 
-      {/* Delete */}
+      {/* Delete — superadmin only */}
+      {isSuperadmin && (
       <div className="relative">
         <button
           onClick={() => setShowDeleteConfirm(true)}
@@ -343,6 +367,7 @@ function BulkActions({
           </>
         )}
       </div>
+      )}
 
       <button
         onClick={onClear}
@@ -479,11 +504,6 @@ function GroupRow({
       {/* Owner — N/A for groups */}
       <td className="px-4 py-3 text-xs text-slate-300">—</td>
 
-      {/* Total messages */}
-      <td className="px-4 py-3 text-xs font-medium text-slate-600">
-        {group.totalMessages.toLocaleString()}
-      </td>
-
       {/* Tags union */}
       <td className="px-4 py-3">
         <div className="flex flex-wrap gap-1">
@@ -537,7 +557,7 @@ export default function ChatsPage() {
     search: search || undefined,
     messenger: messengerFilter,
     status: statusFilter || undefined,
-    ownerId: ownerFilter || undefined,
+    owner: ownerFilter || undefined,
     tagId: tagFilter || undefined,
     limit: 1000,
   });
@@ -733,7 +753,6 @@ export default function ChatsPage() {
           <option value="lastActivityAt">Sort: Last Active</option>
           <option value="lastMessageDate">Sort: Last Message</option>
           <option value="name">Sort: Name</option>
-          <option value="messageCount">Sort: Messages</option>
           <option value="chatType">Sort: Type</option>
           <option value="tags">Sort: Tags</option>
         </select>
@@ -747,15 +766,27 @@ export default function ChatsPage() {
           <ArrowUpDown className="h-3.5 w-3.5" />
           {sortDir === 'desc' ? '\u2193' : '\u2191'}
         </button>
+
+        {/* Export to Excel \u2014 available to all roles */}
+        <button
+          onClick={() => exportChatsToXls(chats)}
+          disabled={chats.length === 0}
+          className="flex items-center gap-1.5 rounded border-[1.5px] border-slate-200 px-2.5 py-2 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50"
+          title="Export chats to Excel"
+        >
+          <Download className="h-3.5 w-3.5" />
+          Export
+        </button>
       </div>
 
-      {/* Bulk actions — superadmin only (chat management) */}
-      {isSuperadmin && selectedIds.length > 0 && (
+      {/* Bulk actions — tags + owner for all roles; delete is superadmin-only */}
+      {selectedIds.length > 0 && (
         <div className="mb-4">
           <BulkActions
             selectedIds={selectedIds}
             selectedChats={chats.filter((c) => selectedIds.includes(c.id))}
             onClear={() => setSelectedIds([])}
+            isSuperadmin={isSuperadmin}
           />
         </div>
       )}
@@ -931,9 +962,6 @@ export default function ChatsPage() {
                   Owner
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">
-                  Messages
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">
                   Tags
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">
@@ -1010,11 +1038,6 @@ export default function ChatsPage() {
                     {/* Owner */}
                     <td className="px-4 py-3 text-xs text-slate-500">
                       {chat.ownerName ?? '—'}
-                    </td>
-
-                    {/* Messages */}
-                    <td className="px-4 py-3 text-xs text-slate-600 font-medium">
-                      {chat.messageCount.toLocaleString()}
                     </td>
 
                     {/* Tags */}
