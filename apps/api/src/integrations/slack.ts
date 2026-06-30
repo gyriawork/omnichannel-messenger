@@ -33,8 +33,12 @@ export class SlackAdapter implements MessengerAdapter {
   private botToken?: string;
 
   constructor(credentials: SlackCredentials) {
-    this.token = credentials.token;
+    // Prefer the bot token (xoxb-) as the primary client so messages post AS the
+    // app/bot. OAuth connections also store a user token (xoxp-); using that would
+    // post under the authorizing user's name. The bot token also scopes listing
+    // and sending to conversations the bot can actually reach.
     this.botToken = credentials.botToken;
+    this.token = credentials.botToken || credentials.token;
   }
 
   async connect(_credentials?: Record<string, unknown>): Promise<void> {
@@ -121,6 +125,9 @@ export class SlackAdapter implements MessengerAdapter {
               chatType = 'group';
             } else {
               chatType = 'channel';
+              // The bot can only post to channels it has joined — skip the rest
+              // so users don't import channels that would fail to broadcast.
+              if (!channel.is_member) continue;
             }
 
             let name = channel.name ?? channel.id;
