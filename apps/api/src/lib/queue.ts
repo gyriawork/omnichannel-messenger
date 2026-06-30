@@ -1,9 +1,14 @@
-import { Queue } from 'bullmq';
+import { Queue, type ConnectionOptions } from 'bullmq';
 import IORedis from 'ioredis';
 
+// Cast to BullMQ's ConnectionOptions: when npm installs a nested copy of
+// ioredis under bullmq (different from the app's ioredis), the two `Redis`
+// types stop matching even though the instance is runtime-compatible. The
+// cast keeps the shared connection while satisfying the type checker on a
+// non-deduped install (e.g. Railway's `npm i`).
 const connection = new IORedis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
   maxRetriesPerRequest: null,
-});
+}) as unknown as ConnectionOptions;
 
 export const broadcastQueue = new Queue('broadcast', {
   connection,
