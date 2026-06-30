@@ -586,12 +586,24 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
           phoneNumber,
         );
 
+        // Observability: which delivery channel did Telegram choose? App =
+        // code sent inside the Telegram app (service chat) to active sessions;
+        // Sms/Call = sent to the phone. Helps diagnose "code not arriving".
+        const sentType = (sendResult as { type?: { className?: string } }).type?.className;
+        const nextType = (sendResult as { nextType?: { className?: string } }).nextType?.className;
+        request.log.info(
+          { telegramSendCode: { sentType, nextType, timeout: (sendResult as { timeout?: number }).timeout } },
+          'Telegram sendCode dispatched',
+        );
+
         // Store the client for step 2
         await storePendingAuth(request.user.id, phoneNumber, client, apiId, apiHash);
 
         return reply.send({
           phoneCodeHash: sendResult.phoneCodeHash,
           phoneNumber,
+          // Surfaced so the UI can tell the user where to look for the code.
+          deliveryType: sentType,
         });
       } catch (err) {
         await client.disconnect().catch(() => {});
