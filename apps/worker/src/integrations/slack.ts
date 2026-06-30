@@ -8,6 +8,7 @@ import { MessengerError } from './base.js';
 
 interface SlackCredentials {
   token: string;
+  botToken?: string;
 }
 
 export class SlackAdapter implements MessengerAdapter {
@@ -17,7 +18,10 @@ export class SlackAdapter implements MessengerAdapter {
   private userId: string = '';
 
   constructor(credentials: SlackCredentials) {
-    this.token = credentials.token;
+    // Prefer the bot token (xoxb-) so broadcasts post AS the app/bot. OAuth
+    // connections also store a user token (xoxp-); using that would post under
+    // the authorizing user's own name (the bug this fixes).
+    this.token = credentials.botToken || credentials.token;
   }
 
   async connect(_credentials?: Record<string, unknown>): Promise<void> {
