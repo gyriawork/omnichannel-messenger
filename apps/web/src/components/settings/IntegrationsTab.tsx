@@ -18,6 +18,7 @@ import {
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { MessengerIcon } from '@/components/ui/MessengerIcon';
@@ -31,9 +32,10 @@ import {
   useUpdateIntegrationSettings,
   useSlackOAuthStatus,
   useGmailOAuthAvailable,
-  useTelegramSendCode,
-  useTelegramVerifyCode,
   useTelegramConnectSession,
+  useTelegramQrStart,
+  useTelegramQrStatus,
+  useTelegramQr2fa,
 } from '@/hooks/useIntegrations';
 import { useWhatsAppPairing, type WhatsAppPairingStatus } from '@/hooks/useWhatsAppPairing';
 import { useAvailableIntegrations } from '@/hooks/useAvailableIntegrations';
@@ -131,15 +133,6 @@ function formatDate(iso?: string) {
 
 // ---------- Zod schemas for connect forms ----------
 
-const telegramStep1Schema = z.object({
-  phoneNumber: z.string().min(1, 'Phone number is required'),
-});
-
-const telegramStep2Schema = z.object({
-  code: z.string().min(1, 'Verification code is required'),
-  password: z.string().optional(),
-});
-
 const telegramSessionSchema = z.object({
   session: z.string().min(1, 'Session key is required'),
   phoneNumber: z.string().optional(),
@@ -157,285 +150,145 @@ function TelegramConnectForm({
 }: {
   onSuccess: () => void;
 }) {
-  // Default to the phone+code flow. The session-key path is available but
-  // optional (not a required field) via a link.
-  const [mode, setMode] = useState<'session' | 'phone'>('phone');
-  const [step, setStep] = useState<'phone' | 'code' | 'done'>('phone');
-  const [phoneCodeHash, setPhoneCodeHash] = useState('');
-  const [phoneNumber, setPhoneNumber] = useState('');
-  const [needs2FA, setNeeds2FA] = useState(false);
+  // QR-code login is the primary method — no verification code is involved.
+  // Session-key paste is kept as a fallback.
+  const [mode, setMode] = useState<'qr' | 'session'>('qr');
+  const [done, setDone] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const queryClient = useQueryClient();
 
-  const sendCodeMutation = useTelegramSendCode();
-  const verifyCodeMutation = useTelegramVerifyCode();
+  // ── QR login ──
+  const qrStart = useTelegramQrStart();
+  const qr2fa = useTelegramQr2fa();
+  const [qrActive, setQrActive] = useState(false);
+  const [twoFaPassword, setTwoFaPassword] = useState('');
+  const { data: qrStatus } = useTelegramQrStatus(mode === 'qr' && qrActive && !done);
+
+  const beginQr = () => {
+    setErrorMessage(null);
+    setQrActive(false);
+    qrStart.mutate(undefined, {
+      onSuccess: () => setQrActive(true),
+      onError: (err) =>
+        setErrorMessage(err instanceof Error ? err.message : 'Failed to start QR login'),
+    });
+  };
+
+  // Start a QR login when entering QR mode.
+  useEffect(() => {
+    if (mode === 'qr' && !done) beginQr();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode]);
+
+  // React to status changes from polling.
+  useEffect(() => {
+    if (!qrStatus) return;
+    if (qrStatus.status === 'connected') {
+      setQrActive(false);
+      setDone(true);
+      queryClient.invalidateQueries({ queryKey: ['integrations'] });
+      toast.success('Telegram connected successfully!');
+      onSuccess();
+    } else if (qrStatus.status === 'error') {
+      setQrActive(false);
+      setErrorMessage(qrStatus.error || 'QR login failed');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [qrStatus?.status, qrStatus?.error]);
+
+  const submit2fa = () => {
+    const pw = twoFaPassword.trim();
+    if (!pw) return;
+    setTwoFaPassword('');
+    qr2fa.mutate(pw, {
+      onError: (err) =>
+        setErrorMessage(err instanceof Error ? err.message : 'Failed to submit 2FA password'),
+    });
+  };
+
+  // ── Session key (fallback) ──
   const connectSessionMutation = useTelegramConnectSession();
-
   const sessionForm = useForm<z.infer<typeof telegramSessionSchema>>({
     resolver: zodResolver(telegramSessionSchema),
   });
-
-  const step1Form = useForm<z.infer<typeof telegramStep1Schema>>({
-    resolver: zodResolver(telegramStep1Schema),
-  });
-
-  const step2Form = useForm<z.infer<typeof telegramStep2Schema>>({
-    resolver: zodResolver(telegramStep2Schema),
-  });
-
   const handleSession = (data: z.infer<typeof telegramSessionSchema>) => {
     setErrorMessage(null);
     connectSessionMutation.mutate(
       { session: data.session.trim(), phoneNumber: data.phoneNumber?.trim() || undefined },
       {
         onSuccess: () => {
-          setStep('done');
+          setDone(true);
           toast.success('Telegram connected successfully!');
           onSuccess();
         },
-        onError: (err) => {
-          setErrorMessage(err instanceof Error ? err.message : 'Invalid or expired session key');
-        },
+        onError: (err) =>
+          setErrorMessage(err instanceof Error ? err.message : 'Invalid or expired session key'),
       },
     );
   };
 
-  const handleStep1 = (data: z.infer<typeof telegramStep1Schema>) => {
-    setErrorMessage(null);
-    setPhoneNumber(data.phoneNumber);
-
-    sendCodeMutation.mutate(
-      { phoneNumber: data.phoneNumber },
-      {
-        onSuccess: (res) => {
-          setPhoneCodeHash(res.phoneCodeHash);
-          setStep('code');
-        },
-        onError: (err) => {
-          setErrorMessage(err instanceof Error ? err.message : 'Failed to send code');
-        },
-      },
-    );
-  };
-
-  const handleStep2 = (data: z.infer<typeof telegramStep2Schema>) => {
-    setErrorMessage(null);
-
-    verifyCodeMutation.mutate(
-      {
-        phoneNumber,
-        phoneCodeHash,
-        code: data.code,
-        password: data.password || undefined,
-      },
-      {
-        onSuccess: () => {
-          setStep('done');
-          toast.success('Telegram connected successfully!');
-          onSuccess();
-        },
-        onError: (err) => {
-          const message = err instanceof Error ? err.message : 'Verification failed';
-          if (message.includes('2FA') || message.includes('Two-factor') || message.includes('TELEGRAM_2FA_REQUIRED')) {
-            setNeeds2FA(true);
-            setErrorMessage('Two-factor authentication is enabled. Please enter your 2FA password.');
-          } else {
-            setErrorMessage(message);
-          }
-        },
-      },
-    );
-  };
-
-  // ── Primary: connect with a user-account session key ──
-  if (mode === 'session' && step !== 'done') {
+  if (done) {
     return (
-      <form onSubmit={sessionForm.handleSubmit(handleSession)} className="space-y-4">
+      <div className="flex flex-col items-center gap-3 py-4">
+        <CheckCircle2 className="h-12 w-12 text-emerald-500" />
+        <p className="text-sm font-medium text-slate-700">Telegram connected successfully!</p>
+      </div>
+    );
+  }
+
+  // ── QR mode (primary) ──
+  if (mode === 'qr') {
+    return (
+      <div className="space-y-4">
         <div className="flex items-start gap-2 rounded-lg bg-blue-50 p-3">
           <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-500" />
           <div className="space-y-1 text-xs text-blue-700">
-            <p className="font-medium">Connect with a session key (recommended)</p>
+            <p className="font-medium">Scan to connect — no code needed</p>
             <p>
-              Generate it once on your own computer (the login code arrives in your
-              Telegram), then paste it here. Run from the <code className="rounded bg-blue-100 px-1">apps/api</code> folder:
+              On your phone: <b>Telegram → Settings → Devices → Link Desktop Device</b>, then scan
+              this QR.
             </p>
-            <code className="block rounded bg-blue-100 px-2 py-1 font-mono">
-              npx tsx scripts/generate-telegram-session.ts
-            </code>
           </div>
         </div>
 
-        <div>
-          <label className="mb-1.5 block text-sm font-medium text-slate-700">Session key</label>
-          <textarea
-            {...sessionForm.register('session')}
-            rows={4}
-            placeholder="Paste the StringSession key here"
-            className={cn(
-              'w-full break-all rounded border-[1.5px] border-slate-200 px-3 py-2 font-mono text-xs transition-colors',
-              'placeholder:font-sans placeholder:text-slate-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15',
-              sessionForm.formState.errors.session && 'border-red-300 focus:border-red-400 focus:ring-red-100',
-            )}
-          />
-          {sessionForm.formState.errors.session && (
-            <p className="mt-1 text-xs text-red-500">{sessionForm.formState.errors.session.message}</p>
-          )}
-        </div>
-
-        <div>
-          <label className="mb-1.5 block text-sm font-medium text-slate-700">
-            Phone number <span className="text-slate-400">(optional)</span>
-          </label>
-          <input
-            {...sessionForm.register('phoneNumber')}
-            placeholder="+1234567890"
-            className="w-full rounded border-[1.5px] border-slate-200 px-3 py-2 text-sm transition-colors placeholder:text-slate-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15"
-          />
-        </div>
-
-        {errorMessage && (
-          <div className="flex items-start gap-2 rounded-lg bg-red-50 p-3">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
-            <p className="text-xs text-red-700">{errorMessage}</p>
-          </div>
-        )}
-
-        <button
-          type="submit"
-          disabled={connectSessionMutation.isPending}
-          className="flex w-full items-center justify-center gap-2 rounded bg-accent px-4 py-2.5 text-sm font-medium text-white transition-all hover:-translate-y-px hover:bg-accent-hover disabled:opacity-50"
-        >
-          {connectSessionMutation.isPending ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Connecting...
-            </>
-          ) : (
-            <>
-              <Plug className="h-4 w-4" />
-              Connect with session key
-            </>
-          )}
-        </button>
-
-        <button
-          type="button"
-          onClick={() => { setMode('phone'); setErrorMessage(null); }}
-          className="w-full text-center text-xs text-slate-400 transition-colors hover:text-slate-600"
-        >
-          Advanced: log in with phone + code (may not work from a server)
-        </button>
-      </form>
-    );
-  }
-
-  // ── Step 1: Phone number ──
-  if (step === 'phone') {
-    return (
-      <form onSubmit={step1Form.handleSubmit(handleStep1)} className="space-y-4">
-        <div>
-          <label className="mb-1.5 block text-sm font-medium text-slate-700">Phone Number</label>
-          <input
-            {...step1Form.register('phoneNumber')}
-            placeholder="+1234567890"
-            className={cn(
-              'w-full rounded border-[1.5px] border-slate-200 px-3 py-2 text-sm transition-colors',
-              'placeholder:text-slate-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15',
-              step1Form.formState.errors.phoneNumber && 'border-red-300 focus:border-red-400 focus:ring-red-100',
-            )}
-          />
-          {step1Form.formState.errors.phoneNumber && (
-            <p className="mt-1 text-xs text-red-500">{step1Form.formState.errors.phoneNumber.message}</p>
-          )}
-        </div>
-
-        {errorMessage && (
-          <div className="flex items-start gap-2 rounded-lg bg-red-50 p-3">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
-            <p className="text-xs text-red-700">{errorMessage}</p>
-          </div>
-        )}
-
-        <div className="flex items-start gap-2 rounded-lg bg-blue-50 p-3">
-          <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-500" />
-          <p className="text-xs text-blue-700">
-            A verification code will be sent to your Telegram app. Make sure
-            Telegram is installed and active on your phone.
-          </p>
-        </div>
-
-        <button
-          type="submit"
-          disabled={sendCodeMutation.isPending}
-          className="flex w-full items-center justify-center gap-2 rounded bg-accent px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px disabled:opacity-50"
-        >
-          {sendCodeMutation.isPending ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Sending code...
-            </>
-          ) : (
-            <>
-              <Plug className="h-4 w-4" />
-              Send Verification Code
-            </>
-          )}
-        </button>
-
-        <button
-          type="button"
-          onClick={() => { setMode('session'); setErrorMessage(null); }}
-          className="w-full text-center text-xs text-slate-400 transition-colors hover:text-slate-600"
-        >
-          ← Use a session key instead (recommended)
-        </button>
-      </form>
-    );
-  }
-
-  // ── Step 2: Verification code (+ optional 2FA) ──
-  if (step === 'code') {
-    return (
-      <form onSubmit={step2Form.handleSubmit(handleStep2)} className="space-y-4">
-        <div className="flex items-start gap-2 rounded-lg bg-emerald-50 p-3">
-          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
-          <p className="text-xs text-emerald-700">
-            Code sent! Check your Telegram app for a verification code.
-          </p>
-        </div>
-
-        <div>
-          <label className="mb-1.5 block text-sm font-medium text-slate-700">Verification Code</label>
-          <input
-            {...step2Form.register('code')}
-            placeholder="Enter the code from Telegram"
-            autoFocus
-            className={cn(
-              'w-full rounded border-[1.5px] border-slate-200 px-3 py-2 text-sm font-mono tracking-widest transition-colors',
-              'placeholder:text-slate-400 placeholder:font-sans placeholder:tracking-normal focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15',
-              step2Form.formState.errors.code && 'border-red-300 focus:border-red-400 focus:ring-red-100',
-            )}
-          />
-          {step2Form.formState.errors.code && (
-            <p className="mt-1 text-xs text-red-500">{step2Form.formState.errors.code.message}</p>
-          )}
-        </div>
-
-        {needs2FA && (
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-slate-700">
-              2FA Password
-            </label>
-            <input
-              {...step2Form.register('password')}
-              type="password"
-              placeholder="Enter your two-factor authentication password"
-              className={cn(
-                'w-full rounded border-[1.5px] border-slate-200 px-3 py-2 text-sm transition-colors',
-                'placeholder:text-slate-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15',
-              )}
+        <div className="flex flex-col items-center justify-center py-2">
+          {qrStatus?.needs2FA ? (
+            <div className="w-full space-y-2">
+              <label className="block text-sm font-medium text-slate-700">2FA password</label>
+              <input
+                type="password"
+                value={twoFaPassword}
+                onChange={(e) => setTwoFaPassword(e.target.value)}
+                placeholder="Your Telegram 2FA password"
+                className="w-full rounded border-[1.5px] border-slate-200 px-3 py-2 text-sm placeholder:text-slate-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15"
+              />
+              <button
+                type="button"
+                onClick={submit2fa}
+                disabled={qr2fa.isPending}
+                className="flex w-full items-center justify-center gap-2 rounded bg-accent px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-accent-hover disabled:opacity-50"
+              >
+                {qr2fa.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="h-4 w-4" />
+                )}
+                Submit 2FA password
+              </button>
+            </div>
+          ) : qrStatus?.qr ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={qrStatus.qr}
+              alt="Telegram login QR code"
+              className="h-[240px] w-[240px] rounded-lg border border-slate-200"
             />
-          </div>
-        )}
+          ) : (
+            <div className="flex h-[240px] w-[240px] items-center justify-center rounded-lg border border-dashed border-slate-200">
+              <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
+            </div>
+          )}
+        </div>
 
         {errorMessage && (
           <div className="flex items-start gap-2 rounded-lg bg-red-50 p-3">
@@ -444,46 +297,96 @@ function TelegramConnectForm({
           </div>
         )}
 
-        <div className="flex gap-2">
+        {errorMessage && (
           <button
             type="button"
-            onClick={() => {
-              setStep('phone');
-              setErrorMessage(null);
-              setNeeds2FA(false);
-            }}
-            className="flex flex-1 items-center justify-center gap-2 rounded border-[1.5px] border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50"
+            onClick={beginQr}
+            className="flex w-full items-center justify-center gap-2 rounded border-[1.5px] border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50"
           >
-            Back
+            Try again
           </button>
-          <button
-            type="submit"
-            disabled={verifyCodeMutation.isPending}
-            className="flex flex-1 items-center justify-center gap-2 rounded bg-accent px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-accent-hover hover:-translate-y-px disabled:opacity-50"
-          >
-            {verifyCodeMutation.isPending ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Verifying...
-              </>
-            ) : (
-              <>
-                <CheckCircle2 className="h-4 w-4" />
-                Verify & Connect
-              </>
-            )}
-          </button>
-        </div>
-      </form>
+        )}
+
+        <button
+          type="button"
+          onClick={() => {
+            setMode('session');
+            setErrorMessage(null);
+            setQrActive(false);
+          }}
+          className="w-full text-center text-xs text-slate-400 transition-colors hover:text-slate-600"
+        >
+          Advanced: connect with a session key instead
+        </button>
+      </div>
     );
   }
 
-  // ── Done ──
+  // ── Session-key mode (fallback) ──
   return (
-    <div className="flex flex-col items-center gap-3 py-4">
-      <CheckCircle2 className="h-12 w-12 text-emerald-500" />
-      <p className="text-sm font-medium text-slate-700">Telegram connected successfully!</p>
-    </div>
+    <form onSubmit={sessionForm.handleSubmit(handleSession)} className="space-y-4">
+      <div className="flex items-start gap-2 rounded-lg bg-blue-50 p-3">
+        <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-500" />
+        <div className="space-y-1 text-xs text-blue-700">
+          <p className="font-medium">Connect with a session key</p>
+          <p>
+            Generate it once on your own computer, then paste it here. Run from the{' '}
+            <code className="rounded bg-blue-100 px-1">apps/api</code> folder:
+          </p>
+          <code className="block rounded bg-blue-100 px-2 py-1 font-mono">
+            npx tsx scripts/generate-telegram-session.ts
+          </code>
+        </div>
+      </div>
+
+      <div>
+        <label className="mb-1.5 block text-sm font-medium text-slate-700">Session key</label>
+        <textarea
+          {...sessionForm.register('session')}
+          rows={4}
+          placeholder="Paste the StringSession key here"
+          className={cn(
+            'w-full break-all rounded border-[1.5px] border-slate-200 px-3 py-2 font-mono text-xs transition-colors',
+            'placeholder:font-sans placeholder:text-slate-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15',
+            sessionForm.formState.errors.session && 'border-red-300 focus:border-red-400 focus:ring-red-100',
+          )}
+        />
+        {sessionForm.formState.errors.session && (
+          <p className="mt-1 text-xs text-red-500">{sessionForm.formState.errors.session.message}</p>
+        )}
+      </div>
+
+      {errorMessage && (
+        <div className="flex items-start gap-2 rounded-lg bg-red-50 p-3">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
+          <p className="text-xs text-red-700">{errorMessage}</p>
+        </div>
+      )}
+
+      <button
+        type="submit"
+        disabled={connectSessionMutation.isPending}
+        className="flex w-full items-center justify-center gap-2 rounded bg-accent px-4 py-2.5 text-sm font-medium text-white transition-all hover:-translate-y-px hover:bg-accent-hover disabled:opacity-50"
+      >
+        {connectSessionMutation.isPending ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          <Plug className="h-4 w-4" />
+        )}
+        Connect with session key
+      </button>
+
+      <button
+        type="button"
+        onClick={() => {
+          setMode('qr');
+          setErrorMessage(null);
+        }}
+        className="w-full text-center text-xs text-slate-400 transition-colors hover:text-slate-600"
+      >
+        ← Back to QR code (recommended)
+      </button>
+    </form>
   );
 }
 

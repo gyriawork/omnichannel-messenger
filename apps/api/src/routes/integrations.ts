@@ -19,6 +19,23 @@ import { getIO } from '../websocket/index.js';
 import { cacheGet, cacheSet, cacheInvalidate, cacheKey } from '../lib/cache.js';
 import { getPlatformCredentials } from '../lib/platform-credentials.js';
 import { MESSENGERS } from '../lib/platform-constants.js';
+import QRCode from 'qrcode';
+
+// ─── Telegram QR-login sessions (in-memory, keyed by userId) ───
+// QR login needs no verification code: the user scans a QR with their phone and
+// Telegram authorizes the new session. We hold the live auth client here while
+// the user scans. Single API instance (Railway) makes the in-memory map fine.
+interface QrLoginState {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  client: any;
+  status: 'pending' | 'connected' | 'error';
+  qrDataUrl?: string;
+  error?: string;
+  needs2FA: boolean;
+  passwordResolver?: (pw: string) => void;
+  organizationId: string;
+}
+const qrLogins = new Map<string, QrLoginState>();
 
 // ─── Zod Schemas ───
 
@@ -864,6 +881,169 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
           500,
         );
       }
+    },
+  );
+
+  // ─── POST /integrations/telegram/qr/start ───
+  // Primary Telegram connect: start a QR login. No verification code is used —
+  // the user scans the QR with the Telegram app and the session is authorized.
+
+  fastify.post(
+    '/integrations/telegram/qr/start',
+    { preHandler: authPreHandlers },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const organizationId = getOrgId(request);
+      if (!organizationId) {
+        return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
+      }
+
+      const platform = await getPlatformCredentials('telegram');
+      if (!platform.credentials) {
+        return sendError(
+          reply,
+          'VALIDATION_ERROR',
+          'Telegram is not configured. Ask your administrator to set up Telegram API credentials.',
+          400,
+        );
+      }
+      const apiId = Number(platform.credentials.apiId);
+      const apiHash = platform.credentials.apiHash as string;
+      const userId = request.user.id;
+
+      // Clean up any previous QR session for this user.
+      const prev = qrLogins.get(userId);
+      if (prev) {
+        prev.client?.disconnect?.().catch(() => {});
+        qrLogins.delete(userId);
+      }
+
+      let client;
+      try {
+        client = createAuthClient(apiId, apiHash);
+        await client.connect();
+      } catch (err) {
+        return sendError(
+          reply,
+          'MESSENGER_API_ERROR',
+          err instanceof Error ? err.message : 'Failed to connect to Telegram servers',
+          502,
+        );
+      }
+
+      const state: QrLoginState = { client, status: 'pending', needs2FA: false, organizationId };
+      qrLogins.set(userId, state);
+
+      // Drive the QR login in the background; frontend polls /qr/status.
+      void (async () => {
+        try {
+          await client.signInUserWithQrCode(
+            { apiId, apiHash },
+            {
+              qrCode: async (code: { token: Buffer }) => {
+                const url = `tg://login?token=${Buffer.from(code.token).toString('base64url')}`;
+                state.qrDataUrl = await QRCode.toDataURL(url, { width: 280, margin: 1 });
+                state.needs2FA = false;
+              },
+              password: async () => {
+                state.needs2FA = true;
+                return await new Promise<string>((resolve) => {
+                  state.passwordResolver = resolve;
+                });
+              },
+              onError: (err: Error) => {
+                state.status = 'error';
+                state.error = err?.message ?? 'QR login error';
+                return true;
+              },
+            },
+          );
+
+          // Authorized — persist the session string.
+          const sessionString = (client.session as { save: () => string }).save();
+          const encryptedCredentials = encryptCredentials({ session: sessionString, phoneNumber: '' });
+
+          const existing = await prisma.integration.findUnique({
+            where: { messenger_organizationId_userId: { messenger: 'telegram', organizationId, userId } },
+          });
+          let integration;
+          if (existing) {
+            integration = await prisma.integration.update({
+              where: { id: existing.id },
+              data: { credentials: encryptedCredentials, status: 'connected', connectedAt: new Date() },
+            });
+          } else {
+            integration = await prisma.integration.create({
+              data: {
+                messenger: 'telegram',
+                status: 'connected',
+                credentials: encryptedCredentials,
+                organizationId,
+                userId,
+                connectedAt: new Date(),
+              },
+            });
+          }
+
+          state.status = 'connected';
+          state.needs2FA = false;
+          await client.disconnect().catch(() => {});
+
+          await cacheInvalidate(cacheKey(organizationId, 'integrations'));
+          await cacheInvalidate(cacheKey(organizationId, 'integrations', `u:${userId}`));
+          try {
+            getIO().to(`org:${organizationId}`).emit('integration_status_changed', { messenger: 'telegram', status: 'connected' });
+          } catch { /* socket not ready — non-critical */ }
+          getTelegramManager().startListening(integration.id).catch((err) => {
+            fastify.log.warn({ err }, 'Failed to start Telegram listener after QR login');
+          });
+        } catch (err) {
+          state.status = 'error';
+          state.error = err instanceof Error ? err.message : 'QR login failed';
+          await client.disconnect().catch(() => {});
+        }
+      })();
+
+      return reply.send({ status: 'pending' });
+    },
+  );
+
+  // ─── GET /integrations/telegram/qr/status ───
+  fastify.get(
+    '/integrations/telegram/qr/status',
+    { preHandler: authPreHandlers },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const state = qrLogins.get(request.user.id);
+      if (!state) {
+        return reply.send({ status: 'idle' });
+      }
+      return reply.send({
+        status: state.status,
+        qr: state.qrDataUrl,
+        needs2FA: state.needs2FA,
+        error: state.error,
+      });
+    },
+  );
+
+  // ─── POST /integrations/telegram/qr/2fa ───
+  // Supply the 2FA password when a QR login reports needs2FA.
+  fastify.post(
+    '/integrations/telegram/qr/2fa',
+    { preHandler: authPreHandlers },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const parsed = z.object({ password: z.string().min(1) }).safeParse(request.body);
+      if (!parsed.success) {
+        return sendError(reply, 'VALIDATION_ERROR', 'Password is required', 422);
+      }
+      const state = qrLogins.get(request.user.id);
+      if (!state || !state.passwordResolver) {
+        return sendError(reply, 'VALIDATION_ERROR', 'No pending 2FA step for this session', 422);
+      }
+      const resolver = state.passwordResolver;
+      state.passwordResolver = undefined;
+      state.needs2FA = false;
+      resolver(parsed.data.password);
+      return reply.send({ status: 'pending' });
     },
   );
 

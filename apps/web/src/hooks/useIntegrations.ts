@@ -157,6 +157,36 @@ export function useTelegramConnectSession() {
   });
 }
 
+export interface TelegramQrStatus {
+  status: 'idle' | 'pending' | 'connected' | 'error';
+  qr?: string;
+  needs2FA?: boolean;
+  error?: string;
+}
+
+export function useTelegramQrStart() {
+  return useMutation({
+    mutationFn: async () => api.post<{ status: string }>('/api/integrations/telegram/qr/start'),
+  });
+}
+
+export function useTelegramQrStatus(enabled: boolean) {
+  return useQuery<TelegramQrStatus>({
+    queryKey: ['telegram-qr-status'],
+    queryFn: () => api.get<TelegramQrStatus>('/api/integrations/telegram/qr/status'),
+    enabled,
+    refetchInterval: enabled ? 2000 : false,
+    gcTime: 0,
+  });
+}
+
+export function useTelegramQr2fa() {
+  return useMutation({
+    mutationFn: async (password: string) =>
+      api.post('/api/integrations/telegram/qr/2fa', { password }),
+  });
+}
+
 export function useTelegramCheckSession() {
   return useMutation({
     mutationFn: async () => {
