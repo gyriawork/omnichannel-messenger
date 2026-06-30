@@ -157,9 +157,9 @@ function TelegramConnectForm({
 }: {
   onSuccess: () => void;
 }) {
-  // Primary connect method is the user-account session key. The phone+code flow
-  // is kept only as an "advanced" fallback (unreliable from a server).
-  const [mode, setMode] = useState<'session' | 'phone'>('session');
+  // Default to the phone+code flow. The session-key path is available but
+  // optional (not a required field) via a link.
+  const [mode, setMode] = useState<'session' | 'phone'>('phone');
   const [step, setStep] = useState<'phone' | 'code' | 'done'>('phone');
   const [phoneCodeHash, setPhoneCodeHash] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
