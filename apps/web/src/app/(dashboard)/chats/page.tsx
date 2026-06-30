@@ -17,6 +17,7 @@ import {
   X,
   Loader2,
   ArrowUpDown,
+  Download,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -31,6 +32,7 @@ import type { Chat, MessengerType } from '@/types/chat';
 import { RequireOrgContext } from '@/components/layout/RequireOrgContext';
 import { groupGmailChats, isChatGroup, type ChatRow, type ChatGroup } from '@/lib/chat-grouping';
 import { useAuthStore } from '@/stores/auth';
+import { ImportChatsModal } from '@/components/messenger/ImportChatsModal';
 
 // ─── Constants ───
 
@@ -381,13 +383,7 @@ function ChatRowActions({ chat }: { chat: Chat }) {
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
           <div className="absolute right-0 top-full z-20 mt-1 w-44 rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
-            <a
-              href={`/messenger?chatId=${chat.id}`}
-              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
-            >
-              <MessageSquare className="h-3.5 w-3.5" />
-              Open in Messenger
-            </a>
+            {/* "Open in Messenger" removed — the Messenger view is disabled for now. */}
             <button
               onClick={() => {
                 deleteMutation.mutate();
@@ -524,6 +520,7 @@ export default function ChatsPage() {
   // Only the superadmin manages chats (import / assign / tag / delete).
   // Regular users get a read-only view for picking broadcast recipients.
   const isSuperadmin = useAuthStore((s) => s.user?.role) === 'superadmin';
+  const [showImport, setShowImport] = useState(false);
   const [search, setSearch] = useState('');
   const [messengerFilter, setMessengerFilter] = useState<MessengerType | null>(null);
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
@@ -647,6 +644,14 @@ export default function ChatsPage() {
             {total} chat{total !== 1 ? 's' : ''} across all messengers
           </p>
         </div>
+        {/* Importing chats from a connected account is available to every user. */}
+        <button
+          onClick={() => setShowImport(true)}
+          className="inline-flex items-center gap-2 self-start rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white shadow-accent-sm transition-all hover:bg-accent-hover hover:-translate-y-px"
+        >
+          <Download className="h-4 w-4" />
+          Import chats
+        </button>
       </div>
 
       {/* Filters bar */}
@@ -970,12 +975,10 @@ export default function ChatsPage() {
                       <div className="flex items-center gap-3">
                         <ChatAvatar name={chat.name} messenger={chat.messenger} size={36} />
                         <div>
-                          <a
-                            href={`/messenger?chatId=${chat.id}`}
-                            className="text-sm font-medium text-slate-800 hover:text-accent"
-                          >
+                          {/* Messenger view is disabled — chat name is not a link for now. */}
+                          <span className="text-sm font-medium text-slate-800">
                             {chat.name}
-                          </a>
+                          </span>
                           {chat.status === 'read-only' && (
                             <span className="ml-1.5 text-[10px] text-slate-400">read-only</span>
                           )}
@@ -1052,6 +1055,7 @@ export default function ChatsPage() {
         )}
       </div>
 
+      {showImport && <ImportChatsModal onClose={() => setShowImport(false)} />}
     </div>
     </RequireOrgContext>
   );

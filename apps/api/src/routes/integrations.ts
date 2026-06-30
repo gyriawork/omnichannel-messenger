@@ -189,18 +189,15 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
         return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
       }
 
-      const ck = request.user.role === 'user'
-        ? cacheKey(organizationId, 'integrations', `u:${request.user.id}`)
-        : cacheKey(organizationId, 'integrations');
+      // Org-level: every member sees the organization's connected accounts so
+      // regular users can import chats from messengers the superadmin connected.
+      const ck = cacheKey(organizationId, 'integrations');
       const cached = await cacheGet(ck);
       if (cached) {
         return reply.send(cached);
       }
 
       const where: Record<string, unknown> = { organizationId };
-      if (request.user.role === 'user') {
-        where.userId = request.user.id;
-      }
 
       const integrations = await prisma.integration.findMany({
         where,
@@ -1054,7 +1051,7 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
 
   fastify.post(
     '/integrations/:messenger/list-chats',
-    { preHandler: authPreHandlers },
+    { preHandler: readPreHandlers },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const organizationId = getOrgId(request);
       if (!organizationId) {
@@ -1066,25 +1063,20 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
         return sendError(reply, 'VALIDATION_ERROR', 'Invalid messenger type', 422);
       }
       const { messenger } = paramsParsed.data;
-      const userId = request.user.id;
 
       try {
-        // Get user's integration for this messenger
-        const integration = await prisma.integration.findUnique({
-          where: {
-            messenger_organizationId_userId: {
-              messenger,
-              organizationId,
-              userId,
-            },
-          },
+        // Resolve the organization's connected integration (any member —
+        // typically connected by the superadmin) so any user can list its chats.
+        const integration = await prisma.integration.findFirst({
+          where: { messenger, organizationId, status: 'connected' },
+          orderBy: { createdAt: 'asc' },
         });
 
         if (!integration) {
           return sendError(
             reply,
             'RESOURCE_NOT_FOUND',
-            `No ${messenger} integration found. Please connect it first.`,
+            `No connected ${messenger} account found. Ask your administrator to connect it first.`,
             404,
           );
         }

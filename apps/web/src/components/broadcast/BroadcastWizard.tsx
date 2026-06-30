@@ -99,7 +99,9 @@ export function BroadcastWizard() {
   const fileInputRef = useRef<React.ElementRef<'input'>>(null);
 
   const { data: existingBroadcast } = useBroadcast(editId || undefined);
-  const { data: chatsData } = useChats();
+  // Load all chats (not the default 50) so every imported chat is selectable
+  // as a broadcast recipient — matches the limit used by the Chats page.
+  const { data: chatsData } = useChats({ limit: 1000 });
   const { data: templatesData } = useTemplates();
   const templateUseMutation = useTemplateUse();
   const createMutation = useCreateBroadcast();

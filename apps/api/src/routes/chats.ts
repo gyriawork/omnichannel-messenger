@@ -469,7 +469,7 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
 
   fastify.post(
     '/chats/import',
-    { preHandler: superadminPreHandlers },
+    { preHandler: authPreHandlers },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const parsed = importBodySchema.safeParse(request.body);
       if (!parsed.success) {
@@ -540,7 +540,7 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
 
   fastify.post(
     '/chats/import-with-history',
-    { preHandler: superadminPreHandlers },
+    { preHandler: authPreHandlers },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const parsed = importWithHistoryBodySchema.safeParse(request.body);
       if (!parsed.success) {
@@ -554,18 +554,18 @@ export default async function chatRoutes(fastify: FastifyInstance): Promise<void
       }
       const userId = request.user.id;
 
-      // Get integration
-      const integration = await prisma.integration.findUnique({
-        where: {
-          messenger_organizationId_userId: { messenger, organizationId, userId },
-        },
+      // Resolve the organization's connected integration (typically connected
+      // by the superadmin) so any user can import chats with history from it.
+      const integration = await prisma.integration.findFirst({
+        where: { messenger, organizationId, status: 'connected' },
+        orderBy: { createdAt: 'asc' },
       });
 
-      if (!integration || integration.status !== 'connected') {
+      if (!integration) {
         return sendError(
           reply,
           'VALIDATION_ERROR',
-          `${messenger} integration is not connected`,
+          `No connected ${messenger} account found. Ask your administrator to connect it first.`,
           400,
         );
       }

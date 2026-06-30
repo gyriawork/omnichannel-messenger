@@ -41,7 +41,8 @@ function getOrgId(request: FastifyRequest): string | null {
 
 export default async function tagRoutes(fastify: FastifyInstance): Promise<void> {
   const authPreHandlers = [authenticate];
-  const adminPreHandlers = [authenticate, requireMinRole('admin')];
+  // Tags are a broadcasting aid — any authenticated user manages them.
+  const tagWritePreHandlers = [authenticate, requireMinRole('user')];
 
   // ─── GET /tags ───
 
@@ -89,7 +90,7 @@ export default async function tagRoutes(fastify: FastifyInstance): Promise<void>
 
   fastify.post(
     '/tags',
-    { preHandler: adminPreHandlers },
+    { preHandler: tagWritePreHandlers },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const parsed = createTagBodySchema.safeParse(request.body);
       if (!parsed.success) {
@@ -136,7 +137,7 @@ export default async function tagRoutes(fastify: FastifyInstance): Promise<void>
 
   fastify.patch(
     '/tags/:id',
-    { preHandler: adminPreHandlers },
+    { preHandler: tagWritePreHandlers },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const paramsParsed = tagIdParamSchema.safeParse(request.params);
       if (!paramsParsed.success) {
@@ -205,7 +206,7 @@ export default async function tagRoutes(fastify: FastifyInstance): Promise<void>
 
   fastify.delete(
     '/tags/:id',
-    { preHandler: adminPreHandlers },
+    { preHandler: tagWritePreHandlers },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const paramsParsed = tagIdParamSchema.safeParse(request.params);
       if (!paramsParsed.success) {
