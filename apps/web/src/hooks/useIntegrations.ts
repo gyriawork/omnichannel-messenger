@@ -142,6 +142,21 @@ export function useTelegramVerifyCode() {
   });
 }
 
+export function useTelegramConnectSession() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (payload: { session: string; phoneNumber?: string }) => {
+      const result = await api.post<TelegramVerifyCodeResponse>(
+        '/api/integrations/telegram/connect-session',
+        payload,
+      );
+      await queryClient.invalidateQueries({ queryKey: ['integrations'] });
+      return result;
+    },
+  });
+}
+
 export function useTelegramCheckSession() {
   return useMutation({
     mutationFn: async () => {

@@ -33,6 +33,7 @@ import {
   useGmailOAuthAvailable,
   useTelegramSendCode,
   useTelegramVerifyCode,
+  useTelegramConnectSession,
 } from '@/hooks/useIntegrations';
 import { useWhatsAppPairing, type WhatsAppPairingStatus } from '@/hooks/useWhatsAppPairing';
 import { useAvailableIntegrations } from '@/hooks/useAvailableIntegrations';
@@ -139,6 +140,11 @@ const telegramStep2Schema = z.object({
   password: z.string().optional(),
 });
 
+const telegramSessionSchema = z.object({
+  session: z.string().min(1, 'Session key is required'),
+  phoneNumber: z.string().optional(),
+});
+
 const slackSchema = z.object({
   botToken: z.string().min(1, 'Bot Token is required').startsWith('xoxb-', 'Must start with xoxb-'),
 });
@@ -151,6 +157,9 @@ function TelegramConnectForm({
 }: {
   onSuccess: () => void;
 }) {
+  // Primary connect method is the user-account session key. The phone+code flow
+  // is kept only as an "advanced" fallback (unreliable from a server).
+  const [mode, setMode] = useState<'session' | 'phone'>('session');
   const [step, setStep] = useState<'phone' | 'code' | 'done'>('phone');
   const [phoneCodeHash, setPhoneCodeHash] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
@@ -159,6 +168,11 @@ function TelegramConnectForm({
 
   const sendCodeMutation = useTelegramSendCode();
   const verifyCodeMutation = useTelegramVerifyCode();
+  const connectSessionMutation = useTelegramConnectSession();
+
+  const sessionForm = useForm<z.infer<typeof telegramSessionSchema>>({
+    resolver: zodResolver(telegramSessionSchema),
+  });
 
   const step1Form = useForm<z.infer<typeof telegramStep1Schema>>({
     resolver: zodResolver(telegramStep1Schema),
@@ -167,6 +181,23 @@ function TelegramConnectForm({
   const step2Form = useForm<z.infer<typeof telegramStep2Schema>>({
     resolver: zodResolver(telegramStep2Schema),
   });
+
+  const handleSession = (data: z.infer<typeof telegramSessionSchema>) => {
+    setErrorMessage(null);
+    connectSessionMutation.mutate(
+      { session: data.session.trim(), phoneNumber: data.phoneNumber?.trim() || undefined },
+      {
+        onSuccess: () => {
+          setStep('done');
+          toast.success('Telegram connected successfully!');
+          onSuccess();
+        },
+        onError: (err) => {
+          setErrorMessage(err instanceof Error ? err.message : 'Invalid or expired session key');
+        },
+      },
+    );
+  };
 
   const handleStep1 = (data: z.infer<typeof telegramStep1Schema>) => {
     setErrorMessage(null);
@@ -214,6 +245,88 @@ function TelegramConnectForm({
       },
     );
   };
+
+  // ── Primary: connect with a user-account session key ──
+  if (mode === 'session' && step !== 'done') {
+    return (
+      <form onSubmit={sessionForm.handleSubmit(handleSession)} className="space-y-4">
+        <div className="flex items-start gap-2 rounded-lg bg-blue-50 p-3">
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-500" />
+          <div className="space-y-1 text-xs text-blue-700">
+            <p className="font-medium">Connect with a session key (recommended)</p>
+            <p>
+              Generate it once on your own computer (the login code arrives in your
+              Telegram), then paste it here. Run from the <code className="rounded bg-blue-100 px-1">apps/api</code> folder:
+            </p>
+            <code className="block rounded bg-blue-100 px-2 py-1 font-mono">
+              npx tsx scripts/generate-telegram-session.ts
+            </code>
+          </div>
+        </div>
+
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-slate-700">Session key</label>
+          <textarea
+            {...sessionForm.register('session')}
+            rows={4}
+            placeholder="Paste the StringSession key here"
+            className={cn(
+              'w-full break-all rounded border-[1.5px] border-slate-200 px-3 py-2 font-mono text-xs transition-colors',
+              'placeholder:font-sans placeholder:text-slate-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15',
+              sessionForm.formState.errors.session && 'border-red-300 focus:border-red-400 focus:ring-red-100',
+            )}
+          />
+          {sessionForm.formState.errors.session && (
+            <p className="mt-1 text-xs text-red-500">{sessionForm.formState.errors.session.message}</p>
+          )}
+        </div>
+
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-slate-700">
+            Phone number <span className="text-slate-400">(optional)</span>
+          </label>
+          <input
+            {...sessionForm.register('phoneNumber')}
+            placeholder="+1234567890"
+            className="w-full rounded border-[1.5px] border-slate-200 px-3 py-2 text-sm transition-colors placeholder:text-slate-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15"
+          />
+        </div>
+
+        {errorMessage && (
+          <div className="flex items-start gap-2 rounded-lg bg-red-50 p-3">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
+            <p className="text-xs text-red-700">{errorMessage}</p>
+          </div>
+        )}
+
+        <button
+          type="submit"
+          disabled={connectSessionMutation.isPending}
+          className="flex w-full items-center justify-center gap-2 rounded bg-accent px-4 py-2.5 text-sm font-medium text-white transition-all hover:-translate-y-px hover:bg-accent-hover disabled:opacity-50"
+        >
+          {connectSessionMutation.isPending ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Connecting...
+            </>
+          ) : (
+            <>
+              <Plug className="h-4 w-4" />
+              Connect with session key
+            </>
+          )}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => { setMode('phone'); setErrorMessage(null); }}
+          className="w-full text-center text-xs text-slate-400 transition-colors hover:text-slate-600"
+        >
+          Advanced: log in with phone + code (may not work from a server)
+        </button>
+      </form>
+    );
+  }
 
   // ── Step 1: Phone number ──
   if (step === 'phone') {
@@ -266,6 +379,14 @@ function TelegramConnectForm({
               Send Verification Code
             </>
           )}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => { setMode('session'); setErrorMessage(null); }}
+          className="w-full text-center text-xs text-slate-400 transition-colors hover:text-slate-600"
+        >
+          ← Use a session key instead (recommended)
         </button>
       </form>
     );

@@ -65,6 +65,14 @@ const telegramVerifyCodeSchema = z.object({
   password: z.string().optional(),
 });
 
+// Connect Telegram with a pre-generated user session key (StringSession).
+// This is the primary connect method: the one-time login is done off-server
+// (where login codes arrive), and the resulting key is pasted here.
+const telegramConnectSessionSchema = z.object({
+  session: z.string().min(1, 'Session key is required'),
+  phoneNumber: z.string().optional(),
+});
+
 // Map messenger to its credential schema
 const credentialSchemas: Record<string, z.ZodType> = {
   telegram: connectTelegramSchema,
@@ -756,6 +764,104 @@ export default async function integrationRoutes(fastify: FastifyInstance): Promi
           'MESSENGER_API_ERROR',
           err instanceof Error ? err.message : 'Failed to verify Telegram code',
           502,
+        );
+      }
+    },
+  );
+
+  // ─── POST /integrations/telegram/connect-session ───
+  // Primary Telegram connect: validate a pre-generated user session key
+  // (StringSession) and store it. The one-time phone+code login is performed
+  // off-server with scripts/generate-telegram-session.ts, where login codes are
+  // delivered reliably; only the resulting key is pasted here.
+
+  fastify.post(
+    '/integrations/telegram/connect-session',
+    { preHandler: authPreHandlers },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const bodyParsed = telegramConnectSessionSchema.safeParse(request.body);
+      if (!bodyParsed.success) {
+        return sendError(
+          reply,
+          'VALIDATION_ERROR',
+          bodyParsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '),
+          422,
+        );
+      }
+
+      const { session, phoneNumber } = bodyParsed.data;
+      const organizationId = getOrgId(request);
+      if (!organizationId) {
+        return sendError(reply, 'VALIDATION_ERROR', 'Organization context is required', 400);
+      }
+
+      // Validate the key by connecting (apiId/apiHash resolved from platform config).
+      let adapter;
+      try {
+        adapter = await createAdapter('telegram', { session });
+        await adapter.connect();
+      } catch (err) {
+        return sendError(
+          reply,
+          'MESSENGER_API_ERROR',
+          err instanceof Error ? err.message : 'Invalid or expired Telegram session key',
+          502,
+        );
+      }
+
+      try {
+        const encryptedCredentials = encryptCredentials({ session, phoneNumber: phoneNumber ?? '' });
+
+        const existing = await prisma.integration.findUnique({
+          where: {
+            messenger_organizationId_userId: {
+              messenger: 'telegram',
+              organizationId,
+              userId: request.user.id,
+            },
+          },
+        });
+
+        let integration;
+        if (existing) {
+          integration = await prisma.integration.update({
+            where: { id: existing.id },
+            data: { credentials: encryptedCredentials, status: 'connected', connectedAt: new Date() },
+          });
+        } else {
+          integration = await prisma.integration.create({
+            data: {
+              messenger: 'telegram',
+              status: 'connected',
+              credentials: encryptedCredentials,
+              organizationId,
+              userId: request.user.id,
+              connectedAt: new Date(),
+            },
+          });
+        }
+
+        await adapter.disconnect().catch(() => {});
+
+        await cacheInvalidate(cacheKey(organizationId, 'integrations'));
+        await cacheInvalidate(cacheKey(organizationId, 'integrations', `u:${request.user.id}`));
+
+        try {
+          getIO().to(`org:${organizationId}`).emit('integration_status_changed', { messenger: 'telegram', status: 'connected' });
+        } catch { /* socket not ready — non-critical */ }
+
+        getTelegramManager().startListening(integration.id).catch((err) => {
+          fastify.log.warn({ err }, 'Failed to start Telegram listener after connect-session');
+        });
+
+        return reply.status(201).send({ integration: sanitizeIntegration(integration) });
+      } catch (err) {
+        await adapter.disconnect().catch(() => {});
+        return sendError(
+          reply,
+          'INTERNAL_ERROR',
+          err instanceof Error ? err.message : 'Failed to store Telegram session',
+          500,
         );
       }
     },
